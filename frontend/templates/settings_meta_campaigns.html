@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Gestione Campagne Meta</h1>
+        <p class="text-neutral-500 mt-2">Configura filtri e sincronizzazione per le campagne Meta.</p>
+    </div>
+
+    <!-- Account Filter -->
+    <div class="glass-card mb-6 p-4">
+        <form method="GET" class="flex items-center gap-4">
+            <label class="text-sm font-medium text-neutral-700">Filtra per Account:</label>
+            <select name="account_id" onchange="this.form.submit()" 
+                    class="px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="">Tutti gli account</option>
+                {% for account in accounts %}
+                <option value="{{ account.account_id }}" {% if selected_account_id == account.account_id %}selected{% endif %}>
+                    {{ account.name }} ({{ account.account_id }})
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    <div class="glass-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+            <h2 class="text-lg font-semibold">Campagne Sincronizzate</h2>
+        </div>
+        
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-neutral-200">
+                <thead class="bg-neutral-50/50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Campaign ID</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Nome</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Stato</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Objective</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Filtri Sync</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Sync</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase tracking-wider">Azioni</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-200">
+                    {% for campaign in campaigns %}
+                    <tr class="hover:bg-neutral-50/50 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-mono font-bold text-indigo-600">{{ campaign.campaign_id }}</td>
+                        <td class="px-6 py-4 text-sm text-neutral-900">{{ campaign.name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium 
+                                {% if campaign.status == 'ACTIVE' %}bg-green-100 text-green-800
+                                {% elif campaign.status == 'PAUSED' %}bg-yellow-100 text-yellow-800
+                                {% else %}bg-neutral-100 text-neutral-800{% endif %}">
+                                {{ campaign.status }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-neutral-500">{{ campaign.objective or 'N/A' }}</td>
+                        <td class="px-6 py-4 text-sm text-neutral-500">
+                            {% if campaign.sync_filters %}
+                                {% if campaign.sync_filters.tag %}
+                                    <span class="bg-blue-100 px-2 py-0.5 rounded text-xs">Tag: {{ campaign.sync_filters.tag }}</span>
+                                {% endif %}
+                                {% if campaign.sync_filters.name_pattern %}
+                                    <span class="bg-purple-100 px-2 py-0.5 rounded text-xs">Pattern: {{ campaign.sync_filters.name_pattern }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="italic text-xs">Nessun filtro</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium {% if campaign.is_synced %}bg-green-100 text-green-800{% else %}bg-neutral-100 text-neutral-800{% endif %}">
+                                {{ 'Sincronizzata' if campaign.is_synced else 'Non sincronizzata' }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button onclick="openFilterModal({{ campaign.id }}, '{{ campaign.name|replace("'", "\\'") }}', '{{ campaign.sync_filters|tojson|safe }}', {{ 'true' if campaign.is_synced else 'false' }})" 
+                                    class="text-indigo-600 hover:text-indigo-900 transition-colors">
+                                Configura
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not campaigns %}
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-neutral-500 italic">
+                            Nessuna campagna trovata. Sincronizza prima un account Meta.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal per configurazione filtri -->
+<div id="filterModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="px-6 py-4 border-b border-neutral-200">
+            <h3 class="text-lg font-semibold">Configura Filtri Campagna</h3>
+            <p class="text-sm text-neutral-500 mt-1" id="modalCampaignName"></p>
+        </div>
+        <form id="filterForm" method="POST" action="/settings/meta-campaigns/filters" class="p-6">
+            <input type="hidden" name="id" id="modalCampaignId">
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-neutral-700 mb-2">Tag (opzionale)</label>
+                <input type="text" name="tag_filter" id="modalTagFilter" 
+                       class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none" 
+                       placeholder="es. tag1, tag2">
+                <p class="text-xs text-neutral-400 mt-1">Filtra campagne con questo tag</p>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-neutral-700 mb-2">Pattern Nome (opzionale)</label>
+                <input type="text" name="name_pattern" id="modalNamePattern" 
+                       class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none" 
+                       placeholder="es. CEPU">
+                <p class="text-xs text-neutral-400 mt-1">Filtra campagne il cui nome contiene questo pattern</p>
+            </div>
+            
+            <div class="mb-6">
+                <label class="flex items-center">
+                    <input type="checkbox" name="sync_enabled" id="modalSyncEnabled" 
+                           class="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500">
+                    <span class="ml-2 text-sm text-neutral-700">Abilita sincronizzazione per questa campagna</span>
+                </label>
+            </div>
+            
+            <div class="flex gap-3">
+                <button type="submit" 
+                        class="flex-1 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all">
+                    Salva
+                </button>
+                <button type="button" onclick="closeFilterModal()" 
+                        class="flex-1 px-4 py-2 bg-neutral-200 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-300 transition-all">
+                    Annulla
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openFilterModal(campaignId, campaignName, filtersJson, isSynced) {
+    document.getElementById('modalCampaignId').value = campaignId;
+    document.getElementById('modalCampaignName').textContent = campaignName;
+    
+    let filters = {};
+    try {
+        filters = filtersJson ? JSON.parse(filtersJson) : {};
+    } catch(e) {
+        filters = {};
+    }
+    
+    document.getElementById('modalTagFilter').value = filters.tag || '';
+    document.getElementById('modalNamePattern').value = filters.name_pattern || '';
+    document.getElementById('modalSyncEnabled').checked = isSynced === true || isSynced === 'true';
+    document.getElementById('filterModal').classList.remove('hidden');
+}
+
+function closeFilterModal() {
+    document.getElementById('filterModal').classList.add('hidden');
+}
+
+// Close modal on outside click
+document.getElementById('filterModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeFilterModal();
+    }
+});
+</script>
+{% endblock %}

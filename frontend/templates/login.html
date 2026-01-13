@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md w-full animate-fadeInUp">
+        <div class="glass-card p-10">
+            <div class="text-center mb-10">
+                <h1 class="text-4xl font-bold gradient-text mb-2">Cepu System</h1>
+                <p class="text-neutral-500">Gestione Lead & Automation</p>
+            </div>
+            
+            <div class="space-y-6">
+                <a href="/login" class="flex items-center justify-center gap-3 w-full py-3 px-4 bg-white border border-neutral-200 text-neutral-700 font-semibold rounded-xl hover:bg-neutral-50 shadow-sm transition-all active:scale-[0.98]">
+                    <img src="https://www.gstatic.com/images/branding/product/1x/gmail_512dp.png" class="w-5 h-5" alt="Google">
+                    Accedi con Google
+                </a>
+
+                {% if request.query_params.get('error') == 'unauthorized' %}
+                <div class="rounded-xl bg-red-50 p-4 border border-red-100 flex items-start gap-3">
+                    <svg class="w-5 h-5 text-red-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <div>
+                        <h3 class="text-sm font-bold text-red-800">Accesso Negato</h3>
+                        <p class="text-xs text-red-700 mt-1">Non sei autorizzato ad accedere a questo sistema. Contatta l'amministratore.</p>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="mt-8 pt-8 border-t border-white/20 text-center">
+                <p class="text-xs text-neutral-400">&copy; 2026 Cepu Lavorazioni. Tutti i diritti riservati.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

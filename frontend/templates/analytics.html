@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Analytics 360°</h1>
+        <p class="text-neutral-500 mt-2">Viste aggregate per correlazione marketing ↔ feedback lavorazioni.</p>
+    </div>
+
+    <!-- View Type Selector -->
+    <div class="glass-card mb-6 p-4">
+        <div class="flex flex-wrap gap-2 mb-4">
+            <a href="/analytics?view=overview&date_from={{ date_from }}&date_to={{ date_to }}" 
+               class="px-4 py-2 rounded-lg {% if view_type == 'overview' %}bg-indigo-600 text-white{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %} transition-all">
+                Overview Generale
+            </a>
+            <a href="/analytics?view=magellano_campaign&date_from={{ date_from }}&date_to={{ date_to }}" 
+               class="px-4 py-2 rounded-lg {% if view_type == 'magellano_campaign' %}bg-indigo-600 text-white{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %} transition-all">
+                Per Campagna Magellano
+            </a>
+            <a href="/analytics?view=msg_id&date_from={{ date_from }}&date_to={{ date_to }}" 
+               class="px-4 py-2 rounded-lg {% if view_type == 'msg_id' %}bg-indigo-600 text-white{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %} transition-all">
+                Per ID Messaggio
+            </a>
+            <a href="/analytics?view=meta_campaign&date_from={{ date_from }}&date_to={{ date_to }}" 
+               class="px-4 py-2 rounded-lg {% if view_type == 'meta_campaign' %}bg-indigo-600 text-white{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %} transition-all">
+                Per Campagna Meta
+            </a>
+            <a href="/analytics?view=meta_adset&date_from={{ date_from }}&date_to={{ date_to }}" 
+               class="px-4 py-2 rounded-lg {% if view_type == 'meta_adset' %}bg-indigo-600 text-white{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %} transition-all">
+                Per AdSet Meta
+            </a>
+            <a href="/analytics?view=meta_ad&date_from={{ date_from }}&date_to={{ date_to }}" 
+               class="px-4 py-2 rounded-lg {% if view_type == 'meta_ad' %}bg-indigo-600 text-white{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %} transition-all">
+                Per Creatività Meta
+            </a>
+        </div>
+        
+        <form method="GET" class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <input type="hidden" name="view" value="{{ view_type }}">
+            
+            {% if view_type == 'magellano_campaign' %}
+            <div>
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Campagna Magellano</label>
+                <select name="magellano_campaign_id" onchange="this.form.submit()" 
+                        class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">Tutte</option>
+                    {% for camp_id in magellano_campaigns %}
+                    <option value="{{ camp_id }}" {% if selected_magellano_campaign_id == camp_id %}selected{% endif %}>
+                        {{ camp_id }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% elif view_type == 'msg_id' %}
+            <div>
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">ID Messaggio</label>
+                <select name="msg_id" onchange="this.form.submit()" 
+                        class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">Tutti</option>
+                    {% for msg_id in msg_ids %}
+                    <option value="{{ msg_id }}" {% if selected_msg_id == msg_id %}selected{% endif %}>
+                        {{ msg_id }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            
+            <div>
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Dal</label>
+                <input type="date" name="date_from" value="{{ date_from }}" 
+                       class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Al</label>
+                <input type="date" name="date_to" value="{{ date_to }}" 
+                       class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <div class="flex items-end">
+                <button type="submit" class="w-full px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
+                    Applica
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5 mb-8">
+        <div class="glass-card p-6 flex items-center border-l-4 border-blue-400">
+            <div class="bg-blue-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">Total Leads</p>
+                <p class="text-2xl font-bold text-neutral-900">{{ total_leads }}</p>
+            </div>
+        </div>
+
+        <div class="glass-card p-6 flex items-center border-l-4 border-green-400">
+            <div class="bg-green-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">Convertite</p>
+                <p class="text-2xl font-bold text-neutral-900">{{ converted }}</p>
+            </div>
+        </div>
+
+        <div class="glass-card p-6 flex items-center border-l-4 border-yellow-400">
+            <div class="bg-yellow-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">In Lavorazione</p>
+                <p class="text-2xl font-bold text-neutral-900">{{ in_lavorazione }}</p>
+            </div>
+        </div>
+
+        <div class="glass-card p-6 flex items-center border-l-4 border-red-400">
+            <div class="bg-red-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">Rifiutate</p>
+                <p class="text-2xl font-bold text-neutral-900">{{ rifiutati }}</p>
+            </div>
+        </div>
+
+        <div class="glass-card p-6 flex items-center border-l-4 border-purple-400">
+            <div class="bg-purple-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">Tasso Conversione</p>
+                <p class="text-2xl font-bold text-neutral-900">{{ "%.2f"|format(conversion_rate) }}%</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aggregated Table -->
+    <div class="glass-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50 flex justify-between items-center">
+            <h2 class="text-lg font-semibold">
+                {% if view_type == 'overview' %}Overview Generale
+                {% elif view_type == 'magellano_campaign' %}Aggregazione per Campagna Magellano
+                {% elif view_type == 'msg_id' %}Aggregazione per ID Messaggio
+                {% elif view_type == 'meta_campaign' %}Aggregazione per Campagna Meta
+                {% elif view_type == 'meta_adset' %}Aggregazione per AdSet Meta
+                {% elif view_type == 'meta_ad' %}Aggregazione per Creatività Meta
+                {% endif %}
+            </h2>
+            <span class="text-xs text-neutral-500">{{ aggregates|length }} risultati</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-neutral-200">
+                <thead class="bg-neutral-50/50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Dimensione</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-neutral-500 uppercase">Total Leads</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-neutral-500 uppercase">Convertite</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-neutral-500 uppercase">In Lavorazione</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-neutral-500 uppercase">CRM</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-neutral-500 uppercase">Rifiutate</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-neutral-500 uppercase">Tasso Conversione</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-200">
+                    {% for agg in aggregates %}
+                    <tr class="hover:bg-neutral-50/50 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-neutral-900">{{ agg.dimension }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-center text-neutral-700 font-semibold">{{ agg.total_leads }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-center">
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                {{ agg.converted }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-center">
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                {{ agg.in_lavorazione }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-center">
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {{ agg.crm }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-center">
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                {{ agg.rifiutati }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-center font-semibold text-indigo-600">
+                            {{ "%.2f"|format(agg.conversion_rate) }}%
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not aggregates %}
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-neutral-500 italic">
+                            Nessun dato disponibile per i filtri selezionati.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
