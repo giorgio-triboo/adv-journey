@@ -35,18 +35,22 @@ class Lead(Base):
     city = Column(String)
     region = Column(String)
     
-    brand = Column(String) # "gruppocepu_serviziobrand"
-    msg_id = Column(String, index=True) # "gruppocepu_idmessaggio"
+    brand = Column(String) # "gruppocepu_serviziobrand" (Nome Cliente, es. ecampus)
+    msg_id = Column(String, index=True) # "gruppocepu_idmessaggio" (Id Messaggio = corso)
     form_id = Column(String) # "gruppocepu_formid"
     source = Column(String)
     campaign_name = Column(String)
     magellano_campaign_id = Column(String, index=True)
     
+    # Payout/Status da Magellano (sent = pagata, blocked/altri = scartata)
+    payout_status = Column(String, nullable=True) # "sent", "blocked", etc.
+    is_paid = Column(Boolean, default=False) # True se "sent", False altrimenti
+    
     # Facebook/Meta fields from Magellano
     facebook_ad_name = Column(String, index=True, nullable=True)
     facebook_ad_set = Column(String, index=True, nullable=True)
     facebook_campaign_name = Column(String, index=True, nullable=True)
-    facebook_id = Column(String, index=True, nullable=True)
+    facebook_id = Column(String, index=True, nullable=True) # ID utente Facebook (non ID ad)
     facebook_piattaforma = Column(String, nullable=True)
     
     # Meta Marketing correlation (from Meta API)
@@ -90,8 +94,14 @@ class SyncLog(Base):
 class ManagedCampaign(Base):
     __tablename__ = "managed_campaigns"
     id = Column(Integer, primary_key=True, index=True)
-    campaign_id = Column(String, unique=True, index=True) # Magellano ID
+    campaign_id = Column(String, unique=True, index=True) # Magellano Campaign ID
     name = Column(String)
+    
+    # Gerarchia: Nome Cliente > Pay > Id Messaggio
+    cliente_name = Column(String, index=True, nullable=True) # Nome cliente (es. ecampus, cepu)
+    pay_level = Column(String, nullable=True) # Livello Pay (se applicabile)
+    msg_id_pattern = Column(String, nullable=True) # Pattern o valore msg_id associato
+    
     ulixe_ids = Column(JSON, default=list) # List of Ulixe IDs for matching
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)

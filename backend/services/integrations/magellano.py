@@ -224,6 +224,16 @@ class MagellanoService:
                 # External User ID is a good candidate for dedup
                 ext_user_id = str(row.get('Id user', ''))
                 
+                # Estrai payout status (sent = pagata, blocked/altri = scartata)
+                payout_status_raw = str(row.get('Status', '')).strip() if not pd.isna(row.get('Status', '')) else None
+                payout_status = None
+                is_paid = False
+                
+                if payout_status_raw:
+                    payout_status = payout_status_raw.lower()
+                    # "sent" significa pagata, tutto il resto è scartata
+                    is_paid = (payout_status == 'sent')
+                
                 leads.append({
                     'magellano_id': f"MAG-{ext_user_id}",
                     'external_user_id': ext_user_id,
@@ -237,11 +247,14 @@ class MagellanoService:
                     'source': str(row.get('Source', '')).strip() if not pd.isna(row.get('Source')) else None,
                     'campaign_name': str(row.get('Campaign', '')).strip().strip(),
                     'magellano_campaign_id': str(campaign_id),
+                    # Payout status da Magellano
+                    'payout_status': payout_status,
+                    'is_paid': is_paid,
                     # Facebook/Meta fields from Magellano
                     'facebook_ad_name': str(row.get('facebook_ad_name', '')).strip() if not pd.isna(row.get('facebook_ad_name', '')) else None,
                     'facebook_ad_set': str(row.get('facebook_ad_set', '')).strip() if not pd.isna(row.get('facebook_ad_set', '')) else None,
                     'facebook_campaign_name': str(row.get('facebook_campaign_name', '')).strip() if not pd.isna(row.get('facebook_campaign_name', '')) else None,
-                    'facebook_id': str(row.get('facebook_id', '')).strip() if not pd.isna(row.get('facebook_id', '')) else None,
+                    'facebook_id': str(row.get('facebook_id', '')).strip() if not pd.isna(row.get('facebook_id', '')) else None,  # ID utente Facebook
                     'facebook_piattaforma': str(row.get('facebook_piattaforma', '')).strip() if not pd.isna(row.get('facebook_piattaforma', '')) else None,
                     'status_category': 'in_lavorazione'
                 })
