@@ -38,7 +38,10 @@ def run(db: Session = None) -> dict:
         for account in accounts:
             try:
                 logger.info(f"Meta Marketing Sync: Syncing account {account.account_id} ({account.name})...")
-                service = MetaMarketingService(access_token=account.access_token)
+                # Decripta il token prima di usarlo
+                from services.utils.crypto import decrypt_token
+                decrypted_token = decrypt_token(account.access_token)
+                service = MetaMarketingService(access_token=decrypted_token)
                 
                 # Sync campaigns structure
                 service.sync_account_campaigns(account.account_id, db)

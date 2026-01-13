@@ -329,10 +329,14 @@ class MetaMarketingService:
             if not test_result['success']:
                 raise Exception(f"Cannot connect to account {account_id}: {test_result['message']}")
             
+            # Cripta il token prima di salvarlo nel database
+            from services.utils.crypto import encrypt_token
+            encrypted_token = encrypt_token(self.access_token)
+            
             account_record = MetaAccount(
                 account_id=account_id,
                 name=test_result.get('account_name', 'Unknown'),
-                access_token=self.access_token,
+                access_token=encrypted_token,
                 is_active=True,
                 sync_enabled=True
             )

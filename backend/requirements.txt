@@ -21,3 +21,4 @@ openpyxl
 xlrd
 fake-useragent
 httpx
+cryptography>=41.0.0

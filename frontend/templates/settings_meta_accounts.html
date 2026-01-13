@@ -12,6 +12,12 @@
         <strong>Errore:</strong> {{ request.query_params.get('error') }}
     </div>
     {% endif %}
+    
+    {% if request.query_params.get('success') == 'oauth_connected' %}
+    <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
+        <strong>✓ Successo:</strong> Account Meta connessi con successo tramite OAuth!
+    </div>
+    {% endif %}
 
     <div class="glass-card overflow-hidden mb-6">
         <div class="px-6 py-4 border-b border-white/20 bg-white/50">
@@ -47,6 +53,12 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-neutral-500">{{ account.sync_frequency or 'daily' }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                            <button onclick="testAccount({{ account.id }})" 
+                                    class="text-green-600 hover:text-green-900 transition-colors" 
+                                    title="Testa connessione"
+                                    id="test-btn-{{ account.id }}">
+                                ✓ Test
+                            </button>
                             <form action="/settings/meta-accounts/sync" method="POST" class="inline">
                                 <input type="hidden" name="id" value="{{ account.id }}">
                                 <button type="submit" class="text-indigo-600 hover:text-indigo-900 transition-colors" title="Sincronizza ora">
@@ -85,37 +97,131 @@
             <h3 class="text-lg font-semibold">Aggiungi Nuovo Account</h3>
         </div>
         <div class="px-6 py-8">
-            <form action="/settings/meta-accounts" method="POST" class="grid grid-cols-1 sm:grid-cols-12 gap-4">
+            {% if oauth_enabled %}
+            <div class="space-y-4">
+                <div class="p-6 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-lg">
+                    <h4 class="text-lg font-semibold text-indigo-900 mb-2">🔐 Connessione Sicura con Meta</h4>
+                    <p class="text-sm text-indigo-700 mb-4">
+                        Connetti il tuo account Meta in modo sicuro tramite OAuth. I token verranno criptati e salvati in modo sicuro nel backend.
+                    </p>
+                    <a href="/settings/meta-accounts/oauth/start" 
+                       class="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                        </svg>
+                        Connetti con Meta
+                    </a>
+                </div>
+                
+                <div class="relative">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-neutral-200"></div>
+                    </div>
+                    <div class="relative flex justify-center text-sm">
+                        <span class="px-2 bg-white text-neutral-500">oppure</span>
+                    </div>
+                </div>
+                
+                <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p class="text-xs text-yellow-800 mb-2">
+                        <strong>Metodo Legacy:</strong> Inserimento manuale del token (sconsigliato per motivi di sicurezza)
+                    </p>
+                </div>
+            </div>
+            {% endif %}
+            
+            <form action="/settings/meta-accounts" method="POST" class="grid grid-cols-1 sm:grid-cols-12 gap-4 {% if oauth_enabled %}mt-4{% endif %}">
                 <div class="sm:col-span-3">
                     <label class="block text-[10px] uppercase font-bold text-neutral-400 mb-1 ml-1">Account ID Meta</label>
-                    <input type="text" name="account_id" required 
-                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
-                           placeholder="es. 123456789">
+                    <input type="text" name="account_id" {% if oauth_enabled %}placeholder="Non necessario con OAuth"{% else %}required{% endif %}
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all {% if oauth_enabled %}bg-neutral-50{% endif %}" 
+                           placeholder="es. 123456789" {% if oauth_enabled %}disabled{% endif %}>
                     <p class="text-xs text-neutral-400 mt-1">Senza prefisso "act_"</p>
                 </div>
                 <div class="sm:col-span-4">
                     <label class="block text-[10px] uppercase font-bold text-neutral-400 mb-1 ml-1">Access Token</label>
-                    <input type="password" name="access_token" required 
-                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
-                           placeholder="Token di sistema Meta">
+                    <input type="password" name="access_token" {% if oauth_enabled %}placeholder="Non necessario con OAuth"{% else %}required{% endif %}
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all {% if oauth_enabled %}bg-neutral-50{% endif %}" 
+                           placeholder="Token di sistema Meta" {% if oauth_enabled %}disabled{% endif %}>
+                    {% if oauth_enabled %}
+                    <p class="text-xs text-yellow-600 mt-1">⚠️ Usa OAuth per maggiore sicurezza</p>
+                    {% endif %}
                 </div>
                 <div class="sm:col-span-3">
                     <label class="block text-[10px] uppercase font-bold text-neutral-400 mb-1 ml-1">Nome (opzionale)</label>
                     <input type="text" name="name" 
-                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
-                           placeholder="Nome descrittivo">
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all {% if oauth_enabled %}bg-neutral-50{% endif %}" 
+                           placeholder="Nome descrittivo" {% if oauth_enabled %}disabled{% endif %}>
                 </div>
                 <div class="sm:col-span-2 flex items-end">
                     <button type="submit" 
-                            class="w-full px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
+                            class="w-full px-6 py-2 bg-neutral-400 text-white font-semibold rounded-lg hover:bg-neutral-500 transition-all active:scale-95 {% if oauth_enabled %}cursor-not-allowed{% else %}bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-200{% endif %}"
+                            {% if oauth_enabled %}disabled{% endif %}>
                         Aggiungi
                     </button>
                 </div>
             </form>
+            {% if not oauth_enabled %}
             <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
                 <strong>Nota:</strong> Il token verrà testato automaticamente. Assicurati di avere i permessi necessari per l'account Meta.
             </div>
+            <div class="mt-2 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
+                <strong>💡 Suggerimento:</strong> Per maggiore sicurezza, configura OAuth Meta aggiungendo <code class="bg-yellow-100 px-1 rounded">META_APP_ID</code> e <code class="bg-yellow-100 px-1 rounded">META_APP_SECRET</code> nel file <code class="bg-yellow-100 px-1 rounded">.env</code>.
+            </div>
+            {% else %}
+            <div class="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+                <strong>✓ Sicurezza:</strong> Con OAuth abilitato, i token vengono criptati automaticamente e non sono mai visibili nel frontend.
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
+
+<script>
+async function testAccount(accountId) {
+    const btn = document.getElementById(`test-btn-${accountId}`);
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ Testing...';
+    btn.disabled = true;
+    
+    try {
+        const formData = new FormData();
+        formData.append('id', accountId);
+        
+        const response = await fetch('/settings/meta-accounts/test', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            btn.textContent = '✓ OK';
+            btn.className = 'text-green-600 hover:text-green-900 transition-colors';
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.className = 'text-green-600 hover:text-green-900 transition-colors';
+            }, 2000);
+        } else {
+            btn.textContent = '✗ Error';
+            btn.className = 'text-red-600 hover:text-red-900 transition-colors';
+            alert('Errore: ' + result.message);
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.className = 'text-green-600 hover:text-green-900 transition-colors';
+            }, 3000);
+        }
+    } catch (error) {
+        btn.textContent = '✗ Error';
+        btn.className = 'text-red-600 hover:text-red-900 transition-colors';
+        alert('Errore durante il test: ' + error.message);
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.className = 'text-green-600 hover:text-green-900 transition-colors';
+        }, 3000);
+    } finally {
+        btn.disabled = false;
+    }
+}
+</script>
 {% endblock %}

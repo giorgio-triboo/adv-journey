@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     # META
     META_ACCESS_TOKEN: Optional[str] = None
     META_PIXEL_ID: Optional[str] = None
+    META_APP_ID: Optional[str] = None
+    META_APP_SECRET: Optional[str] = None
     
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
