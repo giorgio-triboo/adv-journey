@@ -988,7 +988,11 @@ async def meta_oauth_save_accounts(request: Request, db: Session = Depends(get_d
         request.session.pop('meta_oauth_token', None)
         request.session.pop('meta_oauth_token_expires', None)
         
-        return RedirectResponse(url=f'/settings/meta-accounts?success={saved_count}_accounts_added', status_code=303)
+        if saved_count == 1:
+            success_msg = f"{saved_count} account aggiunto"
+        else:
+            success_msg = f"{saved_count} account aggiunti"
+        return RedirectResponse(url=f'/settings/meta-accounts?success={success_msg}', status_code=303)
         
     except Exception as e:
         logger.error(f"Error saving selected accounts: {e}")
