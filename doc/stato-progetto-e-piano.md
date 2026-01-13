@@ -61,11 +61,23 @@
 - ✅ Interfaccia gestione campagne Meta (settings/meta-campaigns)
 - ✅ Dashboard Analytics 360° (analytics) con correlazione marketing ↔ feedback
 - ✅ Design moderno con Tailwind CSS
+- ✅ **Riorganizzazione struttura**: Separato frontend da backend (`frontend/` directory)
 
 #### 8. **API REST**
 - ✅ Endpoint CRUD leads (`/api/leads`)
 - ✅ Endpoint check Ulixe manuale
 - ✅ Filtri e paginazione
+
+#### 9. **Architettura e Organizzazione Codice**
+- ✅ **Riorganizzazione services/**: Separato in 3 directory chiare
+  - ✅ `api/` - FastAPI routers e endpoints
+  - ✅ `integrations/` - Servizi integrazioni esterne (Magellano, Ulixe, Meta)
+  - ✅ `sync/` - 4 job autonomi separati (magellano, ulixe, meta_marketing, meta_conversion)
+- ✅ **SyncOrchestrator**: Gestione esecuzione sequenziale job
+- ✅ **Separazione frontend/backend**: Directory `frontend/` separata con static/ e templates/
+- ✅ **Docker**: Build context aggiornato per includere frontend nell'immagine
+- ✅ **Seeders**: Sistema seeding per campagne Magellano
+- ✅ **Documentazione**: README.md in services/ e frontend/
 
 ---
 
@@ -90,20 +102,26 @@
 
 ### 🟡 Importante - Miglioramenti e Ottimizzazioni
 
-4. **Correlazione Automatica Lead ↔ Marketing**
-   - ⚠️ Modelli DB pronti (meta_campaign_id, meta_adset_id, meta_ad_id in Lead)
-   - ❌ Logica automatica per correlare lead con dati marketing
-   - ❌ Strategia: UTM parameters, Campaign ID matching, Facebook Click ID
-   - ⚠️ Da definire: come vengono tracciate le lead da Meta in Magellano
+4. **Correlazione Automatica Lead ↔ Marketing** ✅
+   - ✅ Modelli DB pronti (meta_campaign_id, meta_adset_id, meta_ad_id in Lead)
+   - ✅ Logica automatica implementata (`LeadCorrelationService`)
+   - ✅ Strategia: Match usando campi Facebook da Magellano:
+     - `facebook_campaign_name` → `MetaCampaign.name`
+     - `facebook_ad_set` → `MetaAdSet.name`
+     - `facebook_ad_name` → `MetaAd.name`
+     - `facebook_id` → `MetaAd.ad_id` (priorità)
+   - ✅ Integrata nel sync job Magellano
 
-5. **Vista Dettaglio Lead Estesa**
-   - ❌ Pagina `/leads/{id}` con:
-     - Dati anagrafici lead
-     - Storico lavorazioni Ulixe completo
-     - Dati marketing correlati (campagna, adset, ad)
-     - Metriche marketing (spend, ROI, etc.)
-     - Timeline eventi marketing
-     - Grafici performance
+5. **Vista Dettaglio Lead Estesa** ✅
+   - ✅ Pagina `/leads/{id}` implementata
+   - ✅ Dati anagrafici lead
+   - ✅ Storico lavorazioni Ulixe completo
+   - ✅ Dati marketing correlati (campagna, adset, ad)
+   - ✅ Metriche marketing (spend, impressions, clicks, CPL, etc.)
+   - ✅ **Due livelli di analisi**:
+     - **Livello 1**: Overview per `msg_id` (statistiche aggregate e lead correlate)
+     - **Livello 2**: Overview per campagne Meta (statistiche aggregate, metriche marketing, timeline)
+   - ⚠️ Grafici performance: DA IMPLEMENTARE (trend, distribuzione)
 
 6. **Export e Report**
    - ❌ Export CSV/Excel con dati combinati (marketing + lavorazioni)
@@ -203,16 +221,19 @@
 
 ### FASE 3: Interfaccia Correlazione Marketing ↔ Feedback (Parzialmente Completata)
 
-#### 3.1 Vista Lead Dettaglio Estesa ❌ DA FARE
-- [ ] Pagina `/leads/{id}` con:
-  - Dati anagrafici lead
-  - Storico lavorazioni Ulixe completo
-  - Dati marketing correlati:
-    - Campagna di origine
-    - Adset/Ad specifica
-    - Metriche marketing (spend, ROI, etc.)
-    - Timeline eventi marketing
-  - Grafici performance
+#### 3.1 Vista Lead Dettaglio Estesa ✅ COMPLETATA
+- [x] Pagina `/leads/{id}` implementata
+- [x] Dati anagrafici lead
+- [x] Storico lavorazioni Ulixe completo
+- [x] Dati marketing correlati:
+  - Campagna di origine
+  - Adset/Ad specifica
+  - Metriche marketing (spend, impressions, clicks, CPL, etc.)
+  - Timeline metriche marketing (ultimi 30 giorni)
+- [x] **Due livelli di analisi**:
+  - **Livello 1**: Overview per `msg_id` (statistiche aggregate, lead correlate)
+  - **Livello 2**: Overview per campagne Meta (statistiche aggregate, metriche marketing, timeline)
+- [ ] Grafici performance: DA IMPLEMENTARE (trend, distribuzione)
 
 #### 3.2 Dashboard Analytics 360° ✅ COMPLETATA
 - [x] Nuova sezione `/analytics`
@@ -233,13 +254,15 @@
 - [ ] Report periodici configurabili
 - [ ] Alert configurabili (es. CPL sopra soglia)
 
-#### 3.4 Correlazione Automatica Lead ↔ Marketing ⚠️ DA IMPLEMENTARE
-- [ ] Logica per correlare automaticamente lead con dati marketing
-- [ ] Strategia da definire:
-  - UTM parameters in Magellano?
-  - Campaign ID matching?
-  - Facebook Click ID (fbclid)?
-- [ ] Popolamento automatico di meta_campaign_id, meta_adset_id, meta_ad_id in Lead
+#### 3.4 Correlazione Automatica Lead ↔ Marketing ✅ COMPLETATA
+- [x] Logica per correlare automaticamente lead con dati marketing
+- [x] Strategia implementata:
+  - Match usando `facebook_campaign_name` → `MetaCampaign.name`
+  - Match usando `facebook_ad_set` → `MetaAdSet.name`
+  - Match usando `facebook_ad_name` → `MetaAd.name`
+  - Match usando `facebook_id` → `MetaAd.ad_id` (priorità)
+- [x] Popolamento automatico di meta_campaign_id, meta_adset_id, meta_ad_id in Lead
+- [x] Integrata nel sync job Magellano (`magellano_sync.py`)
 
 ---
 
@@ -371,18 +394,31 @@
 - **Dashboard Analytics 360°**:
   - Vista correlazione marketing ↔ feedback
   - Metriche aggregate, filtri avanzati
+- **Riorganizzazione architettura**:
+  - Separazione frontend/backend (directory `frontend/`)
+  - Riorganizzazione `services/` in 3 directory (api/, integrations/, sync/)
+  - 4 job autonomi separati invece di funzioni in un file
+  - SyncOrchestrator per gestione pipeline
+  - Docker configurato per includere frontend nell'immagine
+- **Correlazione automatica Lead ↔ Marketing**:
+  - Service `LeadCorrelationService` implementato
+  - Match automatico usando campi Facebook da Magellano
+  - Integrato nel sync job Magellano
+- **Vista dettaglio lead estesa**:
+  - Pagina `/leads/{id}` con due livelli di analisi
+  - Overview per `msg_id` e per campagne Meta
+  - Metriche marketing e timeline
 
 ### ⚠️ DA FARE
-- **Correlazione automatica Lead ↔ Marketing**: definire strategia (UTM, Campaign ID, etc.)
-- **Vista dettaglio lead estesa**: pagina `/leads/{id}` con dati completi
 - **Grafici analytics**: trend, distribuzione, heatmap
 - **Export e report**: CSV/Excel, report periodici
 - **Logica selezione lead Ulixe**: definire meglio quali lead richiamare
 - **Update Magellano**: quando necessario, implementare update stati
 
 ### 📊 PROSSIMI PASSI
-1. Eseguire migration database: `alembic upgrade head`
-2. Configurare account Meta in `/settings/meta-accounts`
-3. Testare pipeline completa scheduler
-4. Definire strategia correlazione lead ↔ marketing
-5. Implementare vista dettaglio lead estesa
+1. ✅ ~~Eseguire migration database: `alembic upgrade head`~~ (Completato)
+2. ✅ ~~Riorganizzazione struttura progetto~~ (Completato)
+3. Configurare account Meta in `/settings/meta-accounts`
+4. Testare pipeline completa scheduler
+5. Definire strategia correlazione lead ↔ marketing
+6. Implementare vista dettaglio lead estesa
