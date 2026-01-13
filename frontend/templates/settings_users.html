@@ -51,9 +51,9 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             {% if user_item.id != user.id %}
-                            <form action="/settings/users/delete" method="POST" class="inline">
+                            <form action="/settings/users/delete" method="POST" class="inline" onsubmit="return handleDeleteConfirm(event, 'Sicuro di voler rimuovere questo utente?')">
                                 <input type="hidden" name="user_id" value="{{ user_item.id }}">
-                                <button type="submit" class="text-red-600 hover:text-red-900 transition-colors" onclick="return confirm('Sicuro di voler rimuovere questo utente?')">
+                                <button type="submit" class="text-red-600 hover:text-red-900 transition-colors">
                                     Elimina
                                 </button>
                             </form>
@@ -92,4 +92,15 @@
         </div>
     </div>
 </div>
+
+<script>
+async function handleDeleteConfirm(event, message) {
+    event.preventDefault();
+    const confirmed = await showCustomConfirm('Conferma Eliminazione', message);
+    if (confirmed) {
+        event.target.submit();
+    }
+    return false;
+}
+</script>
 {% endblock %}

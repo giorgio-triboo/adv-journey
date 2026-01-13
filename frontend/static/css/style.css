@@ -216,3 +216,15 @@ body {
     background-clip: text;
     -webkit-text-fill-color: transparent;
 }
+
+/* Custom Modal Styles */
+#customModal {
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+#modalContent {
+    transform: scale(0.95);
+    opacity: 0;
+    transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+}

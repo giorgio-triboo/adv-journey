@@ -13,6 +13,37 @@ from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
 
+def translate_error(error_code: str) -> str:
+    """Traduce i codici di errore in messaggi italiani"""
+    error_translations = {
+        'not_found': 'Elemento non trovato',
+        'missing_fields': 'Campi obbligatori mancanti',
+        'missing_account_id': 'ID account mancante',
+        'missing_token': 'Token di accesso mancante',
+        'oauth_not_configured': 'OAuth non configurato',
+        'invalid_state': 'Stato OAuth non valido',
+        'no_code': 'Codice di autorizzazione mancante',
+        'no_token': 'Token di accesso non ricevuto',
+        'no_accounts': 'Nessun account disponibile',
+        'session_expired': 'Sessione scaduta',
+        'no_accounts_selected': 'Nessun account selezionato',
+        'unauthorized': 'Non autorizzato',
+        'inactive': 'Account inattivo',
+        'Permissions error': 'Errore di permessi',
+        'permissions_error': 'Errore di permessi',
+        'Connection successful': 'Connessione riuscita',
+        'Access token not configured': 'Token di accesso non configurato'
+    }
+    # Se il codice è già tradotto o contiene spazi, restituiscilo così com'è
+    if error_code in error_translations:
+        return error_translations[error_code]
+    # Altrimenti prova a tradurre parti comuni
+    if 'Permissions' in error_code or 'permissions' in error_code.lower():
+        return 'Errore di permessi'
+    if 'Access token' in error_code or 'access token' in error_code.lower():
+        return 'Token di accesso non configurato'
+    return error_code
+
 router = APIRouter(include_in_schema=False)
 import os
 # In Docker: frontend è montato in /app/frontend
@@ -401,6 +432,63 @@ async def settings_campaigns(request: Request, db: Session = Depends(get_db)):
         "active_page": "campaigns"
     })
 
+@router.get("/settings/campaigns/edit/{campaign_id}")
+async def edit_campaign(request: Request, campaign_id: int, db: Session = Depends(get_db)):
+    """Pagina di modifica campagna"""
+    user_session = request.session.get('user')
+    if not user_session:
+        return RedirectResponse(url='/')
+    
+    current_user = db.query(User).filter(User.email == user_session.get('email')).first()
+    if not current_user:
+        return RedirectResponse(url='/')
+    
+    from models import ManagedCampaign
+    campaign = db.query(ManagedCampaign).filter(ManagedCampaign.id == campaign_id).first()
+    
+    if not campaign:
+        return RedirectResponse(url=f'/settings/campaigns?error={translate_error("not_found")}', status_code=303)
+    
+    return templates.TemplateResponse("settings_campaigns_edit.html", {
+        "request": request,
+        "title": f"Modifica Campagna {campaign.campaign_id}",
+        "user": current_user,
+        "campaign": campaign,
+        "active_page": "campaigns"
+    })
+
+@router.post("/settings/campaigns/edit/{campaign_id}")
+async def update_campaign(request: Request, campaign_id: int, db: Session = Depends(get_db)):
+    """Aggiorna campagna esistente"""
+    if not request.session.get('user'): return RedirectResponse(url='/')
+    form = await request.form()
+    from models import ManagedCampaign
+    
+    campaign = db.query(ManagedCampaign).filter(ManagedCampaign.id == campaign_id).first()
+    if not campaign:
+        return RedirectResponse(url=f'/settings/campaigns?error={translate_error("not_found")}', status_code=303)
+    
+    name = form.get("name", "").strip()
+    cliente_name = form.get("cliente_name", "").strip() or None
+    pay_level = form.get("pay_level", "").strip() or None
+    msg_id_pattern = form.get("msg_id_pattern", "").strip() or None
+    ulixe_ids_str = form.get("ulixe_ids", "").strip()
+    is_active = form.get("is_active") == "on"
+    
+    if name:
+        campaign.name = name
+    campaign.cliente_name = cliente_name
+    campaign.pay_level = pay_level
+    campaign.msg_id_pattern = msg_id_pattern
+    campaign.is_active = is_active
+    
+    # Parse Ulixe IDs
+    if ulixe_ids_str:
+        campaign.ulixe_ids = [uid.strip() for uid in ulixe_ids_str.split(',') if uid.strip()]
+    
+    db.commit()
+    return RedirectResponse(url='/settings/campaigns?success=updated', status_code=303)
+
 @router.get("/settings")
 async def settings_redirect(request: Request):
     return RedirectResponse(url='/settings/users')
@@ -469,16 +557,39 @@ async def add_campaign(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     from models import ManagedCampaign
     
+    campaign_id = form.get("campaign_id", "").strip()
+    name = form.get("name", "").strip()
+    cliente_name = form.get("cliente_name", "").strip() or None
+    pay_level = form.get("pay_level", "").strip() or None
+    msg_id_pattern = form.get("msg_id_pattern", "").strip() or None
     ulixe_ids_str = form.get("ulixe_ids", "")
-    ulixe_ids = [uid.strip() for uid in ulixe_ids_str.split(",") if uid.strip()]
     
-    new_campaign = ManagedCampaign(
-        campaign_id=form.get("campaign_id"),
-        name=form.get("name"),
-        ulixe_ids=ulixe_ids,
-        is_active=True
-    )
-    db.add(new_campaign)
+    if not campaign_id or not name:
+        return RedirectResponse(url='/settings/campaigns?error=missing_fields', status_code=303)
+    
+    ulixe_ids = [uid.strip() for uid in ulixe_ids_str.split(",") if uid.strip()] if ulixe_ids_str else []
+    
+    # Check if exists
+    existing = db.query(ManagedCampaign).filter(ManagedCampaign.campaign_id == campaign_id).first()
+    if existing:
+        existing.name = name
+        existing.cliente_name = cliente_name
+        existing.pay_level = pay_level
+        existing.msg_id_pattern = msg_id_pattern
+        existing.ulixe_ids = ulixe_ids
+        existing.is_active = True
+    else:
+        new_campaign = ManagedCampaign(
+            campaign_id=campaign_id,
+            name=name,
+            cliente_name=cliente_name,
+            pay_level=pay_level,
+            msg_id_pattern=msg_id_pattern,
+            ulixe_ids=ulixe_ids,
+            is_active=True
+        )
+        db.add(new_campaign)
+    
     db.commit()
     return RedirectResponse(url='/settings/campaigns', status_code=303)
 
@@ -508,8 +619,11 @@ async def settings_meta_accounts(request: Request, db: Session = Depends(get_db)
     from config import settings
     accounts = db.query(MetaAccount).all()
     
-    # Verifica se OAuth è configurato
+    # Verifica se OAuth è configurato (opzionale - il token può essere usato direttamente)
     oauth_enabled = bool(settings.META_APP_ID and settings.META_APP_SECRET)
+    
+    # Verifica se c'è un token di sistema disponibile
+    has_system_token = bool(settings.META_ACCESS_TOKEN)
     
     return templates.TemplateResponse("settings_meta_accounts.html", {
         "request": request,
@@ -517,24 +631,34 @@ async def settings_meta_accounts(request: Request, db: Session = Depends(get_db)
         "user": current_user,
         "accounts": accounts,
         "active_page": "meta_accounts",
-        "oauth_enabled": oauth_enabled
+        "oauth_enabled": oauth_enabled,
+        "has_system_token": has_system_token
     })
 
 @router.post("/settings/meta-accounts")
 async def add_meta_account(request: Request, db: Session = Depends(get_db)):
-    """Endpoint legacy per aggiungere account con token manuale (deprecato, usa OAuth)"""
+    """Aggiunge account Meta. Usa token dal form o dal .env se disponibile."""
     if not request.session.get('user'): return RedirectResponse(url='/')
     form = await request.form()
     from models import MetaAccount
     from services.integrations.meta_marketing import MetaMarketingService
     from services.utils.crypto import encrypt_token
+    from config import settings
     
     account_id = form.get("account_id", "").strip()
     access_token = form.get("access_token", "").strip()
     name = form.get("name", "").strip()
     
-    if not account_id or not access_token:
-        return RedirectResponse(url='/settings/meta-accounts?error=missing_fields', status_code=303)
+    # Se non è fornito un token nel form, usa quello dal .env (token di sistema)
+    if not access_token and settings.META_ACCESS_TOKEN:
+        access_token = settings.META_ACCESS_TOKEN
+        logger.info(f"Usando token di sistema da META_ACCESS_TOKEN per account {account_id}")
+    
+    if not account_id:
+        return RedirectResponse(url='/settings/meta-accounts?error=missing_account_id', status_code=303)
+    
+    if not access_token:
+        return RedirectResponse(url='/settings/meta-accounts?error=missing_token', status_code=303)
     
     # Test connection
     service = MetaMarketingService(access_token=access_token)
@@ -724,41 +848,21 @@ async def meta_oauth_callback(request: Request, db: Session = Depends(get_db)):
             if not access_token:
                 return RedirectResponse(url='/settings/meta-accounts?error=no_token', status_code=303)
             
-            # Ottieni informazioni utente e account disponibili
+            # Ottieni account disponibili per verificare che ci siano
             service = MetaMarketingService(access_token=access_token)
             accounts = service.get_accounts()
             
             if not accounts:
                 return RedirectResponse(url='/settings/meta-accounts?error=no_accounts', status_code=303)
             
-            # Cripta il token
+            # Salva token temporaneamente nella sessione (criptato) con timestamp
+            # Il token scade dopo 10 minuti per sicurezza
             encrypted_token = encrypt_token(access_token)
+            request.session['meta_oauth_token'] = encrypted_token
+            request.session['meta_oauth_token_expires'] = (datetime.utcnow() + timedelta(minutes=10)).timestamp()
             
-            # Salva tutti gli account disponibili
-            for account_data in accounts:
-                account_id = account_data.get('account_id')
-                account_name = account_data.get('name', 'Unknown')
-                
-                existing = db.query(MetaAccount).filter(MetaAccount.account_id == account_id).first()
-                if existing:
-                    # Aggiorna token e nome
-                    existing.access_token = encrypted_token
-                    existing.name = account_name
-                    existing.is_active = True
-                    existing.updated_at = datetime.utcnow()
-                else:
-                    # Crea nuovo account
-                    new_account = MetaAccount(
-                        account_id=account_id,
-                        name=account_name,
-                        access_token=encrypted_token,
-                        is_active=True,
-                        sync_enabled=True
-                    )
-                    db.add(new_account)
-            
-            db.commit()
-            return RedirectResponse(url='/settings/meta-accounts?success=oauth_connected', status_code=303)
+            # Redirect alla pagina di selezione account
+            return RedirectResponse(url='/settings/meta-accounts/oauth/select', status_code=303)
             
     except httpx.HTTPStatusError as e:
         logger.error(f"Meta OAuth HTTP error: {e}")
@@ -768,6 +872,128 @@ async def meta_oauth_callback(request: Request, db: Session = Depends(get_db)):
         logger.error(f"Meta OAuth callback error: {e}")
         error_msg = str(e).replace('&', 'e').replace('?', '')[:100]  # Sanitizza per URL
         return RedirectResponse(url=f'/settings/meta-accounts?error={error_msg}', status_code=303)
+
+@router.get("/settings/meta-accounts/oauth/select")
+async def meta_oauth_select_accounts(request: Request, db: Session = Depends(get_db)):
+    """Pagina di selezione account Meta dopo OAuth"""
+    if not request.session.get('user'):
+        return RedirectResponse(url='/')
+    
+    from services.integrations.meta_marketing import MetaMarketingService
+    from services.utils.crypto import decrypt_token
+    
+    # Verifica che il token sia ancora valido (max 10 minuti)
+    token_expires = request.session.get('meta_oauth_token_expires')
+    if not token_expires or datetime.utcnow().timestamp() > token_expires:
+        request.session.pop('meta_oauth_token', None)
+        request.session.pop('meta_oauth_token_expires', None)
+        return RedirectResponse(url='/settings/meta-accounts?error=session_expired', status_code=303)
+    
+    encrypted_token = request.session.get('meta_oauth_token')
+    if not encrypted_token:
+        return RedirectResponse(url='/settings/meta-accounts?error=no_token', status_code=303)
+    
+    try:
+        # Decripta e ottieni account
+        decrypted_token = decrypt_token(encrypted_token)
+        service = MetaMarketingService(access_token=decrypted_token)
+        accounts = service.get_accounts()
+        
+        # Verifica quali account sono già presenti nel DB
+        from models import MetaAccount
+        existing_accounts = {acc.account_id for acc in db.query(MetaAccount).all()}
+        
+        # Aggiungi flag per account esistenti
+        for account in accounts:
+            account['already_added'] = account['account_id'] in existing_accounts
+        
+        current_user = db.query(User).filter(User.email == request.session.get('user', {}).get('email')).first()
+        
+        return templates.TemplateResponse("settings_meta_accounts_select.html", {
+            "request": request,
+            "title": "Seleziona Account Meta",
+            "user": current_user,
+            "accounts": accounts,
+            "active_page": "meta_accounts"
+        })
+    except Exception as e:
+        logger.error(f"Error loading accounts for selection: {e}")
+        return RedirectResponse(url=f'/settings/meta-accounts?error={str(e)}', status_code=303)
+
+@router.post("/settings/meta-accounts/oauth/save")
+async def meta_oauth_save_accounts(request: Request, db: Session = Depends(get_db)):
+    """Salva solo gli account selezionati dopo OAuth"""
+    if not request.session.get('user'):
+        return RedirectResponse(url='/')
+    
+    from models import MetaAccount
+    from services.integrations.meta_marketing import MetaMarketingService
+    from services.utils.crypto import decrypt_token, encrypt_token
+    
+    # Verifica token ancora valido
+    token_expires = request.session.get('meta_oauth_token_expires')
+    if not token_expires or datetime.utcnow().timestamp() > token_expires:
+        request.session.pop('meta_oauth_token', None)
+        request.session.pop('meta_oauth_token_expires', None)
+        return RedirectResponse(url='/settings/meta-accounts?error=session_expired', status_code=303)
+    
+    encrypted_token = request.session.get('meta_oauth_token')
+    if not encrypted_token:
+        return RedirectResponse(url='/settings/meta-accounts?error=no_token', status_code=303)
+    
+    form = await request.form()
+    selected_account_ids = form.getlist('account_ids')  # Lista di account selezionati
+    
+    if not selected_account_ids:
+        # Pulisci sessione e torna indietro
+        request.session.pop('meta_oauth_token', None)
+        request.session.pop('meta_oauth_token_expires', None)
+        return RedirectResponse(url='/settings/meta-accounts?info=no_accounts_selected', status_code=303)
+    
+    try:
+        decrypted_token = decrypt_token(encrypted_token)
+        service = MetaMarketingService(access_token=decrypted_token)
+        all_accounts = service.get_accounts()
+        
+        # Cripta token per salvataggio
+        encrypted_token_for_db = encrypt_token(decrypted_token)
+        
+        saved_count = 0
+        for account_data in all_accounts:
+            account_id = account_data.get('account_id')
+            if account_id in selected_account_ids:
+                # Verifica se esiste già
+                existing = db.query(MetaAccount).filter(MetaAccount.account_id == account_id).first()
+                if existing:
+                    # Aggiorna token e nome
+                    existing.access_token = encrypted_token_for_db
+                    existing.name = account_data.get('name', existing.name)
+                    existing.is_active = True
+                    existing.updated_at = datetime.utcnow()
+                else:
+                    # Crea nuovo account
+                    new_account = MetaAccount(
+                        account_id=account_id,
+                        name=account_data.get('name', 'Unknown'),
+                        access_token=encrypted_token_for_db,
+                        is_active=True,
+                        sync_enabled=True
+                    )
+                    db.add(new_account)
+                saved_count += 1
+        
+        db.commit()
+        
+        # Pulisci token dalla sessione
+        request.session.pop('meta_oauth_token', None)
+        request.session.pop('meta_oauth_token_expires', None)
+        
+        return RedirectResponse(url=f'/settings/meta-accounts?success={saved_count}_accounts_added', status_code=303)
+        
+    except Exception as e:
+        logger.error(f"Error saving selected accounts: {e}")
+        db.rollback()
+        return RedirectResponse(url=f'/settings/meta-accounts?error={str(e)}', status_code=303)
 
 @router.post("/settings/meta-accounts/test")
 async def test_meta_account(request: Request, db: Session = Depends(get_db)):

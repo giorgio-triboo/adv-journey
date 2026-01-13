@@ -50,10 +50,10 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
          # Let's reject for now if strict whitelist. 
          # Actually, implementation plan said "Implement Auth System (Google OAuth + Whitelist)"
          # Let's assume we need to manually add users to DB to whitelist them.
-         return RedirectResponse(url='/?error=unauthorized')
+         return RedirectResponse(url='/?error=Non autorizzato')
 
     if not user.is_active:
-        return RedirectResponse(url='/?error=inactive')
+        return RedirectResponse(url='/?error=Account inattivo')
 
     # Set session
     request.session['user'] = dict(user_info)

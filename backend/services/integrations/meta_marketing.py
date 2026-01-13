@@ -34,21 +34,29 @@ class MetaMarketingService:
         Returns: {"success": bool, "message": str, "account_name": str}
         """
         if not self.access_token:
-            return {"success": False, "message": "Access token not configured"}
+            return {"success": False, "message": "Token di accesso non configurato"}
         
         try:
             account = AdAccount(f"act_{account_id}")
             account_info = account.api_get(fields=['name', 'account_id', 'currency'])
             return {
                 "success": True,
-                "message": "Connection successful",
-                "account_name": account_info.get('name', 'Unknown'),
+                "message": "Connessione riuscita",
+                "account_name": account_info.get('name', 'Sconosciuto'),
                 "account_id": account_info.get('account_id'),
                 "currency": account_info.get('currency', 'EUR')
             }
         except Exception as e:
             logger.error(f"Meta connection test failed: {e}")
-            return {"success": False, "message": str(e)}
+            # Traduci errori comuni
+            error_msg = str(e)
+            if "Permissions" in error_msg or "permissions" in error_msg.lower():
+                error_msg = "Errore di permessi"
+            elif "Invalid" in error_msg or "invalid" in error_msg.lower():
+                error_msg = "Token o account non valido"
+            elif "expired" in error_msg.lower():
+                error_msg = "Token scaduto"
+            return {"success": False, "message": error_msg}
 
     def get_accounts(self) -> List[Dict]:
         """
