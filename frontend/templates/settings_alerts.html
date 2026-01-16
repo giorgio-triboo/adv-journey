@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Alert Email</h1>
+        <p class="text-neutral-500 mt-2">Configura le notifiche email per i job di sincronizzazione.</p>
+    </div>
+
+    <!-- SMTP Configuration Info -->
+    <div class="glass-card mb-6 p-4 bg-blue-50 border-l-4 border-blue-400">
+        <h3 class="font-semibold text-blue-900 mb-2">Configurazione SMTP</h3>
+        <p class="text-sm text-blue-700">
+            Configura le credenziali SMTP nel file <code class="bg-blue-100 px-2 py-1 rounded">.env</code>:
+        </p>
+        <ul class="text-sm text-blue-700 mt-2 ml-4 list-disc">
+            <li><code>SMTP_HOST</code> - Server SMTP</li>
+            <li><code>SMTP_PORT</code> - Porta SMTP (default: 587)</li>
+            <li><code>SMTP_USER</code> - Username SMTP</li>
+            <li><code>SMTP_PASSWORD</code> - Password SMTP</li>
+            <li><code>SMTP_FROM_EMAIL</code> - Email mittente</li>
+        </ul>
+    </div>
+
+    <!-- Alert Configurations -->
+    <div class="space-y-6">
+        {% for alert_type in alert_types %}
+        <div class="glass-card p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">{{ alert_type.label }}</h2>
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" 
+                           class="sr-only peer"
+                           id="enabled_{{ alert_type.value }}"
+                           {% if configs_by_type.get(alert_type.value) and configs_by_type[alert_type.value].enabled %}checked{% endif %}
+                           onchange="saveAlertConfig('{{ alert_type.value }}')">
+                    <div class="relative w-11 h-6 bg-neutral-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    <span class="ml-3 text-sm font-medium text-neutral-700">Abilitato</span>
+                </label>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-neutral-700 mb-2">
+                        Destinatari Email <span class="text-red-500">*</span>
+                    </label>
+                    <textarea id="recipients_{{ alert_type.value }}" 
+                              rows="3"
+                              placeholder="email1@example.com&#10;email2@example.com"
+                              class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                              onblur="saveAlertConfig('{{ alert_type.value }}')">{% if configs_by_type.get(alert_type.value) %}{{ configs_by_type[alert_type.value].recipients|join('\n') }}{% endif %}</textarea>
+                    <p class="text-xs text-neutral-500 mt-1">Una email per riga</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" 
+                               id="on_success_{{ alert_type.value }}"
+                               {% if configs_by_type.get(alert_type.value) and configs_by_type[alert_type.value].on_success %}checked{% endif %}
+                               onchange="saveAlertConfig('{{ alert_type.value }}')"
+                               class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                        <span class="ml-2 text-sm text-neutral-700">Invia anche su successo</span>
+                    </label>
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" 
+                               id="on_error_{{ alert_type.value }}"
+                               {% if not configs_by_type.get(alert_type.value) or configs_by_type[alert_type.value].on_error %}checked{% endif %}
+                               onchange="saveAlertConfig('{{ alert_type.value }}')"
+                               class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                        <span class="ml-2 text-sm text-neutral-700">Invia su errore</span>
+                    </label>
+                </div>
+
+                <div class="flex gap-2">
+                    <button onclick="testAlert('{{ alert_type.value }}')" 
+                            class="px-4 py-2 bg-neutral-100 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-200 transition-all text-sm">
+                        Test Email
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+async function saveAlertConfig(alertType) {
+    const enabled = document.getElementById(`enabled_${alertType}`).checked;
+    const recipientsText = document.getElementById(`recipients_${alertType}`).value;
+    const recipients = recipientsText.split('\n')
+        .map(email => email.trim())
+        .filter(email => email.length > 0);
+    const onSuccess = document.getElementById(`on_success_${alertType}`).checked;
+    const onError = document.getElementById(`on_error_${alertType}`).checked;
+
+    try {
+        const response = await fetch('/api/alerts', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                alert_type: alertType,
+                enabled: enabled,
+                recipients: recipients,
+                on_success: onSuccess,
+                on_error: onError
+            })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+            showNotification('success', 'Configurazione salvata');
+        } else {
+            showNotification('error', data.error || 'Errore nel salvataggio');
+        }
+    } catch (error) {
+        showNotification('error', 'Errore di connessione: ' + error.message);
+    }
+}
+
+async function testAlert(alertType) {
+    const recipientsText = document.getElementById(`recipients_${alertType}`).value;
+    const recipients = recipientsText.split('\n')
+        .map(email => email.trim())
+        .filter(email => email.length > 0);
+
+    if (recipients.length === 0) {
+        showNotification('error', 'Inserisci almeno un destinatario');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/alerts/test', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                recipients: recipients
+            })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+            showNotification('success', 'Email di test inviata con successo!');
+        } else {
+            showNotification('error', data.error || 'Errore nell\'invio dell\'email di test');
+        }
+    } catch (error) {
+        showNotification('error', 'Errore di connessione: ' + error.message);
+    }
+}
+
+function showNotification(type, message) {
+    // Simple notification (you can enhance this with a toast library)
+    const notification = document.createElement('div');
+    notification.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 ${
+        type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+    }`;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.remove();
+    }, 3000);
+}
+</script>
+{% endblock %}

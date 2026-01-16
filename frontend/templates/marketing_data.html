@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Dati Marketing Meta</h1>
+        <p class="text-neutral-500 mt-2">Visualizza spend, impressions, clicks, conversions e altre metriche di marketing.</p>
+    </div>
+
+    <!-- Filtri -->
+    <div class="glass-card mb-6 p-4">
+        <form method="GET" class="grid grid-cols-1 sm:grid-cols-5 gap-4">
+            <div>
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Account</label>
+                <select name="account_id" 
+                        class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">Tutti</option>
+                    {% for account in accounts %}
+                    <option value="{{ account.account_id }}" {% if selected_account_id == account.account_id %}selected{% endif %}>
+                        {{ account.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div>
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Campagna</label>
+                <select name="campaign_id" 
+                        class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">Tutte</option>
+                    {% for campaign in campaigns %}
+                    <option value="{{ campaign.campaign_id }}" {% if selected_campaign_id == campaign.campaign_id %}selected{% endif %}>
+                        {{ campaign.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div>
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Dal</label>
+                <input type="date" name="date_from" value="{{ date_from }}" 
+                       class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            
+            <div>
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Al</label>
+                <input type="date" name="date_to" value="{{ date_to }}" 
+                       class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            
+            <div class="flex items-end">
+                <button type="submit" class="w-full px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
+                    Applica Filtri
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Totali Aggregati -->
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+        <div class="glass-card p-6 flex items-center border-l-4 border-green-400">
+            <div class="bg-green-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">Spend Totale</p>
+                <p class="text-2xl font-bold text-neutral-900">
+                    € {{ "%.2f"|format(totals.total_spend or 0)|replace('.', ',') }}
+                </p>
+            </div>
+        </div>
+
+        <div class="glass-card p-6 flex items-center border-l-4 border-blue-400">
+            <div class="bg-blue-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">Impressions</p>
+                <p class="text-2xl font-bold text-neutral-900">
+                    {{ "{:,}"|format(totals.total_impressions or 0)|replace(',', '.') }}
+                </p>
+            </div>
+        </div>
+
+        <div class="glass-card p-6 flex items-center border-l-4 border-purple-400">
+            <div class="bg-purple-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">Clicks</p>
+                <p class="text-2xl font-bold text-neutral-900">
+                    {{ "{:,}"|format(totals.total_clicks or 0)|replace(',', '.') }}
+                </p>
+            </div>
+        </div>
+
+        <div class="glass-card p-6 flex items-center border-l-4 border-yellow-400">
+            <div class="bg-yellow-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">Conversions</p>
+                <p class="text-2xl font-bold text-neutral-900">
+                    {{ "{:,}"|format(totals.total_conversions or 0)|replace(',', '.') }}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabella Dati Marketing -->
+    <div class="glass-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50 flex justify-between items-center">
+            <h2 class="text-lg font-semibold">Dati Giornalieri</h2>
+            <span class="text-xs text-neutral-500">{{ marketing_data|length }} record</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-neutral-200">
+                <thead class="bg-neutral-50/50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Data</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Account</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Campagna</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase">AdSet</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Creatività</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase">Spend</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase">Impressions</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase">Clicks</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase">Conversions</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase">CTR</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase">CPC</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase">CPM</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-200">
+                    {% for data, ad, adset, campaign, account in marketing_data %}
+                    <tr class="hover:bg-neutral-50/50 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-neutral-900">
+                            {{ data.date.strftime('%d/%m/%Y') }}
+                        </td>
+                        <td class="px-6 py-4 text-sm text-neutral-600">{{ account.name }}</td>
+                        <td class="px-6 py-4 text-sm text-neutral-700 font-medium">{{ campaign.name }}</td>
+                        <td class="px-6 py-4 text-sm text-neutral-600">{{ adset.name }}</td>
+                        <td class="px-6 py-4 text-sm text-neutral-600">{{ ad.name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-green-600">
+                            € {{ data.spend|replace('.', ',') }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-neutral-700">
+                            {{ "{:,}"|format(data.impressions or 0)|replace(',', '.') }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-neutral-700">
+                            {{ "{:,}"|format(data.clicks or 0)|replace(',', '.') }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-neutral-700">
+                            {{ "{:,}"|format(data.conversions or 0)|replace(',', '.') }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-neutral-700">
+                            {{ data.ctr or '0,00' }}%
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-neutral-700">
+                            € {{ data.cpc or '0,00'|replace('.', ',') }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-neutral-700">
+                            € {{ data.cpm or '0,00'|replace('.', ',') }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not marketing_data %}
+                    <tr>
+                        <td colspan="12" class="px-6 py-12 text-center text-neutral-500 italic">
+                            Nessun dato disponibile per i filtri selezionati.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

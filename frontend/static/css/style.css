@@ -107,7 +107,7 @@ body {
 }
 
 .nav-submenu.open {
-    max-height: 200px;
+    max-height: 1000px;
 }
 
 .nav-submenu .nav-item {

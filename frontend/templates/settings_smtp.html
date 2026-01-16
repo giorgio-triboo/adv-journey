@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Configurazione SMTP</h1>
+        <p class="text-neutral-500 mt-2">Configura le credenziali SMTP per l'invio delle email di notifica. I dati vengono salvati in modo criptato nel database.</p>
+    </div>
+
+    {% if request.query_params.get('error') %}
+    <div class="glass-card mb-6 p-4 bg-red-50 border-l-4 border-red-400">
+        <p class="text-red-700">{{ request.query_params.get('error') }}</p>
+    </div>
+    {% endif %}
+
+    {% if request.query_params.get('success') %}
+    <div class="glass-card mb-6 p-4 bg-green-50 border-l-4 border-green-400">
+        <p class="text-green-700">{{ request.query_params.get('success') }}</p>
+    </div>
+    {% endif %}
+
+    <div class="glass-card p-6">
+        <form action="/settings/smtp" method="POST" class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-neutral-700 mb-2">
+                        SMTP Host <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" 
+                           name="host" 
+                           value="{% if smtp_config %}{{ smtp_config.host }}{% endif %}"
+                           placeholder="smtp.gmail.com"
+                           required
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-neutral-700 mb-2">
+                        SMTP Port <span class="text-red-500">*</span>
+                    </label>
+                    <input type="number" 
+                           name="port" 
+                           value="{% if smtp_config %}{{ smtp_config.port }}{% else %}587{% endif %}"
+                           placeholder="587"
+                           required
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-neutral-700 mb-2">
+                        SMTP User <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" 
+                           name="user" 
+                           value="{% if smtp_config %}{{ smtp_config.user }}{% endif %}"
+                           placeholder="user@example.com"
+                           required
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-neutral-700 mb-2">
+                        SMTP Password <span class="text-red-500">*</span>
+                    </label>
+                    <input type="password" 
+                           name="password" 
+                           placeholder="{% if smtp_config %}Lascia vuoto per mantenere la password esistente{% else %}Inserisci password{% endif %}"
+                           {% if not smtp_config %}required{% endif %}
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <p class="text-xs text-neutral-500 mt-1">
+                        {% if smtp_config %}Lascia vuoto per mantenere la password attuale{% else %}Password verrà salvata in modo criptato{% endif %}
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-neutral-700 mb-2">
+                        From Email
+                    </label>
+                    <input type="email" 
+                           name="from_email" 
+                           value="{% if smtp_config %}{{ smtp_config.from_email }}{% endif %}"
+                           placeholder="noreply@example.com"
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <p class="text-xs text-neutral-500 mt-1">Se vuoto, verrà usato SMTP User</p>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" 
+                           name="use_tls"
+                           {% if not smtp_config or smtp_config.use_tls %}checked{% endif %}
+                           class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                    <span class="ml-2 text-sm text-neutral-700">Usa TLS/SSL</span>
+                </label>
+
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" 
+                           name="is_active"
+                           {% if not smtp_config or smtp_config.is_active %}checked{% endif %}
+                           class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                    <span class="ml-2 text-sm text-neutral-700">Configurazione attiva</span>
+                </label>
+            </div>
+
+            <div class="flex gap-4 pt-4">
+                <button type="submit" 
+                        class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all">
+                    Salva Configurazione
+                </button>
+                {% if smtp_config %}
+                <button type="button" 
+                        onclick="testSMTP()"
+                        class="px-6 py-2 bg-neutral-100 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-200 transition-all">
+                    Test Configurazione
+                </button>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    {% if smtp_config %}
+    <div class="glass-card mt-6 p-4 bg-blue-50 border-l-4 border-blue-400">
+        <h3 class="font-semibold text-blue-900 mb-2">Informazioni</h3>
+        <ul class="text-sm text-blue-700 space-y-1">
+            <li>• La configurazione viene salvata in modo criptato nel database</li>
+            <li>• La password non viene mai mostrata per motivi di sicurezza</li>
+            <li>• Per modificare la password, inserisci la nuova password nel campo dedicato</li>
+            <li>• Usa il pulsante "Test Configurazione" per verificare che tutto funzioni correttamente</li>
+        </ul>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+async function testSMTP() {
+    if (!confirm('Vuoi inviare una email di test alla tua email (' + '{{ user.email }}' + ')?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/smtp/test', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+            alert('Email di test inviata con successo! Controlla la tua casella di posta.');
+        } else {
+            alert('Errore: ' + (data.error || 'Errore durante il test SMTP'));
+        }
+    } catch (error) {
+        alert('Errore di connessione: ' + error.message);
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Sync Manuale Dati Marketing Meta</h1>
+        <p class="text-neutral-500 mt-2">Forza l'aggiornamento dei dati marketing per un periodo specifico con metriche personalizzate.</p>
+    </div>
+
+    {% if request.query_params.get('error') %}
+    <div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+        <strong>Errore:</strong> {{ request.query_params.get('error') }}
+    </div>
+    {% endif %}
+    
+    {% if request.query_params.get('success') %}
+    <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
+        <strong>✓ Successo:</strong> {{ request.query_params.get('success') }}
+    </div>
+    {% endif %}
+
+    <div class="glass-card overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+            <h2 class="text-lg font-semibold">Configurazione Sync</h2>
+        </div>
+        <div class="px-6 py-8">
+            <form id="syncForm" class="space-y-6">
+                <!-- Selezione Account -->
+                <div>
+                    <label class="block text-sm font-semibold text-neutral-700 mb-2">
+                        Account Meta <span class="text-neutral-400 text-xs">(opzionale - lascia vuoto per tutti gli account attivi)</span>
+                    </label>
+                    <select name="account_id" id="account_id" 
+                            class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                        <option value="">-- Tutti gli account attivi --</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.account_id }}">{{ account.name }} ({{ account.account_id }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Selezione Date -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-neutral-700 mb-2">
+                            Data Inizio <span class="text-red-500">*</span>
+                        </label>
+                        <input type="date" name="start_date" id="start_date" required
+                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                               value="{{ default_start_date }}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-neutral-700 mb-2">
+                            Data Fine <span class="text-red-500">*</span>
+                        </label>
+                        <input type="date" name="end_date" id="end_date" required
+                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                               value="{{ default_end_date }}">
+                    </div>
+                </div>
+
+                <!-- Selezione Metriche -->
+                <div>
+                    <label class="block text-sm font-semibold text-neutral-700 mb-3">
+                        Metriche da Recuperare <span class="text-red-500">*</span>
+                    </label>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        <label class="flex items-center space-x-2 p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 cursor-pointer transition-colors">
+                            <input type="checkbox" name="metrics" value="spend" checked 
+                                   class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-neutral-700">Spend (Speso)</span>
+                        </label>
+                        <label class="flex items-center space-x-2 p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 cursor-pointer transition-colors">
+                            <input type="checkbox" name="metrics" value="actions" checked 
+                                   class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-neutral-700">Actions (Contatti)</span>
+                        </label>
+                        <label class="flex items-center space-x-2 p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 cursor-pointer transition-colors">
+                            <input type="checkbox" name="metrics" value="impressions" 
+                                   class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-neutral-700">Impressions</span>
+                        </label>
+                        <label class="flex items-center space-x-2 p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 cursor-pointer transition-colors">
+                            <input type="checkbox" name="metrics" value="clicks" 
+                                   class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-neutral-700">Clicks</span>
+                        </label>
+                        <label class="flex items-center space-x-2 p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 cursor-pointer transition-colors">
+                            <input type="checkbox" name="metrics" value="ctr" 
+                                   class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-neutral-700">CTR</span>
+                        </label>
+                        <label class="flex items-center space-x-2 p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 cursor-pointer transition-colors">
+                            <input type="checkbox" name="metrics" value="cpc" 
+                                   class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-neutral-700">CPC</span>
+                        </label>
+                        <label class="flex items-center space-x-2 p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 cursor-pointer transition-colors">
+                            <input type="checkbox" name="metrics" value="cpm" 
+                                   class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-neutral-700">CPM</span>
+                        </label>
+                        <label class="flex items-center space-x-2 p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 cursor-pointer transition-colors">
+                            <input type="checkbox" name="metrics" value="cost_per_action_type" 
+                                   class="w-4 h-4 text-indigo-600 border-neutral-300 rounded focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-neutral-700">Cost per Action</span>
+                        </label>
+                    </div>
+                    <p class="text-xs text-neutral-500 mt-2">
+                        <strong>Nota:</strong> Spend e Actions sono sempre necessari per calcolare il CPL. Le altre metriche sono opzionali.
+                    </p>
+                </div>
+
+                <!-- Pulsanti -->
+                <div class="flex items-center justify-between pt-4 border-t border-neutral-200">
+                    <div class="text-sm text-neutral-500">
+                        <p>La sincronizzazione verrà eseguita in background.</p>
+                        <p class="mt-1">I dati verranno salvati nel database per un riscontro locale.</p>
+                    </div>
+                    <button type="submit" id="syncButton"
+                            class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span id="syncButtonText">Avvia Sync</span>
+                        <span id="syncButtonLoading" class="hidden">⏳ Sincronizzazione in corso...</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Info Box -->
+    <div class="glass-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+            <h3 class="text-lg font-semibold">ℹ️ Informazioni</h3>
+        </div>
+        <div class="px-6 py-4 space-y-2 text-sm text-neutral-600">
+            <p><strong>Sync Automatica:</strong> Il cron notturno sincronizza automaticamente i dati fino a oggi-1.</p>
+            <p><strong>Sync Manuale:</strong> Usa questa maschera per sincronizzare periodi specifici o recuperare dati storici.</p>
+            <p><strong>Metriche:</strong> Seleziona solo le metriche necessarie per ottimizzare le chiamate API e ridurre i tempi di sincronizzazione.</p>
+            <p><strong>CPL:</strong> Per calcolare il CPL (Costo per Lead) sono necessari Spend e Conversions (da Actions).</p>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('syncForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const syncButton = document.getElementById('syncButton');
+    const syncButtonText = document.getElementById('syncButtonText');
+    const syncButtonLoading = document.getElementById('syncButtonLoading');
+    
+    // Disabilita il pulsante
+    syncButton.disabled = true;
+    syncButtonText.classList.add('hidden');
+    syncButtonLoading.classList.remove('hidden');
+    
+    // Raccogli i dati del form
+    const formData = new FormData(e.target);
+    const accountId = formData.get('account_id') || '';
+    const startDate = formData.get('start_date');
+    const endDate = formData.get('end_date');
+    const metrics = formData.getAll('metrics');
+    
+    // Validazione
+    if (metrics.length === 0) {
+        await showCustomAlert('Errore', 'Seleziona almeno una metrica.');
+        syncButton.disabled = false;
+        syncButtonText.classList.remove('hidden');
+        syncButtonLoading.classList.add('hidden');
+        return;
+    }
+    
+    // Verifica che spend e actions siano selezionati
+    if (!metrics.includes('spend') || !metrics.includes('actions')) {
+        const confirmed = await showCustomConfirm(
+            'Conferma',
+            'Spend e Actions sono raccomandati per calcolare il CPL. Vuoi continuare senza?'
+        );
+        if (!confirmed) {
+            syncButton.disabled = false;
+            syncButtonText.classList.remove('hidden');
+            syncButtonLoading.classList.add('hidden');
+            return;
+        }
+    }
+    
+    try {
+        const response = await fetch('/settings/meta-sync/manual', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                account_id: accountId || null,
+                start_date: startDate,
+                end_date: endDate,
+                metrics: metrics
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            await showCustomAlert('Successo', 
+                `Sincronizzazione avviata con successo!\n\n` +
+                `Account: ${result.account_name || 'Tutti'}\n` +
+                `Periodo: ${startDate} - ${endDate}\n` +
+                `Metriche: ${metrics.join(', ')}\n\n` +
+                `La sync è in esecuzione in background. Controlla i log per i dettagli.`
+            );
+            // Reset form (opzionale)
+            // e.target.reset();
+        } else {
+            await showCustomAlert('Errore', 'Errore durante la sincronizzazione: ' + (result.message || 'Errore sconosciuto'));
+        }
+    } catch (error) {
+        await showCustomAlert('Errore', 'Errore durante la richiesta: ' + error.message);
+    } finally {
+        syncButton.disabled = false;
+        syncButtonText.classList.remove('hidden');
+        syncButtonLoading.classList.add('hidden');
+    }
+});
+
+// Imposta data fine di default a oggi-1
+document.addEventListener('DOMContentLoaded', function() {
+    const endDateInput = document.getElementById('end_date');
+    if (endDateInput && !endDateInput.value) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        endDateInput.value = yesterday.toISOString().split('T')[0];
+    }
+    
+    // Imposta data inizio di default a 1 gennaio se non già impostata
+    const startDateInput = document.getElementById('start_date');
+    if (startDateInput && !startDateInput.value) {
+        const janFirst = new Date(new Date().getFullYear(), 0, 1);
+        startDateInput.value = janFirst.toISOString().split('T')[0];
+    }
+});
+</script>
+{% endblock %}

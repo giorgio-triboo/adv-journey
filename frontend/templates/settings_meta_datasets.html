@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Mapping Dataset Meta</h1>
+        <p class="text-neutral-500 mt-2">Collega le campagne Magellano ai Dataset Meta per gli eventi Conversion API (CAPI).</p>
+    </div>
+
+    {% if request.query_params.get('error') %}
+    <div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+        <strong>Errore:</strong> {{ request.query_params.get('error') }}
+    </div>
+    {% endif %}
+    
+    {% if request.query_params.get('success') %}
+    <div class="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
+        <strong>✓ Successo:</strong> {{ request.query_params.get('success') }}!
+    </div>
+    {% endif %}
+
+    <div class="glass-card overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+            <h2 class="text-lg font-semibold">Dataset Disponibili</h2>
+            <p class="text-sm text-neutral-500 mt-1">I dataset vengono recuperati dagli account Meta configurati.</p>
+        </div>
+        <div class="px-6 py-4">
+            <button onclick="loadDatasets()" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 shadow-md transition-all">
+                🔄 Carica Dataset
+            </button>
+            <div id="datasetsList" class="mt-4 space-y-2">
+                <p class="text-sm text-neutral-500 italic">Clicca su "Carica Dataset" per recuperare i dataset disponibili.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="glass-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+            <h2 class="text-lg font-semibold">Mapping Campagne Magellano → Dataset Meta</h2>
+            <p class="text-sm text-neutral-500 mt-1">Seleziona un dataset per ogni campagna Magellano. Gli eventi CAPI verranno inviati al dataset selezionato.</p>
+        </div>
+        
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-neutral-200">
+                <thead class="bg-neutral-50/50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Cliente</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">ID Magellano</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Dataset Meta</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase tracking-wider">Azioni</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-200">
+                    {% for campaign in campaigns %}
+                    <tr class="hover:bg-neutral-50/50 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-indigo-600">
+                            {{ campaign.cliente_name or '-' }}
+                        </td>
+                        <td class="px-6 py-4 text-sm">
+                            {% if campaign.magellano_ids %}
+                                <div class="flex flex-wrap gap-1">
+                                    {% for mag_id in campaign.magellano_ids %}
+                                    <span class="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded text-xs font-mono font-bold">{{ mag_id }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <span class="italic text-xs text-neutral-400">Nessuno</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-sm">
+                            <form action="/settings/meta-datasets/update" method="POST" class="inline-flex items-center gap-2" id="form-{{ campaign.id }}">
+                                <input type="hidden" name="campaign_id" value="{{ campaign.id }}">
+                                <select name="dataset_id" 
+                                        class="px-3 py-1.5 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                                        onchange="updateMapping({{ campaign.id }})">
+                                    <option value="">-- Nessun Dataset --</option>
+                                    <!-- Le opzioni verranno popolate dinamicamente -->
+                                </select>
+                                <span id="current-dataset-{{ campaign.id }}" class="text-xs text-neutral-500">
+                                    {% if campaign.meta_dataset_id %}
+                                        Attuale: <span class="font-mono">{{ campaign.meta_dataset_id }}</span>
+                                    {% else %}
+                                        Non configurato
+                                    {% endif %}
+                                </span>
+                            </form>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button onclick="updateMapping({{ campaign.id }})" 
+                                    class="px-4 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors">
+                                Salva
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not campaigns %}
+                    <tr>
+                        <td colspan="4" class="px-6 py-12 text-center text-neutral-500 italic">
+                            Nessuna campagna attiva configurata. <a href="/settings/campaigns" class="text-indigo-600 hover:underline">Configura una campagna</a>
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+let datasets = [];
+
+async function loadDatasets() {
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ Caricamento...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch('/api/marketing/datasets');
+        const data = await response.json();
+        
+        if (response.ok) {
+            datasets = data;
+            populateDatasetSelects();
+            document.getElementById('datasetsList').innerHTML = `
+                <div class="space-y-2">
+                    ${datasets.length > 0 ? 
+                        datasets.map(d => `
+                            <div class="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <span class="font-mono font-semibold text-indigo-900">${d.dataset_id}</span>
+                                        <span class="text-sm text-indigo-700 ml-2">${d.name}</span>
+                                    </div>
+                                    <span class="text-xs text-indigo-600">${d.account_name || 'Sistema'}</span>
+                                </div>
+                            </div>
+                        `).join('') 
+                        : '<p class="text-sm text-neutral-500 italic">Nessun dataset trovato. Verifica che gli account Meta siano configurati correttamente.</p>'
+                    }
+                </div>
+            `;
+        } else {
+            await showCustomAlert('Errore', 'Errore nel caricamento dei dataset: ' + (data.error || 'Errore sconosciuto'));
+        }
+    } catch (error) {
+        await showCustomAlert('Errore', 'Errore durante il caricamento: ' + error.message);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+function populateDatasetSelects() {
+    const selects = document.querySelectorAll('select[name="dataset_id"]');
+    selects.forEach(select => {
+        const currentValue = select.closest('form').querySelector('input[name="campaign_id"]').value;
+        const campaignId = parseInt(currentValue);
+        
+        // Trova il dataset corrente per questa campagna
+        const currentDatasetId = document.getElementById(`current-dataset-${campaignId}`)?.textContent.match(/Attuale: (.+)/)?.[1]?.trim();
+        
+        // Pulisci le opzioni esistenti (mantieni solo "-- Nessun Dataset --")
+        select.innerHTML = '<option value="">-- Nessun Dataset --</option>';
+        
+        // Aggiungi i dataset disponibili
+        datasets.forEach(dataset => {
+            const option = document.createElement('option');
+            option.value = dataset.dataset_id;
+            option.textContent = `${dataset.dataset_id} - ${dataset.name}`;
+            if (dataset.dataset_id === currentDatasetId) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+    });
+}
+
+async function updateMapping(campaignId) {
+    const form = document.getElementById(`form-${campaignId}`);
+    const formData = new FormData(form);
+    
+    try {
+        const response = await fetch('/settings/meta-datasets/update', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.redirected) {
+            const url = new URL(response.url);
+            if (url.searchParams.get('success')) {
+                window.location.href = '/settings/meta-datasets?success=mapping_updated';
+            } else if (url.searchParams.get('error')) {
+                await showCustomAlert('Errore', url.searchParams.get('error'));
+            }
+        } else {
+            const data = await response.json();
+            if (data.error) {
+                await showCustomAlert('Errore', data.error);
+            } else {
+                window.location.href = '/settings/meta-datasets?success=mapping_updated';
+            }
+        }
+    } catch (error) {
+        await showCustomAlert('Errore', 'Errore durante l\'aggiornamento: ' + error.message);
+    }
+}
+
+// Carica i dataset all'avvio se disponibili
+window.addEventListener('DOMContentLoaded', () => {
+    // Non caricare automaticamente, l'utente deve cliccare il pulsante
+});
+</script>
+{% endblock %}

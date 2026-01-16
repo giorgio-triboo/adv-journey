@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Log Sincronizzazione Campagne Meta</h1>
+        <p class="text-neutral-500 mt-2">Visualizza i log delle attività di sincronizzazione delle campagne Meta.</p>
+    </div>
+
+    <!-- Filtri -->
+    <div class="glass-card mb-6 p-4">
+        <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+                <label class="block text-xs font-medium text-neutral-600 mb-1">Account</label>
+                <select name="account_id" 
+                        class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">Tutti gli account</option>
+                    {% for account in accounts %}
+                    <option value="{{ account.account_id }}" {% if selected_account_id == account.account_id %}selected{% endif %}>
+                        {{ account.name }} ({{ account.account_id }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div>
+                <label class="block text-xs font-medium text-neutral-600 mb-1">Livello</label>
+                <select name="level" 
+                        class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">Tutti</option>
+                    <option value="INFO" {% if selected_level == 'INFO' %}selected{% endif %}>INFO</option>
+                    <option value="DEBUG" {% if selected_level == 'DEBUG' %}selected{% endif %}>DEBUG</option>
+                    <option value="WARNING" {% if selected_level == 'WARNING' %}selected{% endif %}>WARNING</option>
+                    <option value="ERROR" {% if selected_level == 'ERROR' %}selected{% endif %}>ERROR</option>
+                </select>
+            </div>
+            
+            <div>
+                <label class="block text-xs font-medium text-neutral-600 mb-1">Righe</label>
+                <select name="lines" 
+                        class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="100" {% if selected_lines == '100' %}selected{% endif %}>Ultime 100</option>
+                    <option value="500" {% if selected_lines == '500' %}selected{% endif %}>Ultime 500</option>
+                    <option value="1000" {% if selected_lines == '1000' %}selected{% endif %}>Ultime 1000</option>
+                    <option value="all" {% if selected_lines == 'all' %}selected{% endif %}>Tutte</option>
+                </select>
+            </div>
+            
+            <div class="flex items-end">
+                <button type="submit" 
+                        class="w-full px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all text-sm">
+                    🔍 Filtra
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Log Viewer -->
+    <div class="glass-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50 flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Log Sync</h2>
+            <div class="flex gap-2">
+                <a href="/settings/meta-campaigns/logs?{{ request.query_string }}" 
+                   class="px-3 py-1.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-all">
+                    🔄 Aggiorna
+                </a>
+                <a href="/settings/meta-campaigns" 
+                   class="px-3 py-1.5 bg-neutral-200 text-neutral-700 text-sm font-semibold rounded-lg hover:bg-neutral-300 transition-all">
+                    ← Torna a Campagne
+                </a>
+            </div>
+        </div>
+        
+        <div class="p-6">
+            {% if logs %}
+            <div class="bg-neutral-900 rounded-lg p-4 font-mono text-sm overflow-x-auto max-h-[600px] overflow-y-auto">
+                {% for log in logs %}
+                <div class="mb-1 {% if 'ERROR' in log %}text-red-400{% elif 'WARNING' in log %}text-yellow-400{% elif 'INFO' in log %}text-blue-400{% elif 'DEBUG' in log %}text-neutral-400{% else %}text-neutral-300{% endif %}">
+                    {{ log }}
+                </div>
+                {% endfor %}
+            </div>
+            <p class="text-xs text-neutral-500 mt-2">
+                Mostrate {{ logs|length }} righe di log
+            </p>
+            {% else %}
+            <div class="text-center py-12 text-neutral-500">
+                <p>Nessun log trovato con i filtri selezionati.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+// Auto-refresh ogni 5 secondi se non ci sono filtri attivi
+{% if not selected_account_id and not selected_level %}
+setTimeout(function() {
+    window.location.reload();
+}, 5000);
+{% endif %}
+</script>
+{% endblock %}

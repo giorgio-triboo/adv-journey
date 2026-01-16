@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Gestione Cron Jobs</h1>
+        <p class="text-neutral-500 mt-2">Configura gli orari e i giorni di esecuzione automatica delle sincronizzazioni.</p>
+    </div>
+
+    <div class="glass-card mb-6 p-4 bg-blue-50 border-l-4 border-blue-400">
+        <h3 class="font-semibold text-blue-900 mb-2">⚠️ Nota Importante</h3>
+        <p class="text-sm text-blue-700">
+            Dopo aver modificato le configurazioni dei cron jobs, è necessario <strong>riavviare l'applicazione</strong> per applicare le modifiche.
+        </p>
+    </div>
+
+    <div class="space-y-6">
+        {% for cron_job in cron_jobs %}
+        <div class="glass-card p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-xl font-semibold">{{ cron_job.job_name }}</h2>
+                    {% if cron_job.description %}
+                    <p class="text-sm text-neutral-500 mt-1">{{ cron_job.description }}</p>
+                    {% endif %}
+                    <p class="text-xs text-neutral-400 mt-1">Tipo: {{ cron_job.job_type }}</p>
+                </div>
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" 
+                           class="sr-only peer"
+                           id="enabled_{{ cron_job.id }}"
+                           {% if cron_job.enabled %}checked{% endif %}
+                           onchange="saveCronJob({{ cron_job.id }})">
+                    <div class="relative w-11 h-6 bg-neutral-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    <span class="ml-3 text-sm font-medium text-neutral-700">Abilitato</span>
+                </label>
+            </div>
+
+            <form id="cronForm_{{ cron_job.id }}" class="space-y-4">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-neutral-700 mb-2">
+                            Ora (0-23)
+                        </label>
+                        <input type="number" 
+                               name="hour" 
+                               id="hour_{{ cron_job.id }}"
+                               value="{{ cron_job.hour }}"
+                               min="0" 
+                               max="23"
+                               onchange="saveCronJob({{ cron_job.id }})"
+                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-neutral-700 mb-2">
+                            Minuto (0-59)
+                        </label>
+                        <input type="number" 
+                               name="minute" 
+                               id="minute_{{ cron_job.id }}"
+                               value="{{ cron_job.minute }}"
+                               min="0" 
+                               max="59"
+                               onchange="saveCronJob({{ cron_job.id }})"
+                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-neutral-700 mb-2">
+                            Giorno della Settimana
+                        </label>
+                        <select name="day_of_week" 
+                                id="day_of_week_{{ cron_job.id }}"
+                                onchange="saveCronJob({{ cron_job.id }})"
+                                class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <option value="*" {% if cron_job.day_of_week == '*' %}selected{% endif %}>Ogni giorno</option>
+                            <option value="0" {% if cron_job.day_of_week == '0' %}selected{% endif %}>Lunedì</option>
+                            <option value="1" {% if cron_job.day_of_week == '1' %}selected{% endif %}>Martedì</option>
+                            <option value="2" {% if cron_job.day_of_week == '2' %}selected{% endif %}>Mercoledì</option>
+                            <option value="3" {% if cron_job.day_of_week == '3' %}selected{% endif %}>Giovedì</option>
+                            <option value="4" {% if cron_job.day_of_week == '4' %}selected{% endif %}>Venerdì</option>
+                            <option value="5" {% if cron_job.day_of_week == '5' %}selected{% endif %}>Sabato</option>
+                            <option value="6" {% if cron_job.day_of_week == '6' %}selected{% endif %}>Domenica</option>
+                            <option value="0-4" {% if cron_job.day_of_week == '0-4' %}selected{% endif %}>Lun-Ven</option>
+                            <option value="1-5" {% if cron_job.day_of_week == '1-5' %}selected{% endif %}>Mar-Sab</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-neutral-700 mb-2">
+                            Giorno del Mese
+                        </label>
+                        <input type="text" 
+                               name="day_of_month" 
+                               id="day_of_month_{{ cron_job.id }}"
+                               value="{{ cron_job.day_of_month }}"
+                               placeholder="*"
+                               onchange="saveCronJob({{ cron_job.id }})"
+                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <p class="text-xs text-neutral-500 mt-1">* = ogni giorno, 1-31 = giorno specifico</p>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-neutral-700 mb-2">
+                        Mese
+                    </label>
+                    <input type="text" 
+                           name="month" 
+                           id="month_{{ cron_job.id }}"
+                           value="{{ cron_job.month }}"
+                           placeholder="*"
+                           onchange="saveCronJob({{ cron_job.id }})"
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <p class="text-xs text-neutral-500 mt-1">* = ogni mese, 1-12 = mese specifico</p>
+                </div>
+
+                <div class="pt-2">
+                    <div class="p-3 bg-neutral-50 rounded-lg">
+                        <p class="text-sm text-neutral-600">
+                            <strong>Prossima esecuzione prevista:</strong> 
+                            <span id="nextRun_{{ cron_job.id }}" class="font-mono text-indigo-600">Calcolo in corso...</span>
+                        </p>
+                    </div>
+                </div>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+async function saveCronJob(jobId) {
+    const enabled = document.getElementById(`enabled_${jobId}`).checked;
+    const hour = parseInt(document.getElementById(`hour_${jobId}`).value) || 0;
+    const minute = parseInt(document.getElementById(`minute_${jobId}`).value) || 0;
+    const dayOfWeek = document.getElementById(`day_of_week_${jobId}`).value;
+    const dayOfMonth = document.getElementById(`day_of_month_${jobId}`).value || '*';
+    const month = document.getElementById(`month_${jobId}`).value || '*';
+
+    try {
+        const response = await fetch('/api/cron-jobs', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                id: jobId,
+                enabled: enabled,
+                hour: hour,
+                minute: minute,
+                day_of_week: dayOfWeek,
+                day_of_month: dayOfMonth,
+                month: month
+            })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            showNotification('success', 'Configurazione salvata');
+            updateNextRun(jobId, hour, minute, dayOfWeek, dayOfMonth, month);
+        } else {
+            showNotification('error', data.error || 'Errore nel salvataggio');
+        }
+    } catch (error) {
+        showNotification('error', 'Errore di connessione: ' + error.message);
+    }
+}
+
+function updateNextRun(jobId, hour, minute, dayOfWeek, dayOfMonth, month) {
+    // Calcolo semplificato della prossima esecuzione
+    const now = new Date();
+    const nextRun = new Date();
+    nextRun.setHours(hour, minute, 0, 0);
+    
+    // Se l'ora è già passata oggi, passa a domani
+    if (nextRun < now) {
+        nextRun.setDate(nextRun.getDate() + 1);
+    }
+    
+    // Gestione giorno della settimana (semplificata)
+    if (dayOfWeek !== '*') {
+        const targetDay = parseInt(dayOfWeek);
+        if (!isNaN(targetDay)) {
+            const currentDay = now.getDay(); // 0 = Domenica, 1 = Lunedì, etc.
+            const adjustedTarget = targetDay === 0 ? 7 : targetDay; // Converti 0 (Lunedì) a 7
+            const adjustedCurrent = currentDay === 0 ? 7 : currentDay;
+            
+            let daysToAdd = adjustedTarget - adjustedCurrent;
+            if (daysToAdd <= 0) {
+                daysToAdd += 7;
+            }
+            nextRun.setDate(nextRun.getDate() + daysToAdd);
+        }
+    }
+    
+    const nextRunElement = document.getElementById(`nextRun_${jobId}`);
+    if (nextRunElement) {
+        nextRunElement.textContent = nextRun.toLocaleString('it-IT', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+}
+
+function showNotification(type, message) {
+    const notification = document.createElement('div');
+    notification.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 ${
+        type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+    }`;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.remove();
+    }, 3000);
+}
+
+// Calcola prossima esecuzione per tutti i job al caricamento
+document.addEventListener('DOMContentLoaded', function() {
+    {% for cron_job in cron_jobs %}
+    updateNextRun({{ cron_job.id }}, {{ cron_job.hour }}, {{ cron_job.minute }}, '{{ cron_job.day_of_week }}', '{{ cron_job.day_of_month }}', '{{ cron_job.month }}');
+    {% endfor %}
+});
+</script>
+{% endblock %}

@@ -25,6 +25,18 @@
     </div>
     {% endif %}
     
+    {% if request.query_params.get('sync_started') %}
+    <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700">
+        <strong>✓ Sincronizzazione avviata!</strong> 
+        {% if request.query_params.get('account_name') %}
+        La sincronizzazione per l'account "{{ request.query_params.get('account_name') }}" è stata avviata in background. 
+        {% else %}
+        La sincronizzazione è stata avviata in background.
+        {% endif %}
+        <p class="text-sm mt-2 text-blue-600">Le campagne verranno sincronizzate. Controlla i log del server per i dettagli o ricarica la pagina tra qualche secondo.</p>
+    </div>
+    {% endif %}
+    
     {% if request.query_params.get('error') == 'session_expired' %}
     <div class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700">
         <strong>⚠️ Sessione scaduta:</strong> La sessione OAuth è scaduta. Per favore, riprova a connettere l'account Meta.
@@ -32,8 +44,27 @@
     {% endif %}
 
     <div class="glass-card overflow-hidden mb-6">
-        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50 flex items-center justify-between">
             <h2 class="text-lg font-semibold">Account Configurati</h2>
+            {% if oauth_enabled %}
+            {% if has_valid_oauth_token %}
+            <a href="/settings/meta-accounts/oauth/select" 
+               class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 shadow-md transition-all">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                </svg>
+                Continua Selezione
+            </a>
+            {% else %}
+            <a href="/settings/meta-accounts/oauth/start" 
+               class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 shadow-md transition-all">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                </svg>
+                Aggiungi Altri Account
+            </a>
+            {% endif %}
+            {% endif %}
         </div>
         
         <div class="overflow-x-auto">
@@ -44,6 +75,7 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Nome</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Stato</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Sync</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Campagne Sync</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Frequenza</th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase tracking-wider">Azioni</th>
                     </tr>
@@ -63,6 +95,17 @@
                                 {{ 'Abilitato' if account.sync_enabled else 'Disabilitato' }}
                             </span>
                         </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            {% if account.total_campaigns > 0 %}
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium {% if account.synced_campaigns == account.total_campaigns %}bg-green-100 text-green-800{% elif account.synced_campaigns > 0 %}bg-yellow-100 text-yellow-800{% else %}bg-neutral-100 text-neutral-800{% endif %}">
+                                {{ account.synced_campaigns }}/{{ account.total_campaigns }}
+                            </span>
+                            {% else %}
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-800">
+                                0/0
+                            </span>
+                            {% endif %}
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-neutral-500">{{ account.sync_frequency or 'daily' }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
                             <button onclick="testAccount({{ account.id }})" 
@@ -71,12 +114,6 @@
                                     id="test-btn-{{ account.id }}">
                                 ✓ Test
                             </button>
-                            <form action="/settings/meta-accounts/sync" method="POST" class="inline">
-                                <input type="hidden" name="id" value="{{ account.id }}">
-                                <button type="submit" class="text-indigo-600 hover:text-indigo-900 transition-colors" title="Sincronizza ora">
-                                    🔄 Sync
-                                </button>
-                            </form>
                             <form action="/settings/meta-accounts/toggle" method="POST" class="inline">
                                 <input type="hidden" name="id" value="{{ account.id }}">
                                 <button type="submit" class="text-yellow-600 hover:text-yellow-900 transition-colors">
@@ -94,7 +131,7 @@
                     {% endfor %}
                     {% if not accounts %}
                     <tr>
-                        <td colspan="6" class="px-6 py-12 text-center text-neutral-500 italic">
+                        <td colspan="7" class="px-6 py-12 text-center text-neutral-500 italic">
                             Nessun account configurato.
                         </td>
                     </tr>
@@ -211,5 +248,6 @@ async function handleDeleteConfirm(event, message) {
     }
     return false;
 }
+
 </script>
 {% endblock %}

@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Sync Manuale Ulixe</h1>
+        <p class="text-neutral-500 mt-2">Esegui sincronizzazione manuale con Ulixe per user_id specifici. Massimo 10 chiamate per volta per non sovraccaricare il sistema.</p>
+    </div>
+
+    {% if not ulixe_configured %}
+    <div class="glass-card mb-6 p-4 bg-red-50 border-l-4 border-red-400">
+        <h3 class="font-semibold text-red-900 mb-2">⚠️ Credenziali Ulixe non configurate</h3>
+        <p class="text-sm text-red-700">
+            Le credenziali Ulixe non sono configurate nel file <code class="bg-red-100 px-2 py-1 rounded">.env</code>.
+            Configura <code>ULIXE_USER</code>, <code>ULIXE_PASSWORD</code> e <code>ULIXE_WSDL</code> per abilitare il sync.
+        </p>
+    </div>
+    {% endif %}
+
+    <div class="glass-card p-6 mb-6">
+        <h2 class="text-xl font-semibold mb-4">Sincronizzazione User ID</h2>
+        
+        <form id="ulixeSyncForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-neutral-700 mb-2">
+                    User ID Ulixe <span class="text-red-500">*</span>
+                </label>
+                <textarea 
+                    id="userIdsInput"
+                    rows="5"
+                    placeholder="Inserisci gli user_id, uno per riga (max 10)&#10;Esempio:&#10;12345&#10;67890"
+                    class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    required></textarea>
+                <p class="text-xs text-neutral-500 mt-1">
+                    Inserisci gli user_id (external_user_id) delle lead da sincronizzare, uno per riga. Massimo 10 user_id per volta.
+                </p>
+                <p class="text-xs text-neutral-500 mt-1" id="userIdsCount">
+                    <span id="currentCount">0</span> / 10 user_id inseriti
+                </p>
+            </div>
+
+            <div class="flex gap-4">
+                <button 
+                    type="submit" 
+                    class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    {% if not ulixe_configured %}disabled{% endif %}>
+                    Avvia Sync
+                </button>
+                <button 
+                    type="button" 
+                    onclick="clearForm()"
+                    class="px-6 py-2 bg-neutral-100 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-200 transition-all">
+                    Pulisci
+                </button>
+            </div>
+        </form>
+    </div>
+
+    {% if leads_examples %}
+    <div class="glass-card p-6">
+        <h2 class="text-xl font-semibold mb-4">Esempi di User ID disponibili</h2>
+        <p class="text-sm text-neutral-600 mb-4">Clicca su un user_id per copiarlo nel form sopra.</p>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {% for lead in leads_examples %}
+            <div class="p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
+                 onclick="addUserId('{{ lead.external_user_id }}')"
+                 title="Clicca per aggiungere al form">
+                <div class="flex items-center justify-between">
+                    <code class="text-sm font-mono text-indigo-600">{{ lead.external_user_id }}</code>
+                    <svg class="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                </div>
+                <p class="text-xs text-neutral-500 mt-1">
+                    Lead #{{ lead.id }} - {{ lead.first_name or '' }} {{ lead.last_name or '' }}
+                </p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Results Area -->
+    <div id="resultsArea" class="hidden mt-6">
+        <div class="glass-card p-6">
+            <h2 class="text-xl font-semibold mb-4">Risultati Sync</h2>
+            <div id="resultsContent"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentUserIds = [];
+
+function updateCount() {
+    const textarea = document.getElementById('userIdsInput');
+    const lines = textarea.value.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+    
+    const count = lines.length;
+    document.getElementById('currentCount').textContent = count;
+    
+    if (count > 10) {
+        document.getElementById('userIdsCount').classList.add('text-red-500');
+        document.getElementById('userIdsCount').classList.remove('text-neutral-500');
+    } else {
+        document.getElementById('userIdsCount').classList.remove('text-red-500');
+        document.getElementById('userIdsCount').classList.add('text-neutral-500');
+    }
+    
+    currentUserIds = lines;
+}
+
+function addUserId(userId) {
+    const textarea = document.getElementById('userIdsInput');
+    const currentLines = textarea.value.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+    
+    // Evita duplicati
+    if (currentLines.includes(userId)) {
+        alert('User ID già presente nel form');
+        return;
+    }
+    
+    // Controlla limite
+    if (currentLines.length >= 10) {
+        alert('Massimo 10 user_id consentiti');
+        return;
+    }
+    
+    // Aggiungi
+    if (textarea.value.trim() && !textarea.value.endsWith('\n')) {
+        textarea.value += '\n';
+    }
+    textarea.value += userId + '\n';
+    updateCount();
+    textarea.focus();
+}
+
+function clearForm() {
+    document.getElementById('userIdsInput').value = '';
+    document.getElementById('resultsArea').classList.add('hidden');
+    updateCount();
+}
+
+document.getElementById('userIdsInput').addEventListener('input', updateCount);
+updateCount();
+
+document.getElementById('ulixeSyncForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const userIds = currentUserIds;
+    
+    if (userIds.length === 0) {
+        alert('Inserisci almeno un user_id');
+        return;
+    }
+    
+    if (userIds.length > 10) {
+        alert('Massimo 10 user_id consentiti. Hai inserito ' + userIds.length + ' user_id.');
+        return;
+    }
+    
+    if (!confirm(`Vuoi sincronizzare ${userIds.length} user_id con Ulixe?`)) {
+        return;
+    }
+    
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    submitButton.textContent = 'Sincronizzazione in corso...';
+    
+    try {
+        const response = await fetch('/api/ulixe/sync', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_ids: userIds
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            showResults(data);
+        } else {
+            alert('Errore: ' + (data.error || 'Errore durante la sincronizzazione'));
+        }
+    } catch (error) {
+        alert('Errore di connessione: ' + error.message);
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Avvia Sync';
+    }
+});
+
+function showResults(data) {
+    const resultsArea = document.getElementById('resultsArea');
+    const resultsContent = document.getElementById('resultsContent');
+    
+    const stats = data.stats;
+    const results = data.results || [];
+    
+    let html = `
+        <div class="mb-4 p-4 bg-green-50 border-l-4 border-green-400 rounded">
+            <h3 class="font-semibold text-green-900 mb-2">✅ Sync Completata</h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                    <span class="text-neutral-600">Controllati:</span>
+                    <span class="font-semibold text-green-700 ml-2">${stats.checked || 0}</span>
+                </div>
+                <div>
+                    <span class="text-neutral-600">Aggiornati:</span>
+                    <span class="font-semibold text-indigo-700 ml-2">${stats.updated || 0}</span>
+                </div>
+                <div>
+                    <span class="text-neutral-600">Errori:</span>
+                    <span class="font-semibold text-red-700 ml-2">${stats.errors || 0}</span>
+                </div>
+                <div>
+                    <span class="text-neutral-600">Non trovati:</span>
+                    <span class="font-semibold text-yellow-700 ml-2">${stats.not_found || 0}</span>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    if (results.length > 0) {
+        html += '<div class="space-y-2">';
+        html += '<h4 class="font-semibold text-neutral-700 mb-2">Dettagli:</h4>';
+        
+        results.forEach(result => {
+            let bgColor = 'bg-neutral-50';
+            let icon = 'ℹ️';
+            
+            if (result.status === 'updated') {
+                bgColor = 'bg-blue-50';
+                icon = '✅';
+            } else if (result.status === 'error') {
+                bgColor = 'bg-red-50';
+                icon = '❌';
+            } else if (result.status === 'not_found') {
+                bgColor = 'bg-yellow-50';
+                icon = '⚠️';
+            }
+            
+            html += `<div class="p-3 ${bgColor} rounded-lg">`;
+            html += `<div class="flex items-start justify-between">`;
+            html += `<div class="flex-1">`;
+            html += `<div class="font-mono text-sm text-indigo-600">${icon} User ID: ${result.user_id}</div>`;
+            
+            if (result.lead_id) {
+                html += `<div class="text-xs text-neutral-500 mt-1">Lead ID: ${result.lead_id}</div>`;
+            }
+            
+            if (result.status === 'updated') {
+                html += `<div class="text-sm mt-2">`;
+                html += `<span class="text-neutral-600">Da:</span> <span class="font-semibold">${result.old_status || 'N/A'}</span> `;
+                html += `<span class="text-neutral-600">→</span> `;
+                html += `<span class="font-semibold text-indigo-600">${result.new_status || 'N/A'}</span>`;
+                html += `</div>`;
+                if (result.category) {
+                    html += `<div class="text-xs text-neutral-500 mt-1">Categoria: ${result.category}</div>`;
+                }
+            } else if (result.status === 'unchanged') {
+                html += `<div class="text-sm mt-2 text-neutral-600">Stato invariato: <span class="font-semibold">${result.current_status || 'N/A'}</span></div>`;
+            } else if (result.status === 'error') {
+                html += `<div class="text-sm mt-2 text-red-700">Errore: ${result.error || 'Errore sconosciuto'}</div>`;
+            } else if (result.status === 'not_found') {
+                html += `<div class="text-sm mt-2 text-yellow-700">${result.message || 'Lead non trovata nel database'}</div>`;
+            }
+            
+            html += `</div></div></div>`;
+        });
+        
+        html += '</div>';
+    }
+    
+    resultsContent.innerHTML = html;
+    resultsArea.classList.remove('hidden');
+    resultsArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+</script>
+{% endblock %}

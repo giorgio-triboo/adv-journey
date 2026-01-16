@@ -2,25 +2,76 @@
 
 {% block content %}
 <div class="animate-fadeInUp">
-    <div class="mb-8">
-        <h1 class="text-3xl font-bold gradient-text">Gestione Campagne Meta</h1>
-        <p class="text-neutral-500 mt-2">Configura filtri e sincronizzazione per le campagne Meta.</p>
+    <div class="mb-8 flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold gradient-text">Gestione Campagne Meta</h1>
+            <p class="text-neutral-500 mt-2">Configura filtri e sincronizzazione per le campagne Meta.</p>
+        </div>
+        <a href="/settings/meta-campaigns/logs" 
+           class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all text-sm">
+            📋 Visualizza Log
+        </a>
     </div>
 
-    <!-- Account Filter -->
+    {% if request.query_params.get('filter_applied') %}
+    <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <p class="text-sm text-blue-800">
+            <strong>✓ Filtro applicato e sincronizzazione avviata!</strong> 
+            La ricerca è stata eseguita in {{ request.query_params.get('accounts_synced', '0') }} account.
+            Le campagne verranno sincronizzate in background. Ricarica la pagina tra qualche secondo per vedere i risultati.
+        </p>
+    </div>
+    {% endif %}
+    
+    {% if request.query_params.get('error') %}
+    <div class="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+        <p class="text-sm text-red-800">
+            <strong>Errore:</strong> {{ request.query_params.get('error') }}
+        </p>
+    </div>
+    {% endif %}
+
+    <!-- Filtro Master per Ricerca Campagne -->
     <div class="glass-card mb-6 p-4">
-        <form method="GET" class="flex items-center gap-4">
-            <label class="text-sm font-medium text-neutral-700">Filtra per Account:</label>
-            <select name="account_id" onchange="this.form.submit()" 
-                    class="px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
-                <option value="">Tutti gli account</option>
-                {% for account in accounts %}
-                <option value="{{ account.account_id }}" {% if selected_account_id == account.account_id %}selected{% endif %}>
-                    {{ account.name }} ({{ account.account_id }})
-                </option>
-                {% endfor %}
-            </select>
+        <h3 class="text-sm font-semibold text-neutral-700 mb-4">Filtro Master - Cerca in tutti gli account</h3>
+        <form method="POST" action="/settings/meta-campaigns/filter" class="grid grid-cols-1 md:grid-cols-3 gap-3" onsubmit="return validateFilterForm(event)">
+            <div>
+                <label class="block text-xs font-medium text-neutral-600 mb-1">Pattern Nome <span class="text-red-500">*</span></label>
+                <input type="text" name="name_pattern" id="name_pattern"
+                       placeholder="es. CEPU, GS"
+                       required
+                       class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                       value="{{ master_filter.name_pattern if master_filter else '' }}">
+                <p class="text-xs text-neutral-400 mt-1">Il nome della campagna deve contenere questo pattern (obbligatorio)</p>
+            </div>
+            
+            <div>
+                <label class="block text-xs font-medium text-neutral-600 mb-1">Stato</label>
+                <select name="status" 
+                        class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">Tutti</option>
+                    <option value="ACTIVE" {% if master_filter and master_filter.status == 'ACTIVE' %}selected{% endif %}>ACTIVE</option>
+                    <option value="PAUSED" {% if master_filter and master_filter.status == 'PAUSED' %}selected{% endif %}>PAUSED</option>
+                    <option value="ARCHIVED" {% if master_filter and master_filter.status == 'ARCHIVED' %}selected{% endif %}>ARCHIVED</option>
+                </select>
+            </div>
+            
+            <div class="flex items-end gap-2">
+                <button type="submit" 
+                        class="flex-1 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all text-sm">
+                    🔍 Filtra e Sincronizza
+                </button>
+                {% if master_filter %}
+                <a href="/settings/meta-campaigns" 
+                   class="px-3 py-2 bg-neutral-200 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-300 transition-all text-sm">
+                    ✕ Reset
+                </a>
+                {% endif %}
+            </div>
         </form>
+        <p class="text-xs text-neutral-500 mt-2">
+            <strong>Nota:</strong> Il filtro master viene sempre applicato durante l'ingestion (sincronizzazione) in tutti gli account configurati. Solo le campagne che corrispondono ai filtri verranno sincronizzate. La tabella mostra tutte le campagne già sincronizzate.
+        </p>
     </div>
 
     <div class="glass-card overflow-hidden">
@@ -44,6 +95,7 @@
                 <tbody class="divide-y divide-neutral-200">
                     {% for campaign in campaigns %}
                     <tr class="hover:bg-neutral-50/50 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-neutral-600">{{ campaign.account.name if campaign.account else 'N/A' }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-mono font-bold text-indigo-600">{{ campaign.campaign_id }}</td>
                         <td class="px-6 py-4 text-sm text-neutral-900">{{ campaign.name }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm">
@@ -82,8 +134,11 @@
                     {% endfor %}
                     {% if not campaigns %}
                     <tr>
-                        <td colspan="7" class="px-6 py-12 text-center text-neutral-500 italic">
-                            Nessuna campagna trovata. Sincronizza prima un account Meta.
+                        <td colspan="8" class="px-6 py-12 text-center">
+                            <div class="text-neutral-700">
+                                <p class="font-medium mb-2">Nessuna campagna sincronizzata.</p>
+                                <p class="text-sm text-neutral-500">Usa il filtro master sopra e clicca "Filtra" per sincronizzare le campagne che corrispondono ai criteri in tutti gli account configurati.</p>
+                            </div>
                         </td>
                     </tr>
                     {% endif %}
@@ -169,5 +224,16 @@ document.getElementById('filterModal').addEventListener('click', function(e) {
         closeFilterModal();
     }
 });
+
+function validateFilterForm(event) {
+    const namePattern = document.getElementById('name_pattern').value.trim();
+    if (!namePattern) {
+        event.preventDefault();
+        alert('Il Pattern Nome è obbligatorio per sincronizzare le campagne.');
+        document.getElementById('name_pattern').focus();
+        return false;
+    }
+    return true;
+}
 </script>
 {% endblock %}

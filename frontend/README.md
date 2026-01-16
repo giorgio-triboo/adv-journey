@@ -15,7 +15,6 @@ frontend/
     ├── base.html
     ├── login.html
     ├── dashboard.html
-    ├── analytics.html
     └── settings_*.html
 ```
 
