@@ -18,6 +18,10 @@ class LeadStatus(BaseModel):
 
 class UlixeClient:
     def __init__(self):
+        # Verifica che le credenziali siano configurate
+        if not settings.ULIXE_USER or not settings.ULIXE_PASSWORD or not settings.ULIXE_WSDL:
+            raise ValueError("Ulixe credentials are not configured. Sync is disabled.")
+        
         self.session = requests.Session()
         self.transport = Transport(session=self.session)
         self.settings = Settings(strict=False, xml_huge_tree=True)
@@ -84,8 +88,8 @@ class UlixeClient:
 
         # Stati positivi (CRM)
         if "CRM" in status_upper:
-            if "SVOLTO" in status_upper or "ACCETTATO" in status_upper:
+            if "SVOLTO" in status_upper or "ACCETTATO" in status_upper or "FISSATO" in status_upper:
                 return "finale"
-            return "crm"  # Intermediate CRM status (CRM, CRM - FISSATO)
+            return "crm"  # Intermediate CRM status (CRM)
 
         return "unknown" 

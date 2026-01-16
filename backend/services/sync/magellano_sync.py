@@ -29,7 +29,19 @@ def run(db: Session = None) -> dict:
     try:
         from models import ManagedCampaign
         managed_campaigns = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True).all()
-        campaign_ids = [int(c.campaign_id) for c in managed_campaigns if c.campaign_id.isdigit()]
+        
+        # Estrai tutti gli ID Magellano dagli array JSON
+        campaign_ids = []
+        for campaign in managed_campaigns:
+            if campaign.magellano_ids:
+                for mag_id in campaign.magellano_ids:
+                    try:
+                        campaign_ids.append(int(mag_id))
+                    except (ValueError, TypeError):
+                        continue
+        
+        # Rimuovi duplicati mantenendo l'ordine
+        campaign_ids = list(dict.fromkeys(campaign_ids))
         
         if not campaign_ids:
             logger.warning("No active campaigns configured. Skipping Magellano sync.")
@@ -105,10 +117,18 @@ def run(db: Session = None) -> dict:
         
         logger.info(f"Magellano Sync ✅: {stats['new']} new, {stats['updated']} updated")
         
+        # Invia alert se configurato
+        from services.utils.alert_sender import send_sync_alert_if_needed
+        send_sync_alert_if_needed(db, 'magellano', True, stats)
+        
     except Exception as e:
         logger.error(f"Magellano Sync ❌: {e}", exc_info=True)
         stats["errors"] += 1
         db.rollback()
+        
+        # Invia alert errore se configurato
+        from services.utils.alert_sender import send_sync_alert_if_needed
+        send_sync_alert_if_needed(db, 'magellano', False, stats, str(e))
     finally:
         if close_db:
             db.close()

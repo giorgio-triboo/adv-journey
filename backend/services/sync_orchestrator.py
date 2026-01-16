@@ -7,6 +7,7 @@ from models import SyncLog
 from services.sync.magellano_sync import run as magellano_sync_job
 from services.sync.ulixe_sync import run as ulixe_sync_job
 from services.sync.meta_marketing_sync import run as meta_marketing_sync_job
+from services.sync.meta_conversion_marker import run as meta_conversion_marker_job
 from services.sync.meta_conversion_sync import run as meta_conversion_sync_job
 from datetime import datetime
 import logging
@@ -34,6 +35,11 @@ class SyncOrchestrator:
                 "name": "meta_marketing",
                 "job": meta_marketing_sync_job,
                 "description": "Meta Marketing - Ingestion dati marketing"
+            },
+            {
+                "name": "meta_conversion_marker",
+                "job": meta_conversion_marker_job,
+                "description": "Meta Conversion Marker - Marca lead da sincronizzare"
             },
             {
                 "name": "meta_conversion",
@@ -113,9 +119,13 @@ class SyncOrchestrator:
             mm = stats["meta_marketing"]
             logger.info(f"  Meta Marketing: {mm.get('accounts_synced', 0)} accounts synced")
         
+        if "meta_conversion_marker" in stats:
+            mcm = stats["meta_conversion_marker"]
+            logger.info(f"  Meta Conversion Marker: {mcm.get('marked', 0)} marked")
+        
         if "meta_conversion" in stats:
             mc = stats["meta_conversion"]
-            logger.info(f"  Meta Conversion: {mc.get('events_sent', 0)} events sent")
+            logger.info(f"  Meta Conversion: {mc.get('events_sent', 0)} events sent, {mc.get('errors', 0)} errors")
     
     def add_job(self, name: str, job_func, description: str):
         """

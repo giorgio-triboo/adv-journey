@@ -27,6 +27,12 @@ def run(db: Session = None) -> dict:
     stats = {"checked": 0, "updated": 0, "errors": 0}
     
     try:
+        # Verifica che le credenziali Ulixe siano configurate
+        from config import settings
+        if not settings.ULIXE_USER or not settings.ULIXE_PASSWORD or not settings.ULIXE_WSDL:
+            logger.warning("Ulixe Sync: Credenziali non configurate. Sync disabilitata.")
+            return stats
+        
         # Get leads that do NOT have "NO CRM" in their status
         leads_to_check = db.query(Lead).filter(
             Lead.status_category != StatusCategory.RIFIUTATO
@@ -80,10 +86,18 @@ def run(db: Session = None) -> dict:
         db.commit()
         logger.info(f"Ulixe Sync ✅: {stats['checked']} checked, {stats['updated']} updated, {stats['errors']} errors")
         
+        # Invia alert se configurato
+        from services.utils.alert_sender import send_sync_alert_if_needed
+        send_sync_alert_if_needed(db, 'ulixe', True, stats)
+        
     except Exception as e:
         logger.error(f"Ulixe Sync ❌: {e}", exc_info=True)
         stats["errors"] += 1
         db.rollback()
+        
+        # Invia alert errore se configurato
+        from services.utils.alert_sender import send_sync_alert_if_needed
+        send_sync_alert_if_needed(db, 'ulixe', False, stats, str(e))
     finally:
         if close_db:
             db.close()

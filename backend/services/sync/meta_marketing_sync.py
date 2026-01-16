@@ -6,6 +6,7 @@ from database import SessionLocal
 from services.integrations.meta_marketing import MetaMarketingService
 from models import MetaAccount, MetaCampaign, MetaMarketingData, MetaAd
 from datetime import datetime, timedelta, date
+from typing import List, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -38,13 +39,38 @@ def run(db: Session = None) -> dict:
         for account in accounts:
             try:
                 logger.info(f"Meta Marketing Sync: Syncing account {account.account_id} ({account.name})...")
+                
+                # Verifica se ci sono filtri configurati per questo account
+                # I filtri possono essere salvati in un campo sync_filters dell'account o recuperati da campagne esistenti
+                filters = None
+                
+                # Prova a recuperare i filtri da una campagna esistente dell'account
+                existing_campaign = db.query(MetaCampaign).filter(
+                    MetaCampaign.account_id == account.id
+                ).first()
+                
+                if existing_campaign and existing_campaign.sync_filters:
+                    filters = existing_campaign.sync_filters.copy()
+                    # Se c'è solo un tag filter, non è sufficiente - serve name_pattern
+                    if not filters.get('name_pattern'):
+                        filters = None
+                
+                # Se non ci sono filtri disponibili, salta l'account con un warning
+                if not filters or not filters.get('name_pattern'):
+                    logger.warning(
+                        f"Meta Marketing Sync: Skipping account {account.account_id} ({account.name}) - "
+                        f"no sync filters configured (name_pattern required). "
+                        f"Please configure filters via UI before enabling automatic sync."
+                    )
+                    continue
+                
                 # Decripta il token prima di usarlo
                 from services.utils.crypto import decrypt_token
                 decrypted_token = decrypt_token(account.access_token)
                 service = MetaMarketingService(access_token=decrypted_token)
                 
-                # Sync campaigns structure
-                service.sync_account_campaigns(account.account_id, db)
+                # Sync campaigns structure con filtri
+                service.sync_account_campaigns(account.account_id, db, filters=filters)
                 
                 # Get synced campaigns
                 campaigns = db.query(MetaCampaign).join(MetaAccount).filter(
@@ -55,15 +81,22 @@ def run(db: Session = None) -> dict:
                 # Fetch and save marketing insights for each campaign
                 for campaign in campaigns:
                     try:
-                        # Get insights for last 7 days
-                        end_date = date.today()
+                        # Get insights for last 7 days (fino a oggi-1)
+                        end_date = date.today() - timedelta(days=1)  # oggi-1 come da richiesta
                         start_date = end_date - timedelta(days=7)
+                        
+                        # Default metrics per sync automatica: tutte le metriche principali
+                        default_metrics = [
+                            'spend', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm',
+                            'actions', 'action_values', 'cost_per_action_type'
+                        ]
                         
                         insights = service.get_insights(
                             account_id=account.account_id,
                             level='ad',
                             start_date=start_date,
-                            end_date=end_date
+                            end_date=end_date,
+                            fields=default_metrics
                         )
                         
                         # Save insights to database
@@ -129,9 +162,17 @@ def run(db: Session = None) -> dict:
         
         logger.info(f"Meta Marketing Sync ✅: {stats['accounts_synced']} accounts synced")
         
+        # Invia alert se configurato
+        from services.utils.alert_sender import send_sync_alert_if_needed
+        send_sync_alert_if_needed(db, 'meta_marketing', True, stats)
+        
     except Exception as e:
         logger.error(f"Meta Marketing Sync ❌: {e}", exc_info=True)
         stats["errors"] += 1
+        
+        # Invia alert errore se configurato
+        from services.utils.alert_sender import send_sync_alert_if_needed
+        send_sync_alert_if_needed(db, 'meta_marketing', False, stats, str(e))
     finally:
         if close_db:
             db.close()

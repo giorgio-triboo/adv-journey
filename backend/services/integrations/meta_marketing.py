@@ -16,6 +16,11 @@ from datetime import datetime, timedelta, date
 
 logger = logging.getLogger(__name__)
 
+# Rate limiting: delay tra chiamate API (in secondi)
+API_CALL_DELAY = 1.0  # 1 secondo tra chiamate per evitare rate limit (aumentato da 0.5)
+MAX_RETRIES = 3  # Numero massimo di retry per errori di rate limit
+RETRY_BACKOFF_BASE = 5  # Base per backoff esponenziale (5, 25, 125 secondi) - aumentato per essere più conservativi
+
 class MetaMarketingService:
     def __init__(self, access_token: Optional[str] = None):
         """
@@ -27,6 +32,71 @@ class MetaMarketingService:
             FacebookAdsApi.init(access_token=self.access_token)
         else:
             logger.warning("META_ACCESS_TOKEN not set. Meta Marketing service disabled.")
+    
+    def _make_api_call_with_retry(self, api_call_func, *args, **kwargs):
+        """
+        Esegue una chiamata API con retry automatico in caso di rate limit.
+        
+        Args:
+            api_call_func: Funzione che esegue la chiamata API
+            *args, **kwargs: Argomenti da passare alla funzione
+        
+        Returns:
+            Risultato della chiamata API
+        """
+        last_exception = None
+        
+        for attempt in range(MAX_RETRIES):
+            try:
+                # Delay prima della chiamata (eccetto il primo tentativo)
+                if attempt > 0:
+                    backoff_time = RETRY_BACKOFF_BASE ** attempt
+                    logger.warning(f"[RATE LIMIT] Retry {attempt}/{MAX_RETRIES} dopo {backoff_time} secondi...")
+                    time.sleep(backoff_time)
+                
+                result = api_call_func(*args, **kwargs)
+                
+                # Delay dopo chiamata riuscita per rate limiting
+                time.sleep(API_CALL_DELAY)
+                
+                return result
+                
+            except Exception as e:
+                last_exception = e
+                error_str = str(e)
+                
+                # Verifica se è un errore di rate limit
+                # Controlla anche l'oggetto exception per errori strutturati di Facebook
+                is_rate_limit = False
+                
+                # Controlla stringa errore
+                if any(term in error_str.lower() for term in ['rate limit', 'request limit', 'too many', 'user request limit', 'troppe chiamate']):
+                    is_rate_limit = True
+                
+                # Controlla codice errore 17 (rate limit)
+                if '17' in error_str or (hasattr(e, 'api_error_code') and e.api_error_code == 17):
+                    is_rate_limit = True
+                
+                # Controlla error_subcode 2446079 (rate limit specifico)
+                if hasattr(e, 'api_error_subcode') and e.api_error_subcode == 2446079:
+                    is_rate_limit = True
+                
+                # Controlla tipo OAuthException con codice 17
+                if hasattr(e, 'api_error_type') and e.api_error_type == 'OAuthException':
+                    if hasattr(e, 'api_error_code') and e.api_error_code == 17:
+                        is_rate_limit = True
+                
+                if is_rate_limit and attempt < MAX_RETRIES - 1:
+                    logger.warning(f"[RATE LIMIT] Rate limit rilevato (tentativo {attempt + 1}/{MAX_RETRIES}): {error_str}")
+                    continue
+                else:
+                    # Se non è rate limit o abbiamo esaurito i retry, rilanciamo l'eccezione
+                    if is_rate_limit:
+                        logger.error(f"[RATE LIMIT] Rate limit persistente dopo {MAX_RETRIES} tentativi")
+                    raise
+        
+        # Se arriviamo qui, abbiamo esaurito i retry
+        raise last_exception
 
     def test_connection(self, account_id: str) -> Dict:
         """
@@ -86,6 +156,89 @@ class MetaMarketingService:
             logger.error(f"Error fetching Meta accounts: {e}")
             return []
 
+    def get_datasets(self, account_id: str = None) -> List[Dict]:
+        """
+        Recupera lista di dataset (pixel) disponibili.
+        I dataset sono associati ai pixel e possono essere recuperati tramite account o business.
+        
+        Args:
+            account_id: Meta account ID (opzionale, senza prefisso 'act_')
+        
+        Returns: List of dataset dicts with id, name
+        """
+        if not self.access_token:
+            return []
+        
+        try:
+            from facebook_business.adobjects.user import User
+            from facebook_business.adobjects.business import Business
+            
+            result = []
+            
+            # Prova a recuperare i pixel/dataset dal business associato all'utente
+            try:
+                me = User(f"me")
+                # Recupera i business dell'utente
+                businesses = me.get_businesses(fields=['id', 'name'])
+                
+                for business in businesses:
+                    try:
+                        business_obj = Business(business.get('id'))
+                        # Recupera i pixel/dataset associati al business
+                        pixels = self._make_api_call_with_retry(
+                            lambda: list(business_obj.get_owned_pixels(fields=['id', 'name', 'is_created_by_business']))
+                        )
+                        
+                        for pixel in pixels:
+                            result.append({
+                                "dataset_id": pixel.get('id'),
+                                "name": pixel.get('name', f"Pixel {pixel.get('id', 'Unknown')}"),
+                                "business_id": business.get('id'),
+                                "business_name": business.get('name', 'Unknown')
+                            })
+                    except Exception as e:
+                        logger.debug(f"Error fetching pixels for business {business.get('id')}: {e}")
+                        continue
+            except Exception as e:
+                logger.debug(f"Error fetching businesses: {e}")
+            
+            # Se abbiamo un account_id specifico, prova anche da lì
+            if account_id:
+                try:
+                    account = AdAccount(f"act_{account_id}")
+                    # Alcuni account possono avere pixel associati direttamente
+                    # (questo dipende dalla struttura dell'account)
+                    try:
+                        pixels = self._make_api_call_with_retry(
+                            lambda: list(account.get_pixels(fields=['id', 'name']))
+                        )
+                        for pixel in pixels:
+                            # Evita duplicati
+                            if not any(d.get('dataset_id') == pixel.get('id') for d in result):
+                                result.append({
+                                    "dataset_id": pixel.get('id'),
+                                    "name": pixel.get('name', f"Pixel {pixel.get('id', 'Unknown')}"),
+                                    "account_id": account_id
+                                })
+                    except Exception as e:
+                        logger.debug(f"Error fetching pixels from account {account_id}: {e}")
+                except Exception as e:
+                    logger.debug(f"Error accessing account {account_id}: {e}")
+            
+            # Rimuovi duplicati basati su dataset_id
+            seen = set()
+            unique_result = []
+            for item in result:
+                dataset_id = item.get('dataset_id')
+                if dataset_id and dataset_id not in seen:
+                    seen.add(dataset_id)
+                    unique_result.append(item)
+            
+            return unique_result
+        except Exception as e:
+            logger.error(f"Error fetching Meta datasets: {e}")
+            return []
+
     def get_campaigns(
         self, 
         account_id: str, 
@@ -113,7 +266,10 @@ class MetaMarketingService:
         
         try:
             account = AdAccount(f"act_{account_id}")
-            campaigns = account.get_campaigns(fields=fields)
+            # Usa rate limiting con retry
+            campaigns = self._make_api_call_with_retry(
+                lambda: list(account.get_campaigns(fields=fields))
+            )
             
             result = []
             for campaign in campaigns:
@@ -127,24 +283,27 @@ class MetaMarketingService:
                     "created_time": campaign.get('created_time', '')
                 }
                 
-                # Apply filters
-                if filters:
-                    # Filter by tag (if tags field is requested)
-                    if 'tag' in filters and filters['tag']:
-                        # Note: Tags need to be fetched separately or included in fields
-                        # For now, we'll fetch tags if needed
-                        pass
-                    
-                    # Filter by name pattern
-                    if 'name_pattern' in filters:
-                        pattern = filters['name_pattern'].lower()
-                        if pattern not in camp_data['name'].lower():
-                            continue
-                    
-                    # Filter by status
-                    if 'status' in filters:
-                        if camp_data['status'] not in filters['status']:
-                            continue
+                # Apply filters - name_pattern è sempre obbligatorio
+                if not filters or 'name_pattern' not in filters:
+                    logger.warning(f"[SYNC] Filtro name_pattern mancante, saltando campagna {camp_data['campaign_id']}")
+                    continue
+                
+                # Filter by name pattern (obbligatorio) - verifica se il nome contiene il pattern
+                pattern = filters['name_pattern'].lower()
+                campaign_name_lower = camp_data['name'].lower()
+                
+                # Verifica se il pattern è contenuto nel nome (case-insensitive)
+                if pattern not in campaign_name_lower:
+                    logger.debug(f"[SYNC] Campagna '{camp_data['name']}' non contiene pattern '{pattern}', saltata")
+                    continue
+                
+                logger.debug(f"[SYNC] Campagna '{camp_data['name']}' contiene pattern '{pattern}', inclusa")
+                
+                # Filter by status (opzionale)
+                if 'status' in filters and filters['status']:
+                    status_list = filters['status'] if isinstance(filters['status'], list) else [filters['status']]
+                    if camp_data['status'] not in status_list:
+                        continue
                 
                 result.append(camp_data)
             
@@ -179,16 +338,35 @@ class MetaMarketingService:
         
         try:
             campaign = Campaign(campaign_id)
-            adsets = campaign.get_ad_sets(fields=['id', 'name', 'status', 'optimization_goal', 'targeting'])
+            # Usa rate limiting con retry
+            adsets = self._make_api_call_with_retry(
+                lambda: list(campaign.get_ad_sets(fields=['id', 'name', 'status', 'optimization_goal', 'targeting']))
+            )
             
             result = []
             for adset in adsets:
+                # Convert targeting object to dict if it's not already a dict
+                targeting = adset.get('targeting', {})
+                if targeting and not isinstance(targeting, dict):
+                    # If it's a Targeting object, convert to dict
+                    try:
+                        if hasattr(targeting, 'export_all_data'):
+                            targeting = targeting.export_all_data()
+                        elif hasattr(targeting, '__dict__'):
+                            targeting = dict(targeting.__dict__)
+                        else:
+                            # Try to convert using dict() constructor
+                            targeting = dict(targeting) if targeting else {}
+                    except Exception as e:
+                        logger.warning(f"Error converting targeting to dict: {e}, using empty dict")
+                        targeting = {}
+                
                 result.append({
                     "adset_id": adset.get('id'),
                     "name": adset.get('name', ''),
                     "status": adset.get('status', 'UNKNOWN'),
                     "optimization_goal": adset.get('optimization_goal', ''),
-                    "targeting": adset.get('targeting', {})
+                    "targeting": targeting if isinstance(targeting, dict) else {}
                 })
             
             return result
@@ -205,7 +383,10 @@ class MetaMarketingService:
         
         try:
             adset = AdSet(adset_id)
-            ads = adset.get_ads(fields=['id', 'name', 'status', 'creative'])
+            # Usa rate limiting con retry
+            ads = self._make_api_call_with_retry(
+                lambda: list(adset.get_ads(fields=['id', 'name', 'status', 'creative']))
+            )
             
             result = []
             for ad in ads:
@@ -326,15 +507,19 @@ class MetaMarketingService:
         """
         from models import MetaAccount, MetaCampaign, MetaAdSet, MetaAd
         
+        logger.info(f"[SYNC] Inizio sincronizzazione campagne per account {account_id}")
+        
         # Get or create account
         account_record = db_session.query(MetaAccount).filter(
             MetaAccount.account_id == account_id
         ).first()
         
         if not account_record:
+            logger.info(f"[SYNC] Account {account_id} non trovato nel DB, creazione nuovo record...")
             # Test connection first
             test_result = self.test_connection(account_id)
             if not test_result['success']:
+                logger.error(f"[SYNC] Errore connessione account {account_id}: {test_result['message']}")
                 raise Exception(f"Cannot connect to account {account_id}: {test_result['message']}")
             
             # Cripta il token prima di salvarlo nel database
@@ -350,17 +535,41 @@ class MetaMarketingService:
             )
             db_session.add(account_record)
             db_session.flush()
+            logger.info(f"[SYNC] Account {account_id} creato: {account_record.name}")
+        else:
+            logger.info(f"[SYNC] Account {account_id} trovato: {account_record.name} (ID DB: {account_record.id})")
         
-        # Get campaigns
+        # Get campaigns - i filtri sono sempre obbligatori
+        if not filters or not filters.get('name_pattern'):
+            logger.warning(
+                f"[SYNC] Account {account_id}: filtri obbligatori mancanti (name_pattern richiesto). "
+                f"Sync saltata per questo account. Configura i filtri via UI prima di abilitare la sync automatica."
+            )
+            # Non sollevare eccezione, ma loggare un warning e saltare la sync
+            return {
+                "campaigns_created": 0,
+                "campaigns_updated": 0,
+                "skipped": True,
+                "reason": "Filtri obbligatori mancanti: name_pattern è richiesto"
+            }
+        
+        logger.info(f"[SYNC] Recupero campagne da Meta API per account {account_id} con filtri: {filters}")
         campaigns = self.get_campaigns(account_id, filters=filters)
+        logger.info(f"[SYNC] Trovate {len(campaigns)} campagne da Meta API (dopo filtri: {filters})")
         
-        for camp_data in campaigns:
+        campaigns_created = 0
+        campaigns_updated = 0
+        
+        for idx, camp_data in enumerate(campaigns, 1):
+            logger.debug(f"[SYNC] Elaborazione campagna {idx}/{len(campaigns)}: {camp_data['campaign_id']} - {camp_data['name']}")
+            
             # Get or create campaign
             campaign_record = db_session.query(MetaCampaign).filter(
                 MetaCampaign.campaign_id == camp_data['campaign_id']
             ).first()
             
             if not campaign_record:
+                logger.info(f"[SYNC] Creazione nuova campagna: {camp_data['campaign_id']} - {camp_data['name']}")
                 campaign_record = MetaCampaign(
                     account_id=account_record.id,
                     campaign_id=camp_data['campaign_id'],
@@ -373,20 +582,36 @@ class MetaMarketingService:
                 )
                 db_session.add(campaign_record)
                 db_session.flush()
+                campaigns_created += 1
             else:
+                logger.debug(f"[SYNC] Aggiornamento campagna esistente: {camp_data['campaign_id']}")
                 # Update existing
                 campaign_record.name = camp_data['name']
                 campaign_record.status = camp_data['status']
                 campaign_record.updated_at = datetime.utcnow()
+                campaigns_updated += 1
             
-            # Get adsets
-            adsets = self.get_adsets(camp_data['campaign_id'])
+            # Get adsets con delay per rate limiting
+            logger.debug(f"[SYNC] Recupero adsets per campagna {camp_data['campaign_id']}...")
+            time.sleep(API_CALL_DELAY)  # Delay aggiuntivo prima di recuperare adsets
+            
+            try:
+                adsets = self.get_adsets(camp_data['campaign_id'])
+                logger.debug(f"[SYNC] Trovati {len(adsets)} adsets per campagna {camp_data['campaign_id']}")
+            except Exception as e:
+                logger.error(f"[SYNC] Errore recupero adsets per campagna {camp_data['campaign_id']}: {e}")
+                adsets = []  # Continua anche se fallisce
+            
+            campaign_adsets_created = 0
+            campaign_adsets_updated = 0
+            
             for adset_data in adsets:
                 adset_record = db_session.query(MetaAdSet).filter(
                     MetaAdSet.adset_id == adset_data['adset_id']
                 ).first()
                 
                 if not adset_record:
+                    logger.debug(f"[SYNC] Creazione nuovo adset: {adset_data['adset_id']} - {adset_data['name']}")
                     adset_record = MetaAdSet(
                         campaign_id=campaign_record.id,
                         adset_id=adset_data['adset_id'],
@@ -397,19 +622,35 @@ class MetaMarketingService:
                     )
                     db_session.add(adset_record)
                     db_session.flush()
+                    campaign_adsets_created += 1
                 else:
+                    logger.debug(f"[SYNC] Aggiornamento adset esistente: {adset_data['adset_id']}")
                     adset_record.name = adset_data['name']
                     adset_record.status = adset_data['status']
                     adset_record.updated_at = datetime.utcnow()
+                    campaign_adsets_updated += 1
                 
-                # Get ads
-                ads = self.get_ads(adset_data['adset_id'])
+                # Get ads con delay per rate limiting
+                logger.debug(f"[SYNC] Recupero ads per adset {adset_data['adset_id']}...")
+                time.sleep(API_CALL_DELAY)  # Delay aggiuntivo prima di recuperare ads
+                
+                try:
+                    ads = self.get_ads(adset_data['adset_id'])
+                    logger.debug(f"[SYNC] Trovati {len(ads)} ads per adset {adset_data['adset_id']}")
+                except Exception as e:
+                    logger.error(f"[SYNC] Errore recupero ads per adset {adset_data['adset_id']}: {e}")
+                    ads = []  # Continua anche se fallisce
+                
+                ads_created = 0
+                ads_updated = 0
+                
                 for ad_data in ads:
                     ad_record = db_session.query(MetaAd).filter(
                         MetaAd.ad_id == ad_data['ad_id']
                     ).first()
                     
                     if not ad_record:
+                        logger.debug(f"[SYNC] Creazione nuovo ad: {ad_data['ad_id']} - {ad_data['name']}")
                         ad_record = MetaAd(
                             adset_id=adset_record.id,
                             ad_id=ad_data['ad_id'],
@@ -419,10 +660,25 @@ class MetaMarketingService:
                             creative_thumbnail_url=ad_data.get('creative_thumbnail_url', '')
                         )
                         db_session.add(ad_record)
+                        ads_created += 1
                     else:
+                        logger.debug(f"[SYNC] Aggiornamento ad esistente: {ad_data['ad_id']}")
                         ad_record.name = ad_data['name']
                         ad_record.status = ad_data['status']
                         ad_record.updated_at = datetime.utcnow()
+                        ads_updated += 1
+                
+                logger.debug(f"[SYNC] Adset {adset_data['adset_id']} completato: {ads_created} ads creati, {ads_updated} ads aggiornati")
+            
+            logger.debug(f"[SYNC] Campagna {camp_data['campaign_id']} completata: {campaign_adsets_created} adsets creati, {campaign_adsets_updated} adsets aggiornati")
         
         db_session.commit()
-        logger.info(f"Synced {len(campaigns)} campaigns for account {account_id}")
+        logger.info(f"[SYNC] Sincronizzazione completata per account {account_id}")
+        logger.info(f"[SYNC] Riepilogo finale: {campaigns_created} campagne create, {campaigns_updated} campagne aggiornate su {len(campaigns)} totali")
+        logger.info(f"[SYNC] Modifiche salvate nel database per account {account_id}")
+        
+        return {
+            "campaigns_created": campaigns_created,
+            "campaigns_updated": campaigns_updated,
+            "skipped": False
+        }
