@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
 import enum
@@ -62,6 +62,11 @@ class Lead(Base):
     status_category = Column(Enum(StatusCategory), default=StatusCategory.IN_LAVORAZIONE)
     last_check = Column(DateTime)
     
+    # Meta Conversion API sync fields
+    to_sync_meta = Column(Boolean, default=False, index=True) # Flag per indicare se la lead deve essere sincronizzata con Meta CAPI
+    last_meta_event_status = Column(String, nullable=True) # Ultimo status_category per cui è stato inviato evento Meta
+    meta_correlation_status = Column(String, nullable=True) # Stato correlazione: "found", "not_found", "error"
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -91,18 +96,65 @@ class SyncLog(Base):
     status = Column(String) # SUCCESS, ERROR
     details = Column(JSON)
 
+class AlertConfig(Base):
+    __tablename__ = "alert_configs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    alert_type = Column(String, index=True)  # 'magellano', 'ulixe', 'meta_marketing', 'meta_conversion'
+    enabled = Column(Boolean, default=True)
+    recipients = Column(JSON, default=list)  # Lista email ["email1@example.com", "email2@example.com"]
+    on_success = Column(Boolean, default=False)  # Invia email anche su successo
+    on_error = Column(Boolean, default=True)  # Invia email su errore
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class SMTPConfig(Base):
+    __tablename__ = "smtp_configs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    host = Column(String)  # Encrypted
+    port = Column(Integer, default=587)
+    user = Column(String)  # Encrypted
+    password = Column(String)  # Encrypted
+    from_email = Column(String)  # Encrypted
+    use_tls = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class CronJob(Base):
+    __tablename__ = "cron_jobs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    job_name = Column(String, unique=True, index=True)  # 'nightly_sync', 'magellano_sync', 'ulixe_sync', etc.
+    job_type = Column(String)  # 'orchestrator', 'magellano', 'ulixe', 'meta_marketing', 'meta_conversion'
+    enabled = Column(Boolean, default=True)
+    hour = Column(Integer, default=0)  # 0-23
+    minute = Column(Integer, default=30)  # 0-59
+    day_of_week = Column(String, default='*')  # '*', '0-6' (0=Monday), 'mon-fri', etc.
+    day_of_month = Column(String, default='*')  # '*', '1-31'
+    month = Column(String, default='*')  # '*', '1-12', 'jan-dec'
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class ManagedCampaign(Base):
     __tablename__ = "managed_campaigns"
     id = Column(Integer, primary_key=True, index=True)
-    campaign_id = Column(String, unique=True, index=True) # Magellano Campaign ID
-    name = Column(String)
     
-    # Gerarchia: Nome Cliente > Pay > Id Messaggio
-    cliente_name = Column(String, index=True, nullable=True) # Nome cliente (es. ecampus, cepu)
-    pay_level = Column(String, nullable=True) # Livello Pay (se applicabile)
-    msg_id_pattern = Column(String, nullable=True) # Pattern o valore msg_id associato
+    # Identificatore principale: nome cliente/attività (unique)
+    cliente_name = Column(String, unique=True, index=True) # Nome cliente/attività (es. CEPU, ECAMPUS, GS)
+    name = Column(String) # Nome descrittivo (opzionale, può essere uguale a cliente_name)
+    
+    # Array di ID Magellano e ID Messaggio
+    magellano_ids = Column(JSON, default=list) # Lista di ID Magellano (es. [183] o [188,200,872,889,909])
+    msg_ids = Column(JSON, default=list) # Lista di oggetti con id e name (es. [{"id": "117410", "name": "CEPU"}, ...])
+    
+    pay_level = Column(String, nullable=True) # Livello Pay (es. 80, 40, 60)
     
     ulixe_ids = Column(JSON, default=list) # List of Ulixe IDs for matching
+    meta_dataset_id = Column(String, nullable=True) # Meta Dataset ID per mapping campagna Magellano -> Dataset Meta (per Conversion API)
+    
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -110,9 +162,10 @@ class ManagedCampaign(Base):
 class MetaAccount(Base):
     __tablename__ = "meta_accounts"
     id = Column(Integer, primary_key=True, index=True)
-    account_id = Column(String, unique=True, index=True) # Meta Ad Account ID
+    account_id = Column(String, index=True) # Meta Ad Account ID (non più unique, può essere condiviso)
     name = Column(String)
     access_token = Column(String) # Encrypted or stored securely
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True) # NULL = condiviso, user_id = specifico utente
     is_active = Column(Boolean, default=True)
     sync_enabled = Column(Boolean, default=True)
     sync_frequency = Column(String, default="daily") # daily, hourly, weekly
@@ -120,6 +173,12 @@ class MetaAccount(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     campaigns = relationship("MetaCampaign", back_populates="account")
+    user = relationship("User", backref="meta_accounts")
+    
+    # Unique constraint su (account_id, user_id) per permettere stesso account a utenti diversi
+    __table_args__ = (
+        UniqueConstraint('account_id', 'user_id', name='uq_meta_account_user'),
+    )
 
 class MetaCampaign(Base):
     __tablename__ = "meta_campaigns"
