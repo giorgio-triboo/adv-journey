@@ -10,8 +10,12 @@ from typing import List, Dict, Optional
 
 from config import settings
 
-# Logging config
-logging.basicConfig(level=logging.INFO)
+# Logging config con formato completo data/ora
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 class MagellanoService:
@@ -20,14 +24,97 @@ class MagellanoService:
         self.username = settings.MAGELLANO_USER
         self.password = settings.MAGELLANO_PASSWORD
 
-    def generate_password(self) -> str:
+    def generate_password(self, file_date: Optional[date] = None) -> str:
         """Generates dynamic ZIP password: ddmmyyyyT-Direct"""
-        today = date.today()
-        return today.strftime("%d%m%Y") + "T-Direct"
+        if file_date is None:
+            file_date = date.today()
+        return file_date.strftime("%d%m%Y") + "T-Direct"
+    
+    def process_uploaded_file(self, file_path: str, file_date: date, campaign_id: Optional[int] = None) -> List[Dict]:
+        """
+        Processa un file ZIP o CSV/Excel uploadato manualmente.
+        IMPORTANT: All extracted files are automatically deleted after ingestion.
+        
+        Args:
+            file_path: Path del file uploadato
+            file_date: Data per calcolare la password ZIP
+            campaign_id: ID campagna (opzionale, può essere estratto dal file)
+        
+        Returns:
+            Lista di dict con i dati delle lead processate
+        """
+        temp_dir = tempfile.mkdtemp()
+        extracted_files = []  # Traccia file estratti per eliminarli dopo
+        try:
+            leads = []
+            
+            # Se è un ZIP, estrailo
+            if file_path.endswith('.zip'):
+                xls_path = self._extract_zip_with_password(file_path, temp_dir, file_date)
+                if not xls_path:
+                    raise Exception("Impossibile estrarre il file ZIP. Verifica la password.")
+                extracted_files.append(xls_path)
+            elif file_path.endswith(('.xls', '.xlsx', '.csv')):
+                xls_path = file_path
+            else:
+                raise Exception("Formato file non supportato. Usa .zip, .xls, .xlsx o .csv")
+            
+            # Processa il file Excel/CSV
+            if campaign_id:
+                leads = self._process_excel(xls_path, campaign_id)
+            else:
+                # Prova a estrarre campaign_id dal nome file o usa default
+                # Es: export-188-11012026.xls -> campaign_id = 188
+                import re
+                filename = os.path.basename(file_path)
+                match = re.search(r'export-(\d+)', filename)
+                if match:
+                    campaign_id = int(match.group(1))
+                    leads = self._process_excel(xls_path, campaign_id)
+                else:
+                    # Se non troviamo il campaign_id, usiamo un default o solleviamo errore
+                    raise Exception("Impossibile determinare l'ID campagna. Fornisci l'ID campagna o usa un nome file con formato 'export-{campaign_id}-{date}.xls'")
+            
+            # Elimina file estratti dopo l'ingestion (solo quelli in temp_dir, non il file originale)
+            for extracted_file in extracted_files:
+                try:
+                    if os.path.exists(extracted_file) and extracted_file.startswith(temp_dir):
+                        os.unlink(extracted_file)
+                        logger.info(f"Deleted extracted file after ingestion: {extracted_file}")
+                except Exception as e:
+                    logger.warning(f"Could not delete extracted file {extracted_file}: {e}")
+            
+            return leads
+            
+        finally:
+            # Elimina sempre la directory temporanea e tutto il contenuto
+            try:
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    logger.info(f"Cleaned up temp directory: {temp_dir}")
+            except Exception as e:
+                logger.warning(f"Could not remove temp directory {temp_dir}: {e}")
+    
+    def _extract_zip_with_password(self, zip_path: str, extract_to: str, file_date: date) -> Optional[str]:
+        """Estrae un file ZIP con password basata sulla data fornita"""
+        try:
+            password = self.generate_password(file_date)
+            with zipfile.ZipFile(zip_path, 'r') as z:
+                z.extractall(extract_to, pwd=password.encode('utf-8'))
+                
+            for root, _, files in os.walk(extract_to):
+                for f in files:
+                    if f.endswith('.xls') or f.endswith('.xlsx'):
+                        return os.path.join(root, f)
+            return None
+        except Exception as e:
+            logger.error(f"ZIP extraction failed: {e}")
+            return None
 
     def fetch_leads(self, start_date: date, end_date: date, campaigns: List[int]) -> List[Dict]:
         """
         Orchestrates the download and parsing of leads from Magellano.
+        IMPORTANT: All downloaded files (ZIP, XLS) are automatically deleted after ingestion.
         """
         all_leads = []
         temp_dir = tempfile.mkdtemp()
@@ -45,16 +132,41 @@ class MagellanoService:
                     xls_path = self._extract_zip(zip_path, temp_dir)
                     if not xls_path:
                         logger.error(f"Failed to extract XLS for campaign {campaign}")
+                        # Elimina ZIP anche se l'estrazione fallisce
+                        try:
+                            if os.path.exists(zip_path):
+                                os.unlink(zip_path)
+                                logger.info(f"Deleted failed ZIP file: {zip_path}")
+                        except Exception as e:
+                            logger.warning(f"Could not delete ZIP file {zip_path}: {e}")
                         continue
-                        
+                    
+                    # Processa Excel
                     leads = self._process_excel(xls_path, campaign)
                     all_leads.extend(leads)
+                    
+                    # Elimina esplicitamente ZIP e XLS dopo l'ingestion
+                    try:
+                        if os.path.exists(zip_path):
+                            os.unlink(zip_path)
+                            logger.info(f"Deleted ZIP file after ingestion: {zip_path}")
+                        if os.path.exists(xls_path) and xls_path != zip_path:
+                            os.unlink(xls_path)
+                            logger.info(f"Deleted XLS file after ingestion: {xls_path}")
+                    except Exception as e:
+                        logger.warning(f"Could not delete files after ingestion: {e}")
                     
         except Exception as e:
             logger.error(f"Error in fetch_leads: {e}")
             raise e
         finally:
-            shutil.rmtree(temp_dir)
+            # Elimina sempre la directory temporanea e tutto il contenuto
+            try:
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    logger.info(f"Cleaned up temp directory: {temp_dir}")
+            except Exception as e:
+                logger.warning(f"Could not remove temp directory {temp_dir}: {e}")
             
         return all_leads
 
@@ -196,8 +308,13 @@ class MagellanoService:
         """)
 
     def _extract_zip(self, zip_path, extract_to) -> Optional[str]:
+        """Estrae ZIP usando password di oggi (per sync automatica)"""
+        return self._extract_zip_with_password(zip_path, extract_to, date.today())
+    
+    def _extract_zip_with_password(self, zip_path: str, extract_to: str, file_date: date) -> Optional[str]:
+        """Estrae un file ZIP con password basata sulla data fornita"""
         try:
-            password = self.generate_password()
+            password = self.generate_password(file_date)
             with zipfile.ZipFile(zip_path, 'r') as z:
                 z.extractall(extract_to, pwd=password.encode('utf-8'))
                 

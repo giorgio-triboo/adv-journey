@@ -9,10 +9,11 @@ import argparse
 import sys
 import tempfile
 
-# Configurazione del logging
+# Configurazione del logging con formato completo data/ora
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format='%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[
         logging.StreamHandler(),
     ]
