@@ -19,6 +19,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Verifica se la tabella esiste
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    tables = inspector.get_table_names()
+    
+    if 'managed_campaigns' not in tables:
+        # Tabella non esiste ancora, non fare nulla
+        return
+    
     # Rimuovi il constraint composito vecchio se esiste
     try:
         op.drop_constraint('uq_campaign_msg_id', 'managed_campaigns', type_='unique')
@@ -37,35 +47,47 @@ def upgrade() -> None:
         pass
     
     # Aggiungi i nuovi campi JSON se non esistono già
+    columns = [col['name'] for col in inspector.get_columns('managed_campaigns')]
+    if 'magellano_ids' not in columns:
+        try:
+            op.add_column('managed_campaigns', sa.Column('magellano_ids', sa.JSON(), nullable=True))
+        except Exception:
+            pass
+    
+    if 'msg_ids' not in columns:
+        try:
+            op.add_column('managed_campaigns', sa.Column('msg_ids', sa.JSON(), nullable=True))
+        except Exception:
+            pass
+    
+    # Pulisci i dati vecchi: elimina record con cliente_name NULL o duplicati (solo se ci sono dati)
+    # Nota: questa operazione viene saltata se la tabella è vuota o se ci sono errori
     try:
-        op.add_column('managed_campaigns', sa.Column('magellano_ids', sa.JSON(), nullable=True))
+        # Usa op.execute per operazioni SQL dirette (Alembic gestisce le transazioni)
+        op.execute("""
+            DELETE FROM managed_campaigns 
+            WHERE cliente_name IS NULL 
+            OR cliente_name = ''
+            OR id NOT IN (
+                SELECT MIN(id) 
+                FROM managed_campaigns 
+                WHERE cliente_name IS NOT NULL 
+                AND cliente_name != ''
+                GROUP BY cliente_name
+            )
+        """)
     except Exception:
-        pass
+        pass  # Ignora errori nella pulizia dati (tabella vuota o altri problemi)
     
-    try:
-        op.add_column('managed_campaigns', sa.Column('msg_ids', sa.JSON(), nullable=True))
-    except Exception:
-        pass
-    
-    # Pulisci i dati vecchi: elimina record con cliente_name NULL o duplicati
-    op.execute("""
-        DELETE FROM managed_campaigns 
-        WHERE cliente_name IS NULL 
-        OR cliente_name = ''
-        OR id NOT IN (
-            SELECT MIN(id) 
-            FROM managed_campaigns 
-            WHERE cliente_name IS NOT NULL 
-            AND cliente_name != ''
-            GROUP BY cliente_name
-        )
-    """)
-    
-    # Modifica cliente_name: da nullable a NOT NULL
-    op.alter_column('managed_campaigns', 'cliente_name',
-                    nullable=False,
-                    existing_nullable=True,
-                    existing_type=sa.String())
+    # Modifica cliente_name: da nullable a NOT NULL (solo se la colonna esiste)
+    if 'cliente_name' in columns:
+        try:
+            op.alter_column('managed_campaigns', 'cliente_name',
+                            nullable=False,
+                            existing_nullable=True,
+                            existing_type=sa.String())
+        except Exception:
+            pass
     
     # Crea unique constraint su cliente_name se non esiste
     try:
@@ -74,15 +96,17 @@ def upgrade() -> None:
         pass
     
     # Rimuovi i campi vecchi se esistono
-    try:
-        op.drop_column('managed_campaigns', 'campaign_id')
-    except Exception:
-        pass
+    if 'campaign_id' in columns:
+        try:
+            op.drop_column('managed_campaigns', 'campaign_id')
+        except Exception:
+            pass
     
-    try:
-        op.drop_column('managed_campaigns', 'msg_id_pattern')
-    except Exception:
-        pass
+    if 'msg_id_pattern' in columns:
+        try:
+            op.drop_column('managed_campaigns', 'msg_id_pattern')
+        except Exception:
+            pass
 
 
 def downgrade() -> None:

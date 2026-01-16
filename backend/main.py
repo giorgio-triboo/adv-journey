@@ -12,6 +12,7 @@ import os
 import time
 import logging
 import traceback
+import sys
 
 # Configura logging all'avvio
 from logging_config import setup_logging
@@ -21,13 +22,18 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.APP_NAME)
 
-# Exception handler globale per loggare tutti gli errori
+# Exception handler globale per loggare tutti gli errori non gestiti
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """
     Handler globale per catturare e loggare tutti gli errori non gestiti.
+    Non logga gli HTTPException che sono già gestiti dall'handler specifico.
     """
     import traceback
+    
+    # Non loggare gli HTTPException - sono già gestiti dall'handler specifico
+    if isinstance(exc, StarletteHTTPException):
+        raise exc
     
     # Logga l'errore completo con traceback
     error_traceback = traceback.format_exc()
@@ -54,9 +60,26 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """
     Handler per errori HTTP (404, 500, etc.) per loggarli.
+    Filtra i 404 su /favicon.ico che sono normali e non necessitano di log.
     """
+    # Non loggare i 404 su /favicon.ico - sono normali richieste del browser
+    if exc.status_code == 404 and request.url.path == '/favicon.ico':
+        raise exc
+    
+    # Prova a ottenere il traceback completo
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+    if exc_traceback:
+        error_traceback = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    else:
+        # Se non c'è traceback disponibile, prova a formattare l'eccezione corrente
+        try:
+            error_traceback = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        except:
+            error_traceback = traceback.format_exc()
+    
     logger.warning(
-        f"HTTP {exc.status_code} su {request.method} {request.url.path}: {exc.detail}"
+        f"HTTP {exc.status_code} su {request.method} {request.url.path}: {exc.detail}\n"
+        f"Traceback:\n{error_traceback}"
     )
     # Re-solleva per il comportamento di default
     raise exc
@@ -97,10 +120,48 @@ def startup_event():
     from seeders.campaigns_seeder import seed_campaigns
     seed_campaigns()
     
+    # Seed users
+    from seeders.users_seeder import seed_users
+    seed_users()
+    
     # Start scheduler - DISABILITATO
     # from services.scheduler import start_scheduler
     # start_scheduler()
-    logger.info("Scheduler disabilitato - le schedulazioni non verranno eseguite")
+    logger.debug("Scheduler disabilitato - le schedulazioni non verranno eseguite")
+
+@app.middleware("http")
+async def error_logging_middleware(request: Request, call_next):
+    """
+    Middleware per loggare tutti gli errori prima che vengano gestiti.
+    Non logga gli HTTPException che verranno già loggati dall'handler specifico.
+    """
+    try:
+        response = await call_next(request)
+        return response
+    except StarletteHTTPException:
+        # Non loggare gli HTTPException qui - saranno loggati dall'handler specifico
+        # Re-solleva per la gestione normale
+        raise
+    except Exception as exc:
+        # Logga solo gli errori non-HTTP con traceback completo
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        if exc_traceback:
+            error_traceback = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        else:
+            # Se non c'è traceback disponibile, prova a formattare l'eccezione corrente
+            try:
+                error_traceback = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            except:
+                error_traceback = traceback.format_exc()
+        
+        logger.error(
+            f"Errore durante la richiesta {request.method} {request.url.path}:\n"
+            f"Tipo: {type(exc).__name__}\n"
+            f"Messaggio: {str(exc)}\n"
+            f"Traceback completo:\n{error_traceback}"
+        )
+        # Re-solleva l'eccezione per la gestione normale
+        raise
 
 @app.middleware("http")
 async def refresh_session_middleware(request: Request, call_next):

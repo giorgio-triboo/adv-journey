@@ -234,111 +234,111 @@ async def marketing(request: Request, db: Session = Depends(get_db)):
             MetaAccount.is_active == True,
             (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
         ).order_by(MetaCampaign.name).all()
-    
-    # If tab is 'data', load marketing data
-    marketing_data = []
-    totals = type('Totals', (), {
-        'total_spend': 0.0,
-        'total_impressions': 0,
-        'total_clicks': 0,
-        'total_conversions': 0
-    })()
-    selected_account_id = request.query_params.get('account_id', '').strip()
-    selected_campaign_id = request.query_params.get('campaign_id', '').strip()
-    date_from = request.query_params.get('date_from', '')
-    date_to = request.query_params.get('date_to', '')
-    
-    if tab == 'data':
-        try:
-            # Default: ultimi 30 giorni
-            if not date_from:
-                date_from = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
-            if not date_to:
-                date_to = datetime.now().strftime('%Y-%m-%d')
-            
-            # Parse dates
+        
+        # If tab is 'data', load marketing data
+        marketing_data = []
+        totals = type('Totals', (), {
+            'total_spend': 0.0,
+            'total_impressions': 0,
+            'total_clicks': 0,
+            'total_conversions': 0
+        })()
+        selected_account_id = request.query_params.get('account_id', '').strip()
+        selected_campaign_id = request.query_params.get('campaign_id', '').strip()
+        date_from = request.query_params.get('date_from', '')
+        date_to = request.query_params.get('date_to', '')
+        
+        if tab == 'data':
             try:
-                date_from_obj = datetime.strptime(date_from, '%Y-%m-%d').date()
-            except (ValueError, TypeError):
-                date_from_obj = (datetime.now() - timedelta(days=30)).date()
-                date_from = date_from_obj.strftime('%Y-%m-%d')
-            
-            try:
-                date_to_obj = datetime.strptime(date_to, '%Y-%m-%d').date()
-            except (ValueError, TypeError):
-                date_to_obj = datetime.now().date()
-                date_to = date_to_obj.strftime('%Y-%m-%d')
-            
-            # Query base per dati marketing
-            # Filtriamo solo i dati con ad_id valido per evitare problemi nei join
-            # Convertiamo date in datetime per il confronto (date è DateTime nel DB)
-            date_from_datetime = datetime.combine(date_from_obj, datetime.min.time())
-            date_to_datetime = datetime.combine(date_to_obj, datetime.max.time())
-            
-            query = db.query(
-                MetaMarketingData,
-                MetaAd,
-                MetaAdSet,
-                MetaCampaign,
-                MetaAccount
-            ).join(
-                MetaAd, MetaMarketingData.ad_id == MetaAd.id
-            ).join(
-                MetaAdSet, MetaAd.adset_id == MetaAdSet.id
-            ).join(
-                MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id
-            ).join(
-                MetaAccount, MetaCampaign.account_id == MetaAccount.id
-            ).filter(
-                MetaMarketingData.ad_id.isnot(None),  # Solo dati con ad_id valido
-                MetaAccount.is_active == True,
-                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
-                MetaMarketingData.date >= date_from_datetime,
-                MetaMarketingData.date <= date_to_datetime
-            )
-            
-            if selected_account_id:
-                query = query.filter(MetaAccount.account_id == selected_account_id)
-            if selected_campaign_id:
-                query = query.filter(MetaCampaign.campaign_id == selected_campaign_id)
-            
-            marketing_data = query.order_by(desc(MetaMarketingData.date)).all()
-            
-            # Calcola totali aggregati
-            total_spend = 0.0
-            total_impressions = 0
-            total_clicks = 0
-            total_conversions = 0
-            
-            for data, ad, adset, campaign, account in marketing_data:
-                try:
-                    spend_str = data.spend.replace(',', '.') if data.spend else '0.00'
-                    total_spend += float(spend_str)
-                except (ValueError, AttributeError):
-                    pass
+                # Default: ultimi 30 giorni
+                if not date_from:
+                    date_from = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                if not date_to:
+                    date_to = datetime.now().strftime('%Y-%m-%d')
                 
-                total_impressions += data.impressions or 0
-                total_clicks += data.clicks or 0
-                total_conversions += data.conversions or 0
-            
-            totals = type('Totals', (), {
-                'total_spend': total_spend,
-                'total_impressions': total_impressions,
-                'total_clicks': total_clicks,
-                'total_conversions': total_conversions
-            })()
-        except Exception as e:
-            # In caso di errore, inizializza con valori vuoti
-            import traceback
-            logger.error(f"Errore nel caricamento dati marketing: {e}")
-            logger.error(traceback.format_exc())
-            marketing_data = []
-            totals = type('Totals', (), {
-                'total_spend': 0.0,
-                'total_impressions': 0,
-                'total_clicks': 0,
-                'total_conversions': 0
-            })()
+                # Parse dates
+                try:
+                    date_from_obj = datetime.strptime(date_from, '%Y-%m-%d').date()
+                except (ValueError, TypeError):
+                    date_from_obj = (datetime.now() - timedelta(days=30)).date()
+                    date_from = date_from_obj.strftime('%Y-%m-%d')
+                
+                try:
+                    date_to_obj = datetime.strptime(date_to, '%Y-%m-%d').date()
+                except (ValueError, TypeError):
+                    date_to_obj = datetime.now().date()
+                    date_to = date_to_obj.strftime('%Y-%m-%d')
+                
+                # Query base per dati marketing
+                # Filtriamo solo i dati con ad_id valido per evitare problemi nei join
+                # Convertiamo date in datetime per il confronto (date è DateTime nel DB)
+                date_from_datetime = datetime.combine(date_from_obj, datetime.min.time())
+                date_to_datetime = datetime.combine(date_to_obj, datetime.max.time())
+                
+                query = db.query(
+                    MetaMarketingData,
+                    MetaAd,
+                    MetaAdSet,
+                    MetaCampaign,
+                    MetaAccount
+                ).join(
+                    MetaAd, MetaMarketingData.ad_id == MetaAd.id
+                ).join(
+                    MetaAdSet, MetaAd.adset_id == MetaAdSet.id
+                ).join(
+                    MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id
+                ).join(
+                    MetaAccount, MetaCampaign.account_id == MetaAccount.id
+                ).filter(
+                    MetaMarketingData.ad_id.isnot(None),  # Solo dati con ad_id valido
+                    MetaAccount.is_active == True,
+                    (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
+                    MetaMarketingData.date >= date_from_datetime,
+                    MetaMarketingData.date <= date_to_datetime
+                )
+                
+                if selected_account_id:
+                    query = query.filter(MetaAccount.account_id == selected_account_id)
+                if selected_campaign_id:
+                    query = query.filter(MetaCampaign.campaign_id == selected_campaign_id)
+                
+                marketing_data = query.order_by(desc(MetaMarketingData.date)).all()
+                
+                # Calcola totali aggregati
+                total_spend = 0.0
+                total_impressions = 0
+                total_clicks = 0
+                total_conversions = 0
+                
+                for data, ad, adset, campaign, account in marketing_data:
+                    try:
+                        spend_str = data.spend.replace(',', '.') if data.spend else '0.00'
+                        total_spend += float(spend_str)
+                    except (ValueError, AttributeError):
+                        pass
+                    
+                    total_impressions += data.impressions or 0
+                    total_clicks += data.clicks or 0
+                    total_conversions += data.conversions or 0
+                
+                totals = type('Totals', (), {
+                    'total_spend': total_spend,
+                    'total_impressions': total_impressions,
+                    'total_clicks': total_clicks,
+                    'total_conversions': total_conversions
+                })()
+            except Exception as e:
+                # In caso di errore, inizializza con valori vuoti
+                import traceback
+                logger.error(f"Errore nel caricamento dati marketing: {e}")
+                logger.error(traceback.format_exc())
+                marketing_data = []
+                totals = type('Totals', (), {
+                    'total_spend': 0.0,
+                    'total_impressions': 0,
+                    'total_clicks': 0,
+                    'total_conversions': 0
+                })()
         
         return templates.TemplateResponse("marketing.html", {
             "request": request,

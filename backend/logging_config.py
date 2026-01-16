@@ -26,6 +26,55 @@ def _get_log_filename_with_date(log_dir: Path, prefix: str) -> Path:
     return log_dir / f"{prefix}-{today}.log"
 
 
+class DailyRotatingFileHandler(TimedRotatingFileHandler):
+    """
+    Handler per file di log con rotazione giornaliera e data nel nome del file.
+    Crea file con formato: {prefix}-YYYY-MM-DD.log
+    """
+    def __init__(self, log_dir: Path, prefix: str, backupCount=7, encoding='utf-8'):
+        """
+        Args:
+            log_dir: Directory dove salvare i log
+            prefix: Prefisso del file (es: 'app', 'api-ui', etc.)
+            backupCount: Numero di giorni di backup da mantenere
+            encoding: Encoding del file (default: utf-8)
+        """
+        self.log_dir = Path(log_dir)
+        self.prefix = prefix
+        self.log_dir.mkdir(exist_ok=True)
+        
+        # Genera il nome del file con la data corrente
+        log_file = _get_log_filename_with_date(self.log_dir, prefix)
+        
+        # Inizializza TimedRotatingFileHandler con rotazione giornaliera
+        super().__init__(
+            filename=str(log_file),
+            when='midnight',
+            interval=1,
+            backupCount=backupCount,
+            encoding=encoding
+        )
+    
+    def doRollover(self):
+        """
+        Override del metodo doRollover per usare il nome del file con data.
+        """
+        # Chiudi il file corrente
+        if self.stream:
+            self.stream.close()
+            self.stream = None
+        
+        # Genera il nuovo nome del file con la data corrente
+        log_file = _get_log_filename_with_date(self.log_dir, self.prefix)
+        
+        # Aggiorna il nome del file base
+        self.baseFilename = str(log_file)
+        
+        # Apri il nuovo file
+        if not self.delay:
+            self.stream = self._open()
+
+
 def _cleanup_empty_log_files(log_dir, log_messages=False):
     """
     Elimina i file di log vuoti dalla directory dei log.

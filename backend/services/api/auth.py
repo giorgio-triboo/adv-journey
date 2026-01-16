@@ -7,6 +7,9 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import User
 from config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -24,42 +27,65 @@ oauth.register(
 
 @router.get('/login')
 async def login(request: Request):
-    # The redirect_uri must be whitelisted in your Google Cloud Console.
-    # Based on the provided client_secret.json, you might need to add:
-    # http://localhost:8000/auth
-    # to your "Authorized redirect URIs" in the Google Cloud Console.
-    redirect_uri = request.url_for('auth_callback')
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    """
+    Endpoint per avviare il processo di login OAuth con Google.
+    Il redirect_uri deve essere whitelisted nel Google Cloud Console.
+    """
+    try:
+        # Costruisci l'URL di callback basato sulla richiesta corrente
+        # Usa l'URL base della richiesta per costruire il redirect_uri
+        base_url = str(request.base_url).rstrip('/')
+        redirect_uri = f"{base_url}/auth"
+        
+        logger.info(f"Avvio login OAuth - redirect_uri: {redirect_uri}")
+        return await oauth.google.authorize_redirect(request, redirect_uri)
+    except Exception as e:
+        logger.error(f"Errore durante il login OAuth: {e}", exc_info=True)
+        return RedirectResponse(url='/?error=Errore durante il login')
 
 @router.get('/auth')
 async def auth_callback(request: Request, db: Session = Depends(get_db)):
-    token = await oauth.google.authorize_access_token(request)
-    user_info = token.get('userinfo')
-    
-    if not user_info:
-        return RedirectResponse(url='/')
-
-    email = user_info.get('email')
-    
-    # Check whitelist
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-         # Auto-reject or create as inactive? 
-         # Plan says "whitelist enforcement", so imply rejection if not exists or not specific logic.
-         # For MVP, let's create inactive viewer if not found, or reject.
-         # Let's reject for now if strict whitelist. 
-         # Actually, implementation plan said "Implement Auth System (Google OAuth + Whitelist)"
-         # Let's assume we need to manually add users to DB to whitelist them.
-         return RedirectResponse(url='/?error=Non autorizzato')
-
-    if not user.is_active:
-        return RedirectResponse(url='/?error=Account inattivo')
-
-    # Set session - include user role from database
-    session_user = dict(user_info)
-    session_user['role'] = user.role
-    request.session['user'] = session_user
-    return RedirectResponse(url='/dashboard')
+    """
+    Callback OAuth dopo l'autenticazione con Google.
+    Verifica che l'utente sia nella whitelist e crea la sessione.
+    """
+    try:
+        logger.info("Callback OAuth ricevuto")
+        token = await oauth.google.authorize_access_token(request)
+        user_info = token.get('userinfo')
+        
+        if not user_info:
+            logger.warning("Callback OAuth: user_info non disponibile nel token")
+            return RedirectResponse(url='/?error=Autenticazione fallita')
+        
+        email = user_info.get('email')
+        if not email:
+            logger.warning("Callback OAuth: email non disponibile in user_info")
+            return RedirectResponse(url='/?error=Email non disponibile')
+        
+        logger.info(f"Callback OAuth: verifica utente con email {email}")
+        
+        # Check whitelist
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            logger.warning(f"Accesso negato: utente {email} non presente nella whitelist")
+            return RedirectResponse(url='/?error=Non autorizzato')
+        
+        if not user.is_active:
+            logger.warning(f"Accesso negato: account {email} non attivo")
+            return RedirectResponse(url='/?error=Account inattivo')
+        
+        # Set session - include user role from database
+        session_user = dict(user_info)
+        session_user['role'] = user.role
+        request.session['user'] = session_user
+        
+        logger.info(f"Login riuscito per utente {email} con ruolo {user.role}")
+        return RedirectResponse(url='/dashboard')
+        
+    except Exception as e:
+        logger.error(f"Errore durante il callback OAuth: {e}", exc_info=True)
+        return RedirectResponse(url='/?error=Errore durante autenticazione')
 
 @router.get('/logout')
 async def logout(request: Request):
