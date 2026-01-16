@@ -133,6 +133,11 @@ def check_lead_ulixe(lead_id: int, db: Session = Depends(get_db)):
         
     if not db_lead.external_user_id:
         raise HTTPException(status_code=400, detail="Lead has no external_user_id for Ulixe")
+    
+    # Verifica che le credenziali Ulixe siano configurate
+    from config import settings
+    if not settings.ULIXE_USER or not settings.ULIXE_PASSWORD or not settings.ULIXE_WSDL:
+        raise HTTPException(status_code=503, detail="Ulixe sync is disabled: credentials not configured")
         
     try:
         from services.integrations.ulixe import UlixeClient

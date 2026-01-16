@@ -55,8 +55,10 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     if not user.is_active:
         return RedirectResponse(url='/?error=Account inattivo')
 
-    # Set session
-    request.session['user'] = dict(user_info)
+    # Set session - include user role from database
+    session_user = dict(user_info)
+    session_user['role'] = user.role
+    request.session['user'] = session_user
     return RedirectResponse(url='/dashboard')
 
 @router.get('/logout')

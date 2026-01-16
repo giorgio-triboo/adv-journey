@@ -7,7 +7,7 @@ services/
 ├── api/                    # FastAPI routers e endpoints
 │   ├── auth.py            # Autenticazione Google OAuth
 │   ├── leads.py           # API REST per leads
-│   └── ui.py              # Endpoints UI (dashboard, settings, analytics)
+│   └── ui.py              # Endpoints UI (dashboard, settings)
 │
 ├── integrations/          # Servizi per integrazioni esterne
 │   ├── magellano.py       # Service Magellano (fetch leads)
