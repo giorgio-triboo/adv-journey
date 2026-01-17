@@ -7,7 +7,12 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
     curl \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+# Set timezone to Europe/Rome (CET/CEST)
+ENV TZ=Europe/Rome
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Copy requirements first (for better Docker layer caching)
 COPY backend/requirements.txt .
