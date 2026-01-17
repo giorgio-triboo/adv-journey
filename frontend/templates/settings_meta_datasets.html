@@ -20,17 +20,60 @@
     {% endif %}
 
     <div class="glass-card overflow-hidden mb-6">
-        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
-            <h2 class="text-lg font-semibold">Dataset Disponibili</h2>
-            <p class="text-sm text-neutral-500 mt-1">I dataset vengono recuperati dagli account Meta configurati.</p>
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50 flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-semibold">Dataset Disponibili</h2>
+                <p class="text-sm text-neutral-500 mt-1">I dataset salvati nel database dagli account Meta configurati.</p>
+            </div>
+            <a href="/settings/meta-datasets/select-accounts" 
+               class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 shadow-md transition-all">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Recupera Dataset
+            </a>
         </div>
         <div class="px-6 py-4">
-            <button onclick="loadDatasets()" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 shadow-md transition-all">
-                🔄 Carica Dataset
-            </button>
-            <div id="datasetsList" class="mt-4 space-y-2">
-                <p class="text-sm text-neutral-500 italic">Clicca su "Carica Dataset" per recuperare i dataset disponibili.</p>
+            {% if datasets %}
+            <div class="space-y-2">
+                {% for dataset in datasets %}
+                <div class="p-3 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                            <div>
+                                <span class="font-mono font-semibold text-indigo-900">{{ dataset.dataset_id }}</span>
+                                <span class="text-sm text-indigo-700 ml-2">{{ dataset.name }}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs text-indigo-600 bg-indigo-100 px-2 py-1 rounded">
+                                {{ dataset.account.name if dataset.account else 'Sistema' }}
+                            </span>
+                            <form action="/settings/meta-datasets/delete" method="POST" class="inline" onsubmit="return handleDeleteConfirm(event, 'Rimuovere il dataset {{ dataset.dataset_id }}?')">
+                                <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+                                <button type="submit" class="text-red-600 hover:text-red-900 transition-colors text-xs" title="Elimina dataset">
+                                    Elimina
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
             </div>
+            {% else %}
+            <div class="p-6 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
+                <p class="text-sm text-yellow-700 font-medium mb-2">Nessun dataset salvato</p>
+                <p class="text-xs text-yellow-600 mb-4">Clicca su "Recupera Dataset" per recuperare i dataset dagli account Meta configurati.</p>
+                <a href="/settings/meta-datasets/select-accounts" 
+                   class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Recupera Dataset
+                </a>
+            </div>
+            {% endif %}
         </div>
     </div>
 
@@ -74,7 +117,11 @@
                                         class="px-3 py-1.5 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
                                         onchange="updateMapping({{ campaign.id }})">
                                     <option value="">-- Nessun Dataset --</option>
-                                    <!-- Le opzioni verranno popolate dinamicamente -->
+                                    {% for dataset in datasets %}
+                                    <option value="{{ dataset.dataset_id }}" {% if campaign.meta_dataset_id == dataset.dataset_id %}selected{% endif %}>
+                                        {{ dataset.dataset_id }} - {{ dataset.name }}
+                                    </option>
+                                    {% endfor %}
                                 </select>
                                 <span id="current-dataset-{{ campaign.id }}" class="text-xs text-neutral-500">
                                     {% if campaign.meta_dataset_id %}
@@ -107,75 +154,6 @@
 </div>
 
 <script>
-let datasets = [];
-
-async function loadDatasets() {
-    const btn = event.target;
-    const originalText = btn.textContent;
-    btn.textContent = '⏳ Caricamento...';
-    btn.disabled = true;
-    
-    try {
-        const response = await fetch('/api/marketing/datasets');
-        const data = await response.json();
-        
-        if (response.ok) {
-            datasets = data;
-            populateDatasetSelects();
-            document.getElementById('datasetsList').innerHTML = `
-                <div class="space-y-2">
-                    ${datasets.length > 0 ? 
-                        datasets.map(d => `
-                            <div class="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <span class="font-mono font-semibold text-indigo-900">${d.dataset_id}</span>
-                                        <span class="text-sm text-indigo-700 ml-2">${d.name}</span>
-                                    </div>
-                                    <span class="text-xs text-indigo-600">${d.account_name || 'Sistema'}</span>
-                                </div>
-                            </div>
-                        `).join('') 
-                        : '<p class="text-sm text-neutral-500 italic">Nessun dataset trovato. Verifica che gli account Meta siano configurati correttamente.</p>'
-                    }
-                </div>
-            `;
-        } else {
-            await showCustomAlert('Errore', 'Errore nel caricamento dei dataset: ' + (data.error || 'Errore sconosciuto'));
-        }
-    } catch (error) {
-        await showCustomAlert('Errore', 'Errore durante il caricamento: ' + error.message);
-    } finally {
-        btn.textContent = originalText;
-        btn.disabled = false;
-    }
-}
-
-function populateDatasetSelects() {
-    const selects = document.querySelectorAll('select[name="dataset_id"]');
-    selects.forEach(select => {
-        const currentValue = select.closest('form').querySelector('input[name="campaign_id"]').value;
-        const campaignId = parseInt(currentValue);
-        
-        // Trova il dataset corrente per questa campagna
-        const currentDatasetId = document.getElementById(`current-dataset-${campaignId}`)?.textContent.match(/Attuale: (.+)/)?.[1]?.trim();
-        
-        // Pulisci le opzioni esistenti (mantieni solo "-- Nessun Dataset --")
-        select.innerHTML = '<option value="">-- Nessun Dataset --</option>';
-        
-        // Aggiungi i dataset disponibili
-        datasets.forEach(dataset => {
-            const option = document.createElement('option');
-            option.value = dataset.dataset_id;
-            option.textContent = `${dataset.dataset_id} - ${dataset.name}`;
-            if (dataset.dataset_id === currentDatasetId) {
-                option.selected = true;
-            }
-            select.appendChild(option);
-        });
-    });
-}
-
 async function updateMapping(campaignId) {
     const form = document.getElementById(`form-${campaignId}`);
     const formData = new FormData(form);
@@ -206,9 +184,13 @@ async function updateMapping(campaignId) {
     }
 }
 
-// Carica i dataset all'avvio se disponibili
-window.addEventListener('DOMContentLoaded', () => {
-    // Non caricare automaticamente, l'utente deve cliccare il pulsante
-});
+async function handleDeleteConfirm(event, message) {
+    event.preventDefault();
+    const confirmed = await showCustomConfirm('Conferma Eliminazione', message);
+    if (confirmed) {
+        event.target.submit();
+    }
+    return false;
+}
 </script>
 {% endblock %}

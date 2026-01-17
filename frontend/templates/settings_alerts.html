@@ -7,21 +7,6 @@
         <p class="text-neutral-500 mt-2">Configura le notifiche email per i job di sincronizzazione.</p>
     </div>
 
-    <!-- SMTP Configuration Info -->
-    <div class="glass-card mb-6 p-4 bg-blue-50 border-l-4 border-blue-400">
-        <h3 class="font-semibold text-blue-900 mb-2">Configurazione SMTP</h3>
-        <p class="text-sm text-blue-700">
-            Configura le credenziali SMTP nel file <code class="bg-blue-100 px-2 py-1 rounded">.env</code>:
-        </p>
-        <ul class="text-sm text-blue-700 mt-2 ml-4 list-disc">
-            <li><code>SMTP_HOST</code> - Server SMTP</li>
-            <li><code>SMTP_PORT</code> - Porta SMTP (default: 587)</li>
-            <li><code>SMTP_USER</code> - Username SMTP</li>
-            <li><code>SMTP_PASSWORD</code> - Password SMTP</li>
-            <li><code>SMTP_FROM_EMAIL</code> - Email mittente</li>
-        </ul>
-    </div>
-
     <!-- Alert Configurations -->
     <div class="space-y-6">
         {% for alert_type in alert_types %}

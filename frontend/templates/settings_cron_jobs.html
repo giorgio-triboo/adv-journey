@@ -8,136 +8,400 @@
     </div>
 
     <div class="glass-card mb-6 p-4 bg-blue-50 border-l-4 border-blue-400">
-        <h3 class="font-semibold text-blue-900 mb-2">⚠️ Nota Importante</h3>
+        <div class="flex items-start">
+            <svg class="w-5 h-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <div>
+                <h3 class="font-semibold text-blue-900 mb-1">⚠️ Nota Importante</h3>
         <p class="text-sm text-blue-700">
             Dopo aver modificato le configurazioni dei cron jobs, è necessario <strong>riavviare l'applicazione</strong> per applicare le modifiche.
         </p>
+            </div>
+        </div>
     </div>
 
-    <div class="space-y-6">
+    <!-- Tabella Cron Jobs -->
+    <div class="glass-card overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-neutral-50 border-b border-neutral-200">
+                    <tr>
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-neutral-700 uppercase tracking-wider">Nome</th>
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-neutral-700 uppercase tracking-wider">Tipo</th>
+                        <th class="px-6 py-4 text-center text-xs font-semibold text-neutral-700 uppercase tracking-wider">Stato</th>
+                        <th class="px-6 py-4 text-center text-xs font-semibold text-neutral-700 uppercase tracking-wider">Orario</th>
+                        <th class="px-6 py-4 text-center text-xs font-semibold text-neutral-700 uppercase tracking-wider">Frequenza</th>
+                        <th class="px-6 py-4 text-center text-xs font-semibold text-neutral-700 uppercase tracking-wider">Prossima Esecuzione</th>
+                        <th class="px-6 py-4 text-center text-xs font-semibold text-neutral-700 uppercase tracking-wider">Azioni</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-200">
         {% for cron_job in cron_jobs %}
-        <div class="glass-card p-6">
-            <div class="flex items-center justify-between mb-4">
-                <div>
-                    <h2 class="text-xl font-semibold">{{ cron_job.job_name }}</h2>
+                    {% set job_type = cron_job.job_type %}
+                    {% set type_colors = {
+                        'orchestrator': 'bg-indigo-100 text-indigo-700',
+                        'magellano': 'bg-blue-100 text-blue-700',
+                        'ulixe': 'bg-purple-100 text-purple-700',
+                        'meta_marketing': 'bg-cyan-100 text-cyan-700',
+                        'meta_conversion_marker': 'bg-pink-100 text-pink-700',
+                        'meta_conversion': 'bg-rose-100 text-rose-700'
+                    } %}
+                    {% set type_color = type_colors.get(job_type, 'bg-neutral-100 text-neutral-700') %}
+                    <tr class="hover:bg-neutral-50 transition-colors {% if not cron_job.enabled %}opacity-60{% endif %}">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    {% if job_type == 'orchestrator' %}
+                                    <div class="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                                        <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                        </svg>
+                                    </div>
+                                    {% elif job_type == 'magellano' %}
+                                    <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                                        <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                        </svg>
+                                    </div>
+                                    {% elif job_type == 'ulixe' %}
+                                    <div class="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+                                        <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                    </div>
+                                    {% elif 'meta' in job_type %}
+                                    <div class="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center">
+                                        <svg class="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                        </svg>
+                                    </div>
+                                    {% else %}
+                                    <div class="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center">
+                                        <svg class="w-5 h-5 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div class="ml-3">
+                                    <div class="text-sm font-semibold text-neutral-900">{{ cron_job.job_name|replace('_', ' ')|title }}</div>
                     {% if cron_job.description %}
-                    <p class="text-sm text-neutral-500 mt-1">{{ cron_job.description }}</p>
+                                    <div class="text-xs text-neutral-500 mt-0.5">{{ cron_job.description }}</div>
                     {% endif %}
-                    <p class="text-xs text-neutral-400 mt-1">Tipo: {{ cron_job.job_type }}</p>
+                                </div>
                 </div>
-                <label class="flex items-center cursor-pointer">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2.5 py-1 text-xs font-medium rounded-full {{ type_color }}">
+                                {{ job_type|replace('_', ' ')|title }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                            <label class="flex items-center justify-center cursor-pointer">
                     <input type="checkbox" 
                            class="sr-only peer"
                            id="enabled_{{ cron_job.id }}"
                            {% if cron_job.enabled %}checked{% endif %}
-                           onchange="saveCronJob({{ cron_job.id }})">
+                                       onchange="toggleJob({{ cron_job.id }})">
                     <div class="relative w-11 h-6 bg-neutral-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                    <span class="ml-3 text-sm font-medium text-neutral-700">Abilitato</span>
                 </label>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                            <div class="text-sm font-mono text-neutral-900">
+                                {{ "%02d"|format(cron_job.hour) }}:{{ "%02d"|format(cron_job.minute) }}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                            <div class="text-sm text-neutral-700">
+                                {% if cron_job.day_of_week == '*' %}
+                                    Ogni giorno
+                                {% elif cron_job.day_of_week == '0-4' %}
+                                    Lun-Ven
+                                {% elif cron_job.day_of_week == '1-5' %}
+                                    Mar-Sab
+                                {% else %}
+                                    {{ cron_job.day_of_week }}
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                            <div class="text-sm font-mono text-indigo-600" id="nextRun_{{ cron_job.id }}">
+                                Calcolo in corso...
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                            <button onclick="openEditModal({{ cron_job.id }})" 
+                                    class="px-4 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-all">
+                                <svg class="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                                Modifica
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
             </div>
 
-            <form id="cronForm_{{ cron_job.id }}" class="space-y-4">
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+<!-- Modale Modifica Cron Job -->
+<div id="editCronModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onclick="closeEditModalOnBackdrop(event)">
+    <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 transform transition-all" id="editModalContent" onclick="event.stopPropagation()">
+        <div class="px-6 py-4 border-b border-neutral-200 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-neutral-900" id="editModalTitle">Modifica Schedulazione</h3>
+            <button onclick="closeEditModal()" class="text-neutral-400 hover:text-neutral-600 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="px-6 py-6">
+            <form id="editCronForm" onsubmit="saveCronJobFromModal(event)">
+                <input type="hidden" id="editJobId" name="job_id">
+                
+                <!-- Orario -->
+                <div class="mb-6">
+                    <h4 class="text-sm font-semibold text-neutral-700 mb-3 flex items-center">
+                        <svg class="w-4 h-4 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        Orario di Esecuzione
+                    </h4>
+                    <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-sm font-medium text-neutral-700 mb-2">
-                            Ora (0-23)
-                        </label>
+                            <label class="block text-xs font-medium text-neutral-600 mb-1.5">Ora (0-23)</label>
                         <input type="number" 
+                                   id="editHour"
                                name="hour" 
-                               id="hour_{{ cron_job.id }}"
-                               value="{{ cron_job.hour }}"
                                min="0" 
                                max="23"
-                               onchange="saveCronJob({{ cron_job.id }})"
-                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                                   required
+                                   class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
                     </div>
-
                     <div>
-                        <label class="block text-sm font-medium text-neutral-700 mb-2">
-                            Minuto (0-59)
-                        </label>
+                            <label class="block text-xs font-medium text-neutral-600 mb-1.5">Minuto (0-59)</label>
                         <input type="number" 
+                                   id="editMinute"
                                name="minute" 
-                               id="minute_{{ cron_job.id }}"
-                               value="{{ cron_job.minute }}"
                                min="0" 
                                max="59"
-                               onchange="saveCronJob({{ cron_job.id }})"
-                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                                   required
+                                   class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                        </div>
+                    </div>
                     </div>
 
+                <!-- Frequenza -->
+                <div class="mb-6">
+                    <h4 class="text-sm font-semibold text-neutral-700 mb-3 flex items-center">
+                        <svg class="w-4 h-4 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7l4-4 4 4m0 6l-4 4-4-4"/>
+                        </svg>
+                        Frequenza
+                    </h4>
+                    <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-neutral-700 mb-2">
-                            Giorno della Settimana
-                        </label>
-                        <select name="day_of_week" 
-                                id="day_of_week_{{ cron_job.id }}"
-                                onchange="saveCronJob({{ cron_job.id }})"
-                                class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
-                            <option value="*" {% if cron_job.day_of_week == '*' %}selected{% endif %}>Ogni giorno</option>
-                            <option value="0" {% if cron_job.day_of_week == '0' %}selected{% endif %}>Lunedì</option>
-                            <option value="1" {% if cron_job.day_of_week == '1' %}selected{% endif %}>Martedì</option>
-                            <option value="2" {% if cron_job.day_of_week == '2' %}selected{% endif %}>Mercoledì</option>
-                            <option value="3" {% if cron_job.day_of_week == '3' %}selected{% endif %}>Giovedì</option>
-                            <option value="4" {% if cron_job.day_of_week == '4' %}selected{% endif %}>Venerdì</option>
-                            <option value="5" {% if cron_job.day_of_week == '5' %}selected{% endif %}>Sabato</option>
-                            <option value="6" {% if cron_job.day_of_week == '6' %}selected{% endif %}>Domenica</option>
-                            <option value="0-4" {% if cron_job.day_of_week == '0-4' %}selected{% endif %}>Lun-Ven</option>
-                            <option value="1-5" {% if cron_job.day_of_week == '1-5' %}selected{% endif %}>Mar-Sab</option>
+                            <label class="block text-xs font-medium text-neutral-600 mb-1.5">Giorno della Settimana</label>
+                            <select id="editDayOfWeek"
+                                    name="day_of_week"
+                                    class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white">
+                                <option value="*">Ogni giorno</option>
+                                <option value="0">Lunedì</option>
+                                <option value="1">Martedì</option>
+                                <option value="2">Mercoledì</option>
+                                <option value="3">Giovedì</option>
+                                <option value="4">Venerdì</option>
+                                <option value="5">Sabato</option>
+                                <option value="6">Domenica</option>
+                                <option value="0-4">Lun-Ven</option>
+                                <option value="1-5">Mar-Sab</option>
                         </select>
                     </div>
-
+                        <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-sm font-medium text-neutral-700 mb-2">
-                            Giorno del Mese
-                        </label>
+                                <label class="block text-xs font-medium text-neutral-600 mb-1.5">Giorno del Mese</label>
                         <input type="text" 
+                                       id="editDayOfMonth"
                                name="day_of_month" 
-                               id="day_of_month_{{ cron_job.id }}"
-                               value="{{ cron_job.day_of_month }}"
+                                       placeholder="*"
+                                       class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                                       title="* = ogni giorno, 1-31 = giorno specifico">
+                                <p class="text-xs text-neutral-400 mt-1">* = ogni giorno</p>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-neutral-600 mb-1.5">Mese</label>
+                                <input type="text" 
+                                       id="editMonth"
+                                       name="month"
                                placeholder="*"
-                               onchange="saveCronJob({{ cron_job.id }})"
-                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
-                        <p class="text-xs text-neutral-500 mt-1">* = ogni giorno, 1-31 = giorno specifico</p>
+                                       class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                                       title="* = ogni mese, 1-12 = mese specifico">
+                                <p class="text-xs text-neutral-400 mt-1">* = ogni mese</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div>
-                    <label class="block text-sm font-medium text-neutral-700 mb-2">
-                        Mese
-                    </label>
-                    <input type="text" 
-                           name="month" 
-                           id="month_{{ cron_job.id }}"
-                           value="{{ cron_job.month }}"
-                           placeholder="*"
-                           onchange="saveCronJob({{ cron_job.id }})"
-                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
-                    <p class="text-xs text-neutral-500 mt-1">* = ogni mese, 1-12 = mese specifico</p>
+                <!-- Prossima Esecuzione -->
+                <div class="mb-6 p-3 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border border-indigo-100">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                            <span class="text-xs font-medium text-neutral-700">Prossima esecuzione:</span>
+                </div>
+                        <span id="editNextRun" class="text-sm font-bold text-indigo-700 font-mono">-</span>
+                    </div>
                 </div>
 
-                <div class="pt-2">
-                    <div class="p-3 bg-neutral-50 rounded-lg">
-                        <p class="text-sm text-neutral-600">
-                            <strong>Prossima esecuzione prevista:</strong> 
-                            <span id="nextRun_{{ cron_job.id }}" class="font-mono text-indigo-600">Calcolo in corso...</span>
-                        </p>
-                    </div>
+                <div class="flex gap-3 justify-end pt-4 border-t border-neutral-200">
+                    <button type="button" onclick="closeEditModal()" class="px-4 py-2 text-sm font-semibold text-neutral-700 bg-neutral-100 rounded-lg hover:bg-neutral-200 transition-all">
+                        Annulla
+                    </button>
+                    <button type="submit" class="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all">
+                        Salva Modifiche
+                    </button>
                 </div>
             </form>
         </div>
-        {% endfor %}
     </div>
 </div>
 
 <script>
-async function saveCronJob(jobId) {
+// Dati dei cron jobs per accesso rapido
+const cronJobsData = {
+    {% for cron_job in cron_jobs %}
+    {{ cron_job.id }}: {
+        id: {{ cron_job.id }},
+        job_name: "{{ cron_job.job_name }}",
+        job_type: "{{ cron_job.job_type }}",
+        enabled: {{ 'true' if cron_job.enabled else 'false' }},
+        hour: {{ cron_job.hour }},
+        minute: {{ cron_job.minute }},
+        day_of_week: "{{ cron_job.day_of_week }}",
+        day_of_month: "{{ cron_job.day_of_month }}",
+        month: "{{ cron_job.month }}",
+        description: "{{ cron_job.description|default('') }}"
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+};
+
+function openEditModal(jobId) {
+    const job = cronJobsData[jobId];
+    if (!job) return;
+
+    // Popola il form
+    document.getElementById('editJobId').value = job.id;
+    document.getElementById('editHour').value = job.hour;
+    document.getElementById('editMinute').value = job.minute;
+    document.getElementById('editDayOfWeek').value = job.day_of_week;
+    document.getElementById('editDayOfMonth').value = job.day_of_month;
+    document.getElementById('editMonth').value = job.month;
+    document.getElementById('editModalTitle').textContent = `Modifica: ${job.job_name.replace(/_/g, ' ')}`;
+
+    // Calcola prossima esecuzione
+    updateNextRunInModal(job.hour, job.minute, job.day_of_week, job.day_of_month, job.month);
+
+    // Mostra modale
+    const modal = document.getElementById('editCronModal');
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+        document.getElementById('editModalContent').style.transform = 'scale(1)';
+        document.getElementById('editModalContent').style.opacity = '1';
+    }, 10);
+
+    // Aggiorna prossima esecuzione quando cambiano i valori
+    ['editHour', 'editMinute', 'editDayOfWeek', 'editDayOfMonth', 'editMonth'].forEach(id => {
+        document.getElementById(id).addEventListener('change', function() {
+            const hour = parseInt(document.getElementById('editHour').value) || 0;
+            const minute = parseInt(document.getElementById('editMinute').value) || 0;
+            const dayOfWeek = document.getElementById('editDayOfWeek').value;
+            const dayOfMonth = document.getElementById('editDayOfMonth').value || '*';
+            const month = document.getElementById('editMonth').value || '*';
+            updateNextRunInModal(hour, minute, dayOfWeek, dayOfMonth, month);
+        });
+    });
+}
+
+function closeEditModal() {
+    const modal = document.getElementById('editCronModal');
+    document.getElementById('editModalContent').style.transform = 'scale(0.95)';
+    document.getElementById('editModalContent').style.opacity = '0';
+    setTimeout(() => {
+        modal.classList.add('hidden');
+    }, 200);
+}
+
+function closeEditModalOnBackdrop(event) {
+    if (event.target.id === 'editCronModal') {
+        closeEditModal();
+    }
+}
+
+function updateNextRunInModal(hour, minute, dayOfWeek, dayOfMonth, month) {
+    const now = new Date();
+    let nextRun = new Date();
+    nextRun.setHours(hour, minute, 0, 0);
+    nextRun.setSeconds(0, 0);
+    
+    if (nextRun <= now) {
+        nextRun.setDate(nextRun.getDate() + 1);
+    }
+    
+    if (dayOfWeek !== '*') {
+        if (dayOfWeek.includes('-')) {
+            const [start, end] = dayOfWeek.split('-').map(d => parseInt(d));
+            const currentDay = now.getDay() === 0 ? 7 : now.getDay();
+            const adjustedStart = start === 0 ? 7 : start;
+            const adjustedEnd = end === 0 ? 7 : end;
+            
+            let daysToAdd = adjustedStart - currentDay;
+            if (daysToAdd <= 0 || (daysToAdd === 0 && nextRun <= now)) {
+                daysToAdd = 7 - currentDay + adjustedStart;
+            }
+            nextRun.setDate(nextRun.getDate() + daysToAdd);
+        } else {
+            const targetDay = parseInt(dayOfWeek);
+            if (!isNaN(targetDay)) {
+                const currentDay = now.getDay() === 0 ? 7 : now.getDay();
+                const adjustedTarget = targetDay === 0 ? 7 : targetDay;
+                
+                let daysToAdd = adjustedTarget - currentDay;
+                if (daysToAdd < 0 || (daysToAdd === 0 && nextRun <= now)) {
+                    daysToAdd += 7;
+                }
+                nextRun.setDate(nextRun.getDate() + daysToAdd);
+            }
+        }
+    }
+    
+    const nextRunElement = document.getElementById('editNextRun');
+    if (nextRunElement) {
+        const formatted = nextRun.toLocaleString('it-IT', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        nextRunElement.textContent = formatted;
+    }
+}
+
+async function saveCronJobFromModal(event) {
+    event.preventDefault();
+    
+    const jobId = parseInt(document.getElementById('editJobId').value);
     const enabled = document.getElementById(`enabled_${jobId}`).checked;
-    const hour = parseInt(document.getElementById(`hour_${jobId}`).value) || 0;
-    const minute = parseInt(document.getElementById(`minute_${jobId}`).value) || 0;
-    const dayOfWeek = document.getElementById(`day_of_week_${jobId}`).value;
-    const dayOfMonth = document.getElementById(`day_of_month_${jobId}`).value || '*';
-    const month = document.getElementById(`month_${jobId}`).value || '*';
+    const hour = parseInt(document.getElementById('editHour').value) || 0;
+    const minute = parseInt(document.getElementById('editMinute').value) || 0;
+    const dayOfWeek = document.getElementById('editDayOfWeek').value;
+    const dayOfMonth = document.getElementById('editDayOfMonth').value || '*';
+    const month = document.getElementById('editMonth').value || '*';
 
     try {
         const response = await fetch('/api/cron-jobs', {
@@ -159,66 +423,197 @@ async function saveCronJob(jobId) {
         const data = await response.json();
         
         if (response.ok && data.success) {
-            showNotification('success', 'Configurazione salvata');
+            showNotification('success', '✅ Configurazione salvata con successo');
+            
+            // Aggiorna i dati locali
+            cronJobsData[jobId].hour = hour;
+            cronJobsData[jobId].minute = minute;
+            cronJobsData[jobId].day_of_week = dayOfWeek;
+            cronJobsData[jobId].day_of_month = dayOfMonth;
+            cronJobsData[jobId].month = month;
+            cronJobsData[jobId].enabled = enabled;
+            
+            // Aggiorna la tabella
+            updateTableRow(jobId);
             updateNextRun(jobId, hour, minute, dayOfWeek, dayOfMonth, month);
+            
+            closeEditModal();
+            
+            // Ricarica la pagina dopo 1 secondo per vedere le modifiche
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
         } else {
-            showNotification('error', data.error || 'Errore nel salvataggio');
+            showNotification('error', '❌ ' + (data.error || 'Errore nel salvataggio'));
         }
     } catch (error) {
-        showNotification('error', 'Errore di connessione: ' + error.message);
+        showNotification('error', '❌ Errore di connessione: ' + error.message);
+    }
+}
+
+function updateTableRow(jobId) {
+    const job = cronJobsData[jobId];
+    if (!job) return;
+    
+    // Aggiorna l'orario nella tabella
+    const row = document.querySelector(`tr:has(input[id="enabled_${jobId}"])`);
+    if (row) {
+        const timeCell = row.querySelector('td:nth-child(4)');
+        if (timeCell) {
+            timeCell.innerHTML = `<div class="text-sm font-mono text-neutral-900">${String(job.hour).padStart(2, '0')}:${String(job.minute).padStart(2, '0')}</div>`;
+        }
+        
+        const freqCell = row.querySelector('td:nth-child(5)');
+        if (freqCell) {
+            let freqText = 'Ogni giorno';
+            if (job.day_of_week === '0-4') freqText = 'Lun-Ven';
+            else if (job.day_of_week === '1-5') freqText = 'Mar-Sab';
+            else if (job.day_of_week !== '*') freqText = job.day_of_week;
+            freqCell.innerHTML = `<div class="text-sm text-neutral-700">${freqText}</div>`;
+        }
+    }
+}
+
+async function toggleJob(jobId) {
+    const enabled = document.getElementById(`enabled_${jobId}`).checked;
+    const job = cronJobsData[jobId];
+    
+    try {
+        const response = await fetch('/api/cron-jobs', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                id: jobId,
+                enabled: enabled,
+                hour: job.hour,
+                minute: job.minute,
+                day_of_week: job.day_of_week,
+                day_of_month: job.day_of_month,
+                month: job.month
+            })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            cronJobsData[jobId].enabled = enabled;
+            showNotification('success', enabled ? '✅ Job attivato' : '⚠️ Job disattivato');
+            
+            // Aggiorna opacità riga
+            const row = document.querySelector(`tr:has(input[id="enabled_${jobId}"])`);
+            if (row) {
+                if (enabled) {
+                    row.classList.remove('opacity-60');
+                } else {
+                    row.classList.add('opacity-60');
+                }
+            }
+        } else {
+            // Ripristina checkbox
+            document.getElementById(`enabled_${jobId}`).checked = !enabled;
+            showNotification('error', '❌ ' + (data.error || 'Errore nel salvataggio'));
+        }
+    } catch (error) {
+        document.getElementById(`enabled_${jobId}`).checked = !enabled;
+        showNotification('error', '❌ Errore di connessione: ' + error.message);
     }
 }
 
 function updateNextRun(jobId, hour, minute, dayOfWeek, dayOfMonth, month) {
-    // Calcolo semplificato della prossima esecuzione
+    const enabled = document.getElementById(`enabled_${jobId}`)?.checked;
+    if (!enabled) {
+        const nextRunElement = document.getElementById(`nextRun_${jobId}`);
+        if (nextRunElement) {
+            nextRunElement.textContent = 'Disattivato';
+            nextRunElement.className = 'text-sm font-mono text-neutral-400';
+        }
+        return;
+    }
+
     const now = new Date();
-    const nextRun = new Date();
+    let nextRun = new Date();
     nextRun.setHours(hour, minute, 0, 0);
+    nextRun.setSeconds(0, 0);
     
-    // Se l'ora è già passata oggi, passa a domani
-    if (nextRun < now) {
+    if (nextRun <= now) {
         nextRun.setDate(nextRun.getDate() + 1);
     }
     
-    // Gestione giorno della settimana (semplificata)
     if (dayOfWeek !== '*') {
-        const targetDay = parseInt(dayOfWeek);
-        if (!isNaN(targetDay)) {
-            const currentDay = now.getDay(); // 0 = Domenica, 1 = Lunedì, etc.
-            const adjustedTarget = targetDay === 0 ? 7 : targetDay; // Converti 0 (Lunedì) a 7
-            const adjustedCurrent = currentDay === 0 ? 7 : currentDay;
+        if (dayOfWeek.includes('-')) {
+            const [start, end] = dayOfWeek.split('-').map(d => parseInt(d));
+            const currentDay = now.getDay() === 0 ? 7 : now.getDay();
+            const adjustedStart = start === 0 ? 7 : start;
             
-            let daysToAdd = adjustedTarget - adjustedCurrent;
-            if (daysToAdd <= 0) {
-                daysToAdd += 7;
+            let daysToAdd = adjustedStart - currentDay;
+            if (daysToAdd <= 0 || (daysToAdd === 0 && nextRun <= now)) {
+                daysToAdd = 7 - currentDay + adjustedStart;
             }
             nextRun.setDate(nextRun.getDate() + daysToAdd);
+        } else {
+            const targetDay = parseInt(dayOfWeek);
+            if (!isNaN(targetDay)) {
+                const currentDay = now.getDay() === 0 ? 7 : now.getDay();
+                const adjustedTarget = targetDay === 0 ? 7 : targetDay;
+                
+                let daysToAdd = adjustedTarget - currentDay;
+                if (daysToAdd < 0 || (daysToAdd === 0 && nextRun <= now)) {
+                    daysToAdd += 7;
+                }
+                nextRun.setDate(nextRun.getDate() + daysToAdd);
+            }
         }
     }
     
     const nextRunElement = document.getElementById(`nextRun_${jobId}`);
     if (nextRunElement) {
-        nextRunElement.textContent = nextRun.toLocaleString('it-IT', {
+        const formatted = nextRun.toLocaleString('it-IT', {
             day: '2-digit',
             month: '2-digit',
             year: 'numeric',
             hour: '2-digit',
             minute: '2-digit'
         });
+        nextRunElement.textContent = formatted;
+        nextRunElement.className = 'text-sm font-mono text-indigo-600';
     }
 }
 
 function showNotification(type, message) {
+    const existing = document.querySelectorAll('.custom-notification');
+    existing.forEach(n => n.remove());
+    
     const notification = document.createElement('div');
-    notification.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 ${
-        type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+    notification.className = `custom-notification fixed top-4 right-4 px-6 py-4 rounded-xl shadow-2xl z-50 flex items-center space-x-3 min-w-[300px] max-w-md transform transition-all ${
+        type === 'success' 
+            ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white' 
+            : 'bg-gradient-to-r from-red-500 to-rose-600 text-white'
     }`;
-    notification.textContent = message;
+    
+    notification.innerHTML = `
+        <div class="flex-shrink-0">
+            ${type === 'success' 
+                ? '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>'
+                : '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>'
+            }
+        </div>
+        <div class="flex-1 font-medium">${message}</div>
+    `;
+    
     document.body.appendChild(notification);
     
     setTimeout(() => {
-        notification.remove();
-    }, 3000);
+        notification.style.transform = 'translateX(0)';
+        notification.style.opacity = '1';
+    }, 10);
+    
+    setTimeout(() => {
+        notification.style.transform = 'translateX(100%)';
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 300);
+    }, 4000);
 }
 
 // Calcola prossima esecuzione per tutti i job al caricamento
@@ -228,4 +623,18 @@ document.addEventListener('DOMContentLoaded', function() {
     {% endfor %}
 });
 </script>
+
+<style>
+.custom-notification {
+    transform: translateX(120%);
+    opacity: 0;
+    transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55), opacity 0.3s ease;
+}
+
+#editModalContent {
+    transform: scale(0.95);
+    opacity: 0;
+    transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+}
+</style>
 {% endblock %}

@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Seleziona Dataset</h1>
+        <p class="text-neutral-500 mt-2">
+            {% if status == "pending" or status == "processing" %}
+            Recupero dataset in corso dagli account Meta selezionati...
+            {% else %}
+            Scegli i dataset (pixel) che vuoi salvare nel database.
+            {% if new_datasets_count > 0 %}
+            <span class="text-green-600 font-semibold">{{ new_datasets_count }} nuovo/i dataset disponibili</span>
+            {% endif %}
+            {% endif %}
+        </p>
+    </div>
+
+    {% if status == "pending" or status == "processing" %}
+    <div class="glass-card overflow-hidden">
+        <div class="px-6 py-12 text-center">
+            <div class="flex flex-col items-center gap-4">
+                <svg class="animate-spin h-12 w-12 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <div>
+                    <p class="text-lg font-semibold text-neutral-700">Recupero dataset in corso...</p>
+                    <p class="text-sm text-neutral-500 mt-2">Attendere prego, questa operazione può richiedere alcuni secondi.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+
+    {% if request.query_params.get('error') %}
+    <div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+        <strong>Errore:</strong> {{ request.query_params.get('error') }}
+    </div>
+    {% endif %}
+
+    <form action="/settings/meta-datasets/save" method="POST" id="datasets-form">
+        <input type="hidden" name="job_id" value="{{ job_id }}">
+        <div class="glass-card overflow-hidden mb-6">
+            <div class="px-6 py-4 border-b border-white/20 bg-white/50 flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold">Dataset Recuperati ({{ total_datasets }})</h2>
+                    {% if new_datasets_count > 0 %}
+                    <p class="text-xs text-green-600 mt-1">{{ new_datasets_count }} nuovo/i dataset non ancora salvati</p>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-sm text-neutral-500">
+                        <input type="checkbox" id="select-all-new" class="rounded border-neutral-300 mr-2">
+                        <label for="select-all-new" class="cursor-pointer">Seleziona solo nuovi</label>
+                        <span class="mx-2">|</span>
+                        <input type="checkbox" id="select-all" class="rounded border-neutral-300 mr-2">
+                        <label for="select-all" class="cursor-pointer">Seleziona tutti</label>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="text" 
+                               id="filter-input" 
+                               placeholder="Filtra per nome o ID..." 
+                               class="px-3 py-1.5 text-sm border border-neutral-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-neutral-200">
+                    <thead class="bg-neutral-50/50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase w-12"></th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Dataset ID</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Nome</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Account</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Stato</th>
+                        </tr>
+                    </thead>
+                    <tbody id="datasets-tbody" class="divide-y divide-neutral-200">
+                        {% for dataset in datasets %}
+                        <tr class="dataset-row hover:bg-neutral-50/50 transition-colors {% if dataset.already_saved %}opacity-60{% else %}bg-green-50/30{% endif %}" 
+                            data-dataset-id="{{ dataset.dataset_id }}" 
+                            data-dataset-name="{{ dataset.name|lower }}" 
+                            data-account-name="{{ dataset.account_name|lower }}">
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <input type="checkbox" 
+                                       name="dataset_ids" 
+                                       value="{{ dataset.dataset_id }}"
+                                       class="dataset-checkbox rounded border-neutral-300"
+                                       {% if dataset.already_saved %}checked disabled data-already-saved="true"{% endif %}>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-mono font-bold text-indigo-600">
+                                {{ dataset.dataset_id }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-neutral-900">{{ dataset.name }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-neutral-500">{{ dataset.account_name }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                {% if dataset.already_saved %}
+                                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    Già salvato
+                                </span>
+                                {% else %}
+                                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    Nuovo
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if not datasets %}
+                        <tr>
+                            <td colspan="5" class="px-6 py-12 text-center text-neutral-500 italic">
+                                Nessun dataset trovato.
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="flex flex-col gap-4">
+            <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+                <p><strong>💡 Suggerimento:</strong> I dataset già salvati sono selezionati automaticamente e non possono essere rimossi.</p>
+                <p class="mt-1">Seleziona solo i dataset che vuoi utilizzare per mappare le campagne Magellano.</p>
+            </div>
+            <div class="flex justify-end gap-4">
+                <a href="/settings/meta-datasets" 
+                   class="px-6 py-2 border border-neutral-300 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-50 transition-all">
+                    Annulla
+                </a>
+                <button type="submit" 
+                        id="save-button"
+                        class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    Salva Dataset Selezionati (<span id="selected-count">0</span>)
+                </button>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+</div>
+
+<script>
+// Select all checkboxes (solo se esistono, non quando è in processing)
+const selectAllCheckbox = document.getElementById('select-all');
+const selectAllNewCheckbox = document.getElementById('select-all-new');
+const filterInput = document.getElementById('filter-input');
+const datasetCheckboxes = document.querySelectorAll('.dataset-checkbox:not(:disabled)');
+const newDatasetCheckboxes = document.querySelectorAll('.dataset-checkbox:not(:disabled):not([data-already-saved])');
+const selectedCountSpan = document.getElementById('selected-count');
+const saveButton = document.getElementById('save-button');
+const datasetsTbody = document.getElementById('datasets-tbody');
+
+function updateSelectedCount() {
+    if (!selectedCountSpan || !saveButton) return;
+    const selected = document.querySelectorAll('.dataset-checkbox:checked:not(:disabled)').length;
+    const alreadySaved = document.querySelectorAll('.dataset-checkbox:checked[disabled]').length;
+    const total = selected + alreadySaved;
+    selectedCountSpan.textContent = total;
+    if (saveButton) saveButton.disabled = selected === 0;
+}
+
+function filterDatasets() {
+    if (!filterInput || !datasetsTbody) return;
+    const filterText = filterInput.value.toLowerCase();
+    const rows = datasetsTbody.querySelectorAll('.dataset-row');
+    
+    rows.forEach(row => {
+        const datasetId = row.getAttribute('data-dataset-id').toLowerCase();
+        const datasetName = row.getAttribute('data-dataset-name');
+        const accountName = row.getAttribute('data-account-name');
+        
+        const matches = !filterText || 
+            datasetId.includes(filterText) || 
+            datasetName.includes(filterText) || 
+            accountName.includes(filterText);
+        
+        row.style.display = matches ? '' : 'none';
+    });
+}
+
+// Seleziona tutti
+if (selectAllCheckbox) {
+selectAllCheckbox.addEventListener('change', function(e) {
+    const visibleCheckboxes = Array.from(datasetCheckboxes).filter(cb => {
+        const row = cb.closest('tr');
+        return row && row.style.display !== 'none';
+    });
+    visibleCheckboxes.forEach(cb => cb.checked = e.target.checked);
+    if (e.target.checked) {
+        selectAllNewCheckbox.checked = false;
+    }
+    updateSelectedCount();
+});
+}
+
+// Seleziona solo nuovi dataset
+if (selectAllNewCheckbox) {
+selectAllNewCheckbox.addEventListener('change', function(e) {
+    // Deseleziona tutti prima
+    datasetCheckboxes.forEach(cb => cb.checked = false);
+    // Seleziona solo i nuovi visibili
+    if (e.target.checked) {
+        const visibleNewCheckboxes = Array.from(newDatasetCheckboxes).filter(cb => {
+            const row = cb.closest('tr');
+            return row && row.style.display !== 'none';
+        });
+        visibleNewCheckboxes.forEach(cb => {
+            const row = cb.closest('tr');
+            if (row && !row.querySelector('.dataset-checkbox[disabled]')) {
+                cb.checked = true;
+            }
+        });
+        selectAllCheckbox.checked = false;
+    }
+    updateSelectedCount();
+});
+}
+
+if (datasetCheckboxes.length > 0) {
+datasetCheckboxes.forEach(cb => {
+    cb.addEventListener('change', function() {
+        // Se deselezioni manualmente, deseleziona anche "seleziona tutti"
+        if (!cb.checked) {
+            selectAllCheckbox.checked = false;
+            selectAllNewCheckbox.checked = false;
+        }
+        updateSelectedCount();
+    });
+});
+}
+
+// Filtro in tempo reale
+if (filterInput) {
+filterInput.addEventListener('input', filterDatasets);
+}
+
+// Update count on page load
+if (selectedCountSpan) {
+updateSelectedCount();
+}
+
+// Polling per job in processing
+{% if status == "pending" or status == "processing" %}
+const jobId = {{ job_id }};
+let pollInterval;
+
+function checkJobStatus() {
+    fetch(`/api/meta-datasets/fetch-status/${jobId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "completed") {
+                // Ricarica la pagina per mostrare i dataset
+                clearInterval(pollInterval);
+                window.location.reload();
+            } else if (data.status === "error") {
+                // Mostra errore e reindirizza
+                clearInterval(pollInterval);
+                window.location.href = `/settings/meta-datasets?error=${encodeURIComponent(data.error_message || 'Errore durante il recupero')}`;
+            }
+            // Se è ancora processing, continua il polling
+        })
+        .catch(error => {
+            console.error("Error checking job status:", error);
+        });
+}
+
+// Avvia polling ogni 2 secondi
+pollInterval = setInterval(checkJobStatus, 2000);
+{% endif %}
+</script>
+{% endblock %}

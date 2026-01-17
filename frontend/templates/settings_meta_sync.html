@@ -139,6 +139,9 @@
             <p><strong>CPL:</strong> Per calcolare il CPL (Costo per Lead) sono necessari Spend e Conversions (da Actions).</p>
         </div>
     </div>
+
+    <!-- Tooltip Container -->
+    <div id="tooltipContainer" style="position: fixed; top: 2rem; right: 2rem; z-index: 1000; pointer-events: none;"></div>
 </div>
 
 <script>
@@ -198,15 +201,21 @@ document.getElementById('syncForm').addEventListener('submit', async function(e)
             })
         });
         
+        // Verifica se la risposta è OK
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Errore risposta:', response.status, errorText);
+            await showCustomAlert('Errore', `Errore HTTP ${response.status}: ${errorText}`);
+            return;
+        }
+        
         const result = await response.json();
+        console.log('Risposta sync:', result);
         
         if (result.success) {
-            await showCustomAlert('Successo', 
-                `Sincronizzazione avviata con successo!\n\n` +
-                `Account: ${result.account_name || 'Tutti'}\n` +
-                `Periodo: ${startDate} - ${endDate}\n` +
-                `Metriche: ${metrics.join(', ')}\n\n` +
-                `La sync è in esecuzione in background. Controlla i log per i dettagli.`
+            showSuccessTooltip(
+                `Sincronizzazione avviata con successo!`,
+                `Account: ${result.account_name || 'Tutti'} • Periodo: ${startDate} - ${endDate} • Metriche: ${metrics.join(', ')}`
             );
             // Reset form (opzionale)
             // e.target.reset();
@@ -214,6 +223,7 @@ document.getElementById('syncForm').addEventListener('submit', async function(e)
             await showCustomAlert('Errore', 'Errore durante la sincronizzazione: ' + (result.message || 'Errore sconosciuto'));
         }
     } catch (error) {
+        console.error('Errore durante la richiesta:', error);
         await showCustomAlert('Errore', 'Errore durante la richiesta: ' + error.message);
     } finally {
         syncButton.disabled = false;
@@ -238,5 +248,68 @@ document.addEventListener('DOMContentLoaded', function() {
         startDateInput.value = janFirst.toISOString().split('T')[0];
     }
 });
+
+// Funzione per mostrare tooltip di successo
+function showSuccessTooltip(title, message) {
+    try {
+        console.log('Mostrando tooltip:', title, message);
+        
+        // Trova il container del tooltip
+        const tooltipContainer = document.getElementById('tooltipContainer');
+        if (!tooltipContainer) {
+            console.error('Container tooltip non trovato');
+            alert(title + '\n\n' + message);
+            return;
+        }
+        
+        // Rimuovi tooltip esistenti
+        const existingTooltip = document.getElementById('successTooltip');
+        if (existingTooltip) {
+            existingTooltip.remove();
+        }
+        
+        // Crea nuovo tooltip
+        const tooltip = document.createElement('div');
+        tooltip.id = 'successTooltip';
+        tooltip.className = 'success-tooltip';
+        tooltip.style.pointerEvents = 'auto'; // Abilita interazioni sul tooltip
+        
+        tooltip.innerHTML = `
+            <div class="success-tooltip-icon">
+                ✓
+            </div>
+            <div class="success-tooltip-content">
+                <div class="success-tooltip-title">${title}</div>
+                <div class="success-tooltip-message">${message}</div>
+            </div>
+            <div class="success-tooltip-close" onclick="this.closest('#successTooltip').remove()">
+                ×
+            </div>
+        `;
+        
+        tooltipContainer.appendChild(tooltip);
+        console.log('Tooltip aggiunto al container');
+        
+        // Trigger animation
+        setTimeout(() => {
+            tooltip.classList.add('show');
+            console.log('Tooltip mostrato');
+        }, 10);
+        
+        // Auto-remove dopo 5 secondi
+        setTimeout(() => {
+            tooltip.classList.remove('show');
+            setTimeout(() => {
+                if (tooltip.parentElement) {
+                    tooltip.remove();
+                }
+            }, 300);
+        }, 5000);
+    } catch (error) {
+        console.error('Errore mostrando tooltip:', error);
+        // Fallback a alert se il tooltip non funziona
+        alert(title + '\n\n' + message);
+    }
+}
 </script>
 {% endblock %}

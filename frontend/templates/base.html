@@ -50,8 +50,8 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
                     </div>
-                    <div id="sync-menu" class="nav-submenu {% if active_page in ['magellano_upload', 'meta_sync', 'ulixe_sync', 'cron_jobs'] %}open{% endif %}">
-                        <a href="/settings/magellano/upload" class="nav-item {% if active_page == 'magellano_upload' %}active{% endif %}">
+                    <div id="sync-menu" class="nav-submenu {% if active_page in ['magellano_sync', 'meta_sync', 'ulixe_sync'] %}open{% endif %}">
+                        <a href="/settings/magellano-sync" class="nav-item {% if active_page == 'magellano_sync' %}active{% endif %}">
                             Magellano
                         </a>
                         <a href="/settings/meta-sync" class="nav-item {% if active_page == 'meta_sync' %}active{% endif %}">
@@ -60,11 +60,6 @@
                         <a href="/settings/ulixe-sync" class="nav-item {% if active_page == 'ulixe_sync' %}active{% endif %}">
                             Ulixe
                         </a>
-                        {% if user.role == 'super-admin' %}
-                        <a href="/settings/cron-jobs" class="nav-item {% if active_page == 'cron_jobs' %}active{% endif %}">
-                            Gestione Cron
-                        </a>
-                        {% endif %}
                     </div>
                 </div>
                 <div class="nav-dropdown">
@@ -107,14 +102,14 @@
                         <a href="/settings/campaigns" class="nav-item {% if active_page == 'campaigns' %}active{% endif %}">
                             Campagne Magellano
                         </a>
-                        <a href="/settings/meta-datasets" class="nav-item {% if active_page == 'meta_datasets' %}active{% endif %}">
-                            Mapping Dataset Meta
-                        </a>
                         <a href="/settings/meta-accounts" class="nav-item {% if active_page == 'meta_accounts' %}active{% endif %}">
                             Account Meta
                         </a>
                         <a href="/settings/meta-campaigns" class="nav-item {% if active_page == 'meta_campaigns' %}active{% endif %}">
                             Campagne Meta
+                        </a>
+                        <a href="/settings/meta-datasets" class="nav-item {% if active_page == 'meta_datasets' %}active{% endif %}">
+                            Mapping Dataset Meta
                         </a>
                     </div>
                 </div>
@@ -124,6 +119,12 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
                     </svg>
                     Gestione Utenti
+                </a>
+                <a href="/settings/cron-jobs" class="nav-item {% if active_page == 'cron_jobs' %}active{% endif %}">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Gestione Cron
                 </a>
                 {% endif %}
             </nav>

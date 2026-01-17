@@ -8,8 +8,12 @@
     </div>
 
     <div class="glass-card overflow-hidden">
-        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
-            <h2 class="text-lg font-semibold">Campagne Attive</h2>
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50 flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Lista Campagne</h2>
+            <a href="/settings/campaigns/create/" 
+               class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
+                Aggiungi Campagna
+            </a>
         </div>
         
         <div class="overflow-x-auto">
@@ -21,7 +25,6 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Pay</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">ID Messaggio</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Nome</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Meta Dataset</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase tracking-wider">Stato</th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase tracking-wider">Azioni</th>
                     </tr>
@@ -69,15 +72,6 @@
                             {% endif %}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-neutral-900">{{ campaign.name }}</td>
-                        <td class="px-6 py-4 text-sm">
-                            {% if campaign.meta_dataset_id %}
-                                <span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-mono" title="{{ campaign.meta_dataset_id }}">
-                                    {{ campaign.meta_dataset_id[:20] }}{% if campaign.meta_dataset_id|length > 20 %}...{% endif %}
-                                </span>
-                            {% else %}
-                                <span class="italic text-xs text-neutral-400">Non configurato</span>
-                            {% endif %}
-                        </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm">
                             <span class="px-2.5 py-0.5 rounded-full text-xs font-medium {% if campaign.is_active %}bg-green-100 text-green-800{% else %}bg-neutral-100 text-neutral-800{% endif %}">
                                 {{ 'Monitorata' if campaign.is_active else 'Pausa' }}
@@ -96,62 +90,13 @@
                     {% endfor %}
                     {% if not campaigns %}
                     <tr>
-                        <td colspan="8" class="px-6 py-12 text-center text-neutral-500 italic">
+                        <td colspan="7" class="px-6 py-12 text-center text-neutral-500 italic">
                             Nessuna campagna configurata.
                         </td>
                     </tr>
                     {% endif %}
                 </tbody>
             </table>
-        </div>
-
-        <div class="px-6 py-8 border-top border-white/20 bg-white/30">
-            <h3 class="text-sm font-semibold text-neutral-900 mb-4">Configura nuova campagna</h3>
-            <form action="/settings/campaigns" method="POST" class="space-y-4">
-                <div class="grid grid-cols-1 sm:grid-cols-12 gap-4">
-                    <div class="sm:col-span-3">
-                        <label class="block text-[10px] uppercase font-bold text-neutral-400 mb-1 ml-1">Cliente *</label>
-                        <input type="text" name="cliente_name" required 
-                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
-                               placeholder="es. CEPU, ECAMPUS">
-                        <p class="text-[10px] text-neutral-400 mt-1">Identificatore univoco</p>
-                    </div>
-                    <div class="sm:col-span-3">
-                        <label class="block text-[10px] uppercase font-bold text-neutral-400 mb-1 ml-1">ID Magellano *</label>
-                        <input type="text" name="magellano_ids" required 
-                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
-                               placeholder="es. 183 o 188,200,872">
-                        <p class="text-[10px] text-neutral-400 mt-1">Separati da virgola</p>
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label class="block text-[10px] uppercase font-bold text-neutral-400 mb-1 ml-1">Pay Level</label>
-                        <input type="text" name="pay_level" 
-                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
-                               placeholder="es. 80">
-                    </div>
-                    <div class="sm:col-span-4">
-                        <label class="block text-[10px] uppercase font-bold text-neutral-400 mb-1 ml-1">ID Messaggio *</label>
-                        <input type="text" name="msg_ids" required 
-                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
-                               placeholder="es. 117410,117341,121234">
-                        <p class="text-[10px] text-neutral-400 mt-1">Separati da virgola</p>
-                    </div>
-                </div>
-                <div class="grid grid-cols-1 sm:grid-cols-12 gap-4">
-                    <div class="sm:col-span-12">
-                        <label class="block text-[10px] uppercase font-bold text-neutral-400 mb-1 ml-1">Nome</label>
-                        <input type="text" name="name" 
-                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
-                               placeholder="Nome descrittivo (opzionale)">
-                    </div>
-                </div>
-                <div class="flex justify-end">
-                    <button type="submit" 
-                            class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
-                        Aggiungi Campagna
-                    </button>
-                </div>
-            </form>
         </div>
     </div>
 </div>
