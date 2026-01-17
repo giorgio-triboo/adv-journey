@@ -10,13 +10,8 @@ from typing import List, Dict, Optional
 
 from config import settings
 
-# Logging config con formato completo data/ora
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger(__name__)
+# Usa il logger configurato centralmente
+logger = logging.getLogger('services.integrations.magellano')
 
 class MagellanoService:
     def __init__(self):
@@ -30,7 +25,7 @@ class MagellanoService:
             file_date = date.today()
         return file_date.strftime("%d%m%Y") + "T-Direct"
     
-    def process_uploaded_file(self, file_path: str, file_date: date, campaign_id: Optional[int] = None) -> List[Dict]:
+    def process_uploaded_file(self, file_path: str, file_date: date, campaign_id: Optional[int] = None, original_filename: Optional[str] = None) -> List[Dict]:
         """
         Processa un file ZIP o CSV/Excel uploadato manualmente.
         IMPORTANT: All extracted files are automatically deleted after ingestion.
@@ -39,6 +34,7 @@ class MagellanoService:
             file_path: Path del file uploadato
             file_date: Data per calcolare la password ZIP
             campaign_id: ID campagna (opzionale, può essere estratto dal file)
+            original_filename: Nome originale del file (per estrarre campaign_id se non fornito)
         
         Returns:
             Lista di dict con i dati delle lead processate
@@ -50,9 +46,11 @@ class MagellanoService:
             
             # Se è un ZIP, estrailo
             if file_path.endswith('.zip'):
+                password_used = self.generate_password(file_date)
+                logger.info(f"Tentativo estrazione ZIP: file={os.path.basename(file_path)}, data={file_date}, password={password_used}")
                 xls_path = self._extract_zip_with_password(file_path, temp_dir, file_date)
                 if not xls_path:
-                    raise Exception("Impossibile estrarre il file ZIP. Verifica la password.")
+                    raise Exception(f"Impossibile estrarre il file ZIP. Password tentata: {password_used} (formato: ddmmyyyyT-Direct). Verifica che la data fornita ({file_date}) corrisponda alla data usata per creare il file ZIP.")
                 extracted_files.append(xls_path)
             elif file_path.endswith(('.xls', '.xlsx', '.csv')):
                 xls_path = file_path
@@ -63,17 +61,21 @@ class MagellanoService:
             if campaign_id:
                 leads = self._process_excel(xls_path, campaign_id)
             else:
-                # Prova a estrarre campaign_id dal nome file o usa default
+                # Prova a estrarre campaign_id dal nome file originale o dal nome temporaneo
                 # Es: export-188-11012026.xls -> campaign_id = 188
+                # Gestisce anche: export-199-15012026 (1).zip
                 import re
-                filename = os.path.basename(file_path)
+                # Usa il nome originale se disponibile, altrimenti usa il nome del file temporaneo
+                filename = original_filename if original_filename else os.path.basename(file_path)
+                # Regex migliorata: cerca "export-" seguito da numeri, anche se ci sono spazi o parentesi dopo
                 match = re.search(r'export-(\d+)', filename)
                 if match:
                     campaign_id = int(match.group(1))
+                    logger.info(f"Estratto campaign_id {campaign_id} dal nome file: {filename}")
                     leads = self._process_excel(xls_path, campaign_id)
                 else:
                     # Se non troviamo il campaign_id, usiamo un default o solleviamo errore
-                    raise Exception("Impossibile determinare l'ID campagna. Fornisci l'ID campagna o usa un nome file con formato 'export-{campaign_id}-{date}.xls'")
+                    raise Exception(f"Impossibile determinare l'ID campagna dal nome file '{filename}'. Fornisci l'ID campagna o usa un nome file con formato 'export-{{campaign_id}}-{{date}}.xls'")
             
             # Elimina file estratti dopo l'ingestion (solo quelli in temp_dir, non il file originale)
             for extracted_file in extracted_files:
@@ -99,16 +101,28 @@ class MagellanoService:
         """Estrae un file ZIP con password basata sulla data fornita"""
         try:
             password = self.generate_password(file_date)
+            logger.info(f"Tentativo estrazione ZIP: file={os.path.basename(zip_path)}, data={file_date}, password={password}")
             with zipfile.ZipFile(zip_path, 'r') as z:
                 z.extractall(extract_to, pwd=password.encode('utf-8'))
                 
             for root, _, files in os.walk(extract_to):
                 for f in files:
                     if f.endswith('.xls') or f.endswith('.xlsx'):
+                        logger.info(f"File Excel estratto: {os.path.join(root, f)}")
                         return os.path.join(root, f)
+            logger.warning(f"Nessun file Excel trovato nel ZIP estratto in {extract_to}")
+            return None
+        except zipfile.BadZipFile as e:
+            logger.error(f"File ZIP non valido o corrotto: {e}")
+            return None
+        except RuntimeError as e:
+            if "Bad password" in str(e) or "Bad CRC" in str(e):
+                logger.error(f"Password errata per ZIP. Password tentata: {password} (data: {file_date})")
+            else:
+                logger.error(f"Errore durante estrazione ZIP: {e}")
             return None
         except Exception as e:
-            logger.error(f"ZIP extraction failed: {e}")
+            logger.error(f"ZIP extraction failed: {e} (password tentata: {password})")
             return None
 
     def fetch_leads(self, start_date: date, end_date: date, campaigns: List[int]) -> List[Dict]:
@@ -238,14 +252,16 @@ class MagellanoService:
             self._select_date(page, 1, end_date.day)
             page.wait_for_timeout(500)
             
-            # Select Status "Sent"
+            # IMPORTANTE: Resetta esplicitamente il filtro "Sent" a vuoto per recuperare TUTTE le lead
+            # (anche quelle scartate, firewall, refused, etc.)
             page.evaluate("""
                 const select = document.getElementById('filters_sent');
                 if (select) {
-                    select.value = '1'; 
+                    select.value = '';  // Vuoto = tutte le lead
                     $(select).trigger('change');
                 }
             """)
+            page.wait_for_timeout(500)
             
             page.click('a.btn-success:has-text("Apply filters")')
             page.wait_for_load_state('networkidle')
@@ -310,22 +326,52 @@ class MagellanoService:
     def _extract_zip(self, zip_path, extract_to) -> Optional[str]:
         """Estrae ZIP usando password di oggi (per sync automatica)"""
         return self._extract_zip_with_password(zip_path, extract_to, date.today())
+
+    def _normalize_magellano_status(self, status_raw: Optional[str]) -> str:
+        """
+        Normalizza lo stato Magellano in uno stato standardizzato.
+        
+        Stati principali:
+        - magellano_sent: "Sent (accept from WS or by email)" → IN_LAVORAZIONE (Accettato FW)
+        - magellano_firewall: "Blocked by firewall" → RIFIUTATO (Scartato FW)
+        - magellano_refused: "Refused (from WS)" → RIFIUTATO (Scartato FW)
+        - magellano_waiting: "Waiting Marketing Automation" → RIFIUTATO (Scartato FW)
+        - magellano_unknown: per stati non riconosciuti o None → RIFIUTATO (Scartato FW)
+        """
+        if not status_raw:
+            return "magellano_unknown"
+        
+        status_lower = status_raw.lower().strip()
+        
+        # Stati principali
+        if "sent" in status_lower and ("accept" in status_lower or "ws" in status_lower or "email" in status_lower):
+            return "magellano_sent"
+        elif "firewall" in status_lower or "blocked" in status_lower:
+            return "magellano_firewall"
+        elif "refused" in status_lower:
+            return "magellano_refused"
+        elif "waiting" in status_lower and "marketing" in status_lower:
+            return "magellano_waiting"
+        else:
+            # Per altri stati, crea un nome normalizzato
+            normalized = status_lower.replace(' ', '_').replace('-', '_')
+            return f"magellano_{normalized}"
     
-    def _extract_zip_with_password(self, zip_path: str, extract_to: str, file_date: date) -> Optional[str]:
-        """Estrae un file ZIP con password basata sulla data fornita"""
-        try:
-            password = self.generate_password(file_date)
-            with zipfile.ZipFile(zip_path, 'r') as z:
-                z.extractall(extract_to, pwd=password.encode('utf-8'))
-                
-            for root, _, files in os.walk(extract_to):
-                for f in files:
-                    if f.endswith('.xls') or f.endswith('.xlsx'):
-                        return os.path.join(root, f)
-            return None
-        except Exception as e:
-            logger.error(f"ZIP extraction failed: {e}")
-            return None
+    def _get_magellano_status_category(self, magellano_status: str):
+        """
+        Calcola la categoria normalizzata per lo stato Magellano.
+        
+        Regole:
+        - magellano_sent → IN_LAVORAZIONE (Accettato FW)
+        - magellano_firewall, magellano_refused, magellano_waiting, magellano_unknown → RIFIUTATO (Scartato FW)
+        """
+        from models import StatusCategory
+        
+        if magellano_status == 'magellano_sent':
+            return StatusCategory.IN_LAVORAZIONE
+        else:
+            # Tutti gli altri stati (firewall, refused, waiting, unknown) → RIFIUTATO
+            return StatusCategory.RIFIUTATO
 
     def _process_excel(self, xls_path, campaign_id) -> List[Dict]:
         try:
@@ -341,19 +387,18 @@ class MagellanoService:
                 # External User ID is a good candidate for dedup
                 ext_user_id = str(row.get('Id user', ''))
                 
-                # Estrai payout status (sent = pagata, blocked/altri = scartata)
-                payout_status_raw = str(row.get('Status', '')).strip() if not pd.isna(row.get('Status', '')) else None
-                payout_status = None
-                is_paid = False
+                # Estrai e normalizza lo stato Magellano
+                status_raw = str(row.get('Status', '')).strip() if not pd.isna(row.get('Status', '')) else None
+                magellano_status = self._normalize_magellano_status(status_raw)
+                magellano_status_category = self._get_magellano_status_category(magellano_status)
                 
-                if payout_status_raw:
-                    payout_status = payout_status_raw.lower()
-                    # "sent" significa pagata, tutto il resto è scartata
-                    is_paid = (payout_status == 'sent')
+                # Mantieni compatibilità con payout_status per retrocompatibilità
+                payout_status = status_raw.lower() if status_raw else None
+                is_paid = (magellano_status == 'magellano_sent')
                 
                 leads.append({
-                    'magellano_id': f"MAG-{ext_user_id}",
-                    'external_user_id': ext_user_id,
+                    'magellano_id': ext_user_id,  # ID da Magellano (senza prefisso)
+                    'external_user_id': f"MAG-{ext_user_id}",  # ID interno con prefisso (usato per Ulixe)
                     'first_name': str(row.get('First name', '')).strip(),
                     'last_name': str(row.get('Last name', '')).strip(),
                     'email': email,
@@ -364,8 +409,14 @@ class MagellanoService:
                     'source': str(row.get('Source', '')).strip() if not pd.isna(row.get('Source')) else None,
                     'campaign_name': str(row.get('Campaign', '')).strip().strip(),
                     'magellano_campaign_id': str(campaign_id),
-                    # Payout status da Magellano
+                    # Stato Magellano: originale, normalizzato e categoria
+                    'magellano_status_raw': status_raw,  # Stato originale esatto
+                    'magellano_status': magellano_status,  # Stato normalizzato
+                    'magellano_status_category': magellano_status_category,  # Categoria normalizzata
+                    # Payout status (deprecated, mantenuto per retrocompatibilità) - contiene lo stato originale
                     'payout_status': payout_status,
+                    # Stato originale non normalizzato (per retrocompatibilità)
+                    'status_raw': status_raw,
                     'is_paid': is_paid,
                     # Facebook/Meta fields from Magellano
                     'facebook_ad_name': str(row.get('facebook_ad_name', '')).strip() if not pd.isna(row.get('facebook_ad_name', '')) else None,
@@ -373,7 +424,8 @@ class MagellanoService:
                     'facebook_campaign_name': str(row.get('facebook_campaign_name', '')).strip() if not pd.isna(row.get('facebook_campaign_name', '')) else None,
                     'facebook_id': str(row.get('facebook_id', '')).strip() if not pd.isna(row.get('facebook_id', '')) else None,  # ID utente Facebook
                     'facebook_piattaforma': str(row.get('facebook_piattaforma', '')).strip() if not pd.isna(row.get('facebook_piattaforma', '')) else None,
-                    'status_category': 'in_lavorazione'
+                    # NON impostare status_category di default - verrà determinato in base a magellano_status
+                    # 'status_category': 'in_lavorazione'  # Rimosso - non più default
                 })
             
             return leads

@@ -1,20 +1,50 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from services.sync_orchestrator import SyncOrchestrator
+from services.sync.magellano_sync import run as magellano_sync_job
+from services.sync.ulixe_sync import run as ulixe_sync_job
+from services.sync.meta_marketing_sync import run as meta_marketing_sync_job
+from services.sync.meta_conversion_marker import run as meta_conversion_marker_job
+from services.sync.meta_conversion_sync import run as meta_conversion_sync_job
 from database import SessionLocal
 from models import CronJob
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('services.scheduler')
 
 scheduler = BackgroundScheduler()
 
 def nightly_sync_job():
     """
-    Job schedulato che esegue tutti i sync tramite orchestrator.
+    DISABILITATO: Job schedulato disabilitato - non esegue più sincronizzazioni automatiche.
     """
-    orchestrator = SyncOrchestrator()
-    orchestrator.run_all()
+    logger.warning("nightly_sync_job chiamato ma DISABILITATO - nessuna sync verrà eseguita")
+    return
+
+def magellano_sync_scheduled():
+    """DISABILITATO: Job schedulato per sincronizzazione Magellano disabilitato."""
+    logger.warning("magellano_sync_scheduled chiamato ma DISABILITATO - nessuna sync verrà eseguita")
+    return
+
+def ulixe_sync_scheduled():
+    """DISABILITATO: Job schedulato per sincronizzazione Ulixe disabilitato."""
+    logger.warning("ulixe_sync_scheduled chiamato ma DISABILITATO - nessuna sync verrà eseguita")
+    return
+
+def meta_marketing_sync_scheduled():
+    """DISABILITATO: Job schedulato per sincronizzazione Meta Marketing disabilitato."""
+    logger.warning("meta_marketing_sync_scheduled chiamato ma DISABILITATO - nessuna sync verrà eseguita")
+    return
+
+def meta_conversion_marker_scheduled():
+    """DISABILITATO: Job schedulato per marcatura lead Meta Conversion disabilitato."""
+    logger.warning("meta_conversion_marker_scheduled chiamato ma DISABILITATO - nessuna sync verrà eseguita")
+    return
+
+def meta_conversion_sync_scheduled():
+    """DISABILITATO: Job schedulato per invio eventi Meta Conversion API disabilitato."""
+    logger.warning("meta_conversion_sync_scheduled chiamato ma DISABILITATO - nessuna sync verrà eseguita")
+    return
 
 def _parse_cron_field(field: str, default: str = '*') -> str:
     """Converte campo cron da formato database a formato cron standard."""
@@ -60,71 +90,12 @@ def _build_cron_trigger(cron_job: CronJob) -> CronTrigger:
 
 def start_scheduler():
     """
-    Avvia lo scheduler leggendo le configurazioni dal database.
-    Se non ci sono configurazioni, usa i valori di default.
+    DISABILITATO: Tutte le sincronizzazioni automatiche sono state disabilitate.
+    Questa funzione non avvia più nessuno scheduler o job automatico.
     """
-    db = SessionLocal()
-    
-    try:
-        # Leggi configurazioni cron dal database
-        cron_jobs = db.query(CronJob).filter(CronJob.enabled == True).all()
-        
-        if not cron_jobs:
-            # Fallback a configurazione di default se non ci sono job nel database
-            logger.warning("Nessuna configurazione cron trovata nel database. Uso configurazione di default (00:30).")
-            scheduler.add_job(
-                nightly_sync_job, 
-                CronTrigger(hour=0, minute=30),
-                id='nightly_sync',
-                name='Nightly Sync Pipeline',
-                misfire_grace_time=3600,
-                coalesce=True,
-                max_instances=1
-            )
-        else:
-            # Aggiungi job per ogni configurazione abilitata
-            for cron_job in cron_jobs:
-                try:
-                    trigger = _build_cron_trigger(cron_job)
-                    
-                    # Determina la funzione job in base al tipo
-                    if cron_job.job_type == 'orchestrator':
-                        job_func = nightly_sync_job
-                    else:
-                        # Per ora supportiamo solo orchestrator
-                        logger.warning(f"Tipo job '{cron_job.job_type}' non supportato. Uso orchestrator.")
-                        job_func = nightly_sync_job
-                    
-                    scheduler.add_job(
-                        job_func,
-                        trigger,
-                        id=cron_job.job_name,
-                        name=cron_job.description or cron_job.job_name,
-                        misfire_grace_time=3600,
-                        coalesce=True,
-                        max_instances=1
-                    )
-                    
-                    logger.info(f"Scheduled job '{cron_job.job_name}' at {cron_job.hour:02d}:{cron_job.minute:02d} (enabled: {cron_job.enabled})")
-                    
-                except Exception as e:
-                    logger.error(f"Errore aggiunta job '{cron_job.job_name}': {e}", exc_info=True)
-        
-    except Exception as e:
-        logger.error(f"Errore lettura configurazioni cron dal database: {e}", exc_info=True)
-        # Fallback a configurazione di default in caso di errore
-        scheduler.add_job(
-            nightly_sync_job, 
-            CronTrigger(hour=0, minute=30),
-            id='nightly_sync',
-            name='Nightly Sync Pipeline (fallback)',
-            misfire_grace_time=3600,
-            coalesce=True,
-            max_instances=1
-        )
-    finally:
-        db.close()
-    
-    scheduler.start()
-    logger.info("Scheduler started. Jobs loaded from database.")
-    logger.info("Scheduler configured: misfire_grace_time=3600s, coalesce=True, max_instances=1")
+    logger.warning("=" * 80)
+    logger.warning("SCHEDULER DISABILITATO - Nessuna sincronizzazione automatica verrà eseguita")
+    logger.warning("=" * 80)
+    logger.warning("start_scheduler() chiamato ma disabilitato. Nessun job verrà avviato.")
+    # NON avviare lo scheduler - tutte le sync sono disabilitate
+    return

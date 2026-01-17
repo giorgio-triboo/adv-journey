@@ -10,7 +10,7 @@ from models import Lead, StatusCategory
 from datetime import datetime
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('services.sync')
 
 def run(db: Session = None) -> dict:
     """

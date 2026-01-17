@@ -9,6 +9,10 @@ from pydantic import BaseModel
 from typing import Optional
 
 from config import settings
+import logging
+
+# Usa il logger configurato centralmente
+logger = logging.getLogger('services.integrations.ulixe')
 
 class LeadStatus(BaseModel):
     status: str
@@ -56,7 +60,7 @@ class UlixeClient:
             
         except Exception as e:
             # Handle SOAP faults or network errors
-            print(f"Error querying Ulixe for {user_id_key}: {e}")
+            logger.error(f"Error querying Ulixe for {user_id_key}: {e}", exc_info=True)
             return LeadStatus(
                 status="ERROR",
                 category="unknown",

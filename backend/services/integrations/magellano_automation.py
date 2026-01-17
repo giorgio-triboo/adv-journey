@@ -9,15 +9,14 @@ import argparse
 import sys
 import tempfile
 
-# Configurazione del logging con formato completo data/ora
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[
-        logging.StreamHandler(),
-    ]
-)
+# Inizializza logging se non già configurato (per script standalone)
+from logging_config import setup_logging
+import logging as std_logging
+if not std_logging.getLogger().handlers:
+    setup_logging(std_logging.INFO)
+
+# Usa il logger configurato centralmente
+logger = logging.getLogger('services.integrations.magellano')
 
 class MagellanoAutomation:
     def __init__(self, username="giorgio", password="Magellano2025!"):
@@ -32,7 +31,7 @@ class MagellanoAutomation:
 
     def download_campaign_file(self, playwright, campaign_number, start_date, end_date, download_dir):
         """Scarica il file ZIP da Magellano"""
-        logging.info(f"Inizio download campagna {campaign_number} ({start_date} - {end_date})")
+        logger.info(f"Inizio download campagna {campaign_number} ({start_date} - {end_date})")
         
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context(
@@ -131,7 +130,7 @@ class MagellanoAutomation:
 
     def extract_and_work(self, zip_path, extract_dir):
         """Estrae il file ZIP e processa il contenuto"""
-        logging.info(f"Estrazione ZIP: {zip_path}")
+        logger.info(f"Estrazione ZIP: {zip_path}")
         password = self.generate_password()
         
         try:
@@ -149,10 +148,10 @@ class MagellanoAutomation:
             
             xls_path = xls_files[0]
             df = pd.read_excel(xls_path)
-            logging.info(f"Processati {len(df)} record dal file {xls_path}")
+            logger.info(f"Processati {len(df)} record dal file {xls_path}")
             return df
         except Exception as e:
-            logging.error(f"Errore: {e}")
+            logger.error(f"Errore: {e}", exc_info=True)
             return None
 
 def parse_args():
@@ -178,8 +177,8 @@ if __name__ == "__main__":
                     # Qui si può fare il "lavoro" sul dataframe
                     output_file = f"leads_campagna_{args.campaign}.csv"
                     df.to_csv(output_file, index=False)
-                    logging.info(f"Dati salvati in {output_file}")
+                    logger.info(f"Dati salvati in {output_file}")
             else:
-                logging.error("Download fallito")
+                logger.error("Download fallito")
     finally:
         shutil.rmtree(temp_dir)

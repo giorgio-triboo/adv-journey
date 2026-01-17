@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 import logging
 import time
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('services.sync')
 
 def run(db: Session = None) -> dict:
     """
@@ -115,14 +115,23 @@ def run(db: Session = None) -> dict:
                 # (utile per il gap temporale futuro)
                 lead.last_check = status_info.checked_at
                 
+                # Salva sempre stato Ulixe (originale e categoria)
+                ulixe_status_category = None
+                try:
+                    ulixe_status_category = StatusCategory(status_info.category)
+                except ValueError:
+                    ulixe_status_category = StatusCategory.UNKNOWN
+                
+                # Aggiorna campi Ulixe
+                lead.ulixe_status = status_info.status
+                lead.ulixe_status_category = ulixe_status_category
+                
                 # Check if status changed
                 if lead.current_status != status_info.status:
                     old_status = lead.current_status
+                    # Aggiorna current_status e status_category (Ulixe ha priorità)
                     lead.current_status = status_info.status
-                    try:
-                        lead.status_category = StatusCategory(status_info.category)
-                    except ValueError:
-                        lead.status_category = StatusCategory.UNKNOWN
+                    lead.status_category = ulixe_status_category
                     lead.updated_at = datetime.utcnow()
                     
                     # Save history
@@ -138,6 +147,9 @@ def run(db: Session = None) -> dict:
                     logger.debug(f"Lead {lead.id}: {old_status} -> {status_info.status}")
                 else:
                     # Stato non cambiato, aggiorna solo updated_at per indicare che è stata controllata
+                    # Ma aggiorna comunque status_category se necessario
+                    if lead.status_category != ulixe_status_category:
+                        lead.status_category = ulixe_status_category
                     lead.updated_at = datetime.utcnow()
                 
             except Exception as e:

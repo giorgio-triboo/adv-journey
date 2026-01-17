@@ -12,7 +12,7 @@ from config import settings
 import logging
 import time
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('services.sync')
 
 def _get_meta_account_for_lead(lead: Lead, db: Session) -> tuple:
     """
@@ -157,10 +157,8 @@ def run(db: Session = None) -> dict:
                 result = meta_service.send_custom_event(
                     event_name=event_name,
                     lead_data={
-                        "email": lead.email,
-                        "phone": lead.phone,
-                        "first_name": lead.first_name,
-                        "last_name": lead.last_name,
+                        "email": lead.email,  # Già hash
+                        "phone": lead.phone,  # Già hash
                         "province": lead.province
                     },
                     additional_data=additional_data,

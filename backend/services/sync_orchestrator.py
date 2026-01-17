@@ -12,7 +12,7 @@ from services.sync.meta_conversion_sync import run as meta_conversion_sync_job
 from datetime import datetime
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('services.sync_orchestrator')
 
 class SyncOrchestrator:
     """

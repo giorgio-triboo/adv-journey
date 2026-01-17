@@ -1,6 +1,8 @@
 from config import settings
 import logging
 import time
+import requests
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,21 @@ class MetaService:
         else:
             logger.warning("META_ACCESS_TOKEN not set. Meta service disabled.")
 
+    def _is_hash(self, value: str) -> bool:
+        """
+        Verifica se un valore è un hash SHA256 (64 caratteri esadecimali).
+        
+        Args:
+            value: Valore da verificare
+            
+        Returns:
+            True se sembra un hash SHA256, False altrimenti
+        """
+        if not value:
+            return False
+        # Hash SHA256 è sempre 64 caratteri esadecimali
+        return len(value) == 64 and all(c in '0123456789abcdef' for c in value.lower())
+
     def send_custom_event(
         self, 
         event_name: str, 
@@ -68,7 +85,8 @@ class MetaService:
         
         Args:
             event_name: Nome dell'evento custom
-            lead_data: Dati lead (email, phone, first_name, last_name, province)
+            lead_data: Dati lead (email, phone, province)
+                       NOTA: email e phone sono già hash SHA256 secondo specifiche Meta
             additional_data: Dati aggiuntivi per custom_data
             adset_id: Meta AdSet ID per attribuzione corretta (opzionale, per metriche marketing)
             campaign_id: Meta Campaign ID per attribuzione corretta (opzionale, per metriche marketing)
@@ -76,6 +94,8 @@ class MetaService:
         
         Note: Gli eventi vengono inviati al dataset_id se specificato, altrimenti al pixel_id.
         Il dataset è separato dal circuito campagna-adset-creatività (che sono per metriche marketing).
+        
+        Se email e phone sono già hash, usa l'API Graph direttamente per evitare doppio hashing.
         """
         if not FACEBOOK_BUSINESS_AVAILABLE:
             logger.debug("Skipping Meta event (facebook_business server-side events not available)")
@@ -89,11 +109,28 @@ class MetaService:
             return None
 
         try:
+            # Verifica se email e phone sono già hash
+            email = lead_data.get('email', '')
+            phone = lead_data.get('phone', '')
+            email_is_hash = self._is_hash(email)
+            phone_is_hash = self._is_hash(phone)
+            
+            # Se abbiamo hash pre-hashed, usa API Graph direttamente
+            if email_is_hash or phone_is_hash:
+                return self._send_event_via_graph_api(
+                    event_name=event_name,
+                    lead_data=lead_data,
+                    additional_data=additional_data,
+                    adset_id=adset_id,
+                    campaign_id=campaign_id,
+                    ad_id=ad_id,
+                    target_id=target_id
+                )
+            
+            # Altrimenti usa la SDK (per retrocompatibilità, anche se non dovremmo più arrivare qui)
             user_data = UserData(
-                emails=[lead_data.get('email')] if lead_data.get('email') else [],
-                phones=[lead_data.get('phone')] if lead_data.get('phone') else [],
-                first_name=lead_data.get('first_name'),
-                last_name=lead_data.get('last_name'),
+                emails=[email] if email else [],
+                phones=[phone] if phone else [],
                 state=lead_data.get('province') # Mapping province to state/region
             )
 
@@ -120,12 +157,9 @@ class MetaService:
 
             events = [event]
 
-            # Se abbiamo dataset_id, possiamo usare pixel_id (spesso sono lo stesso) o chiamare API Graph direttamente
-            # Per ora usiamo pixel_id (che funziona anche per dataset associati al pixel)
-            # Se dataset_id è diverso da pixel_id, potremmo dover usare API Graph direttamente
             event_request = EventRequest(
                 events=events,
-                pixel_id=target_id  # Usa dataset_id se disponibile, altrimenti pixel_id
+                pixel_id=target_id
             )
 
             event_response = event_request.execute()
@@ -134,4 +168,83 @@ class MetaService:
 
         except Exception as e:
             logger.error(f"Failed to send Meta event: {e}")
+            return None
+
+    def _send_event_via_graph_api(
+        self,
+        event_name: str,
+        lead_data: dict,
+        additional_data: dict = None,
+        adset_id: str = None,
+        campaign_id: str = None,
+        ad_id: str = None,
+        target_id: str = None
+    ):
+        """
+        Invia evento a Meta usando Graph API direttamente, supportando hash pre-hashed.
+        
+        Args:
+            event_name: Nome dell'evento
+            lead_data: Dati lead (email e phone sono hash SHA256)
+            additional_data: Dati aggiuntivi
+            adset_id: Meta AdSet ID
+            campaign_id: Meta Campaign ID
+            ad_id: Meta Ad ID
+            target_id: Pixel ID o Dataset ID
+            
+        Returns:
+            Risposta dell'API o None in caso di errore
+        """
+        try:
+            # Costruisci user_data con hash direttamente
+            user_data = {}
+            
+            email = lead_data.get('email', '')
+            phone = lead_data.get('phone', '')
+            
+            if email:
+                user_data['em'] = [email]  # Hash SHA256 già pronto
+            if phone:
+                user_data['ph'] = [phone]  # Hash SHA256 già pronto
+            
+            # first_name e last_name non li usiamo (abbiamo facebook_id)
+            # state/province se necessario
+            if lead_data.get('province'):
+                user_data['st'] = lead_data.get('province').lower()[:2] if len(lead_data.get('province', '')) >= 2 else lead_data.get('province').lower()
+            
+            # Costruisci custom_data
+            custom_data = additional_data or {}
+            if adset_id:
+                custom_data['adset_id'] = adset_id
+            if campaign_id:
+                custom_data['campaign_id'] = campaign_id
+            if ad_id:
+                custom_data['ad_id'] = ad_id
+            
+            # Costruisci evento
+            event = {
+                "event_name": event_name,
+                "event_time": int(time.time()),
+                "user_data": user_data,
+                "custom_data": custom_data,
+                "action_source": "system_generated"
+            }
+            
+            # URL Graph API per Conversions API
+            url = f"https://graph.facebook.com/v18.0/{target_id}/events"
+            
+            payload = {
+                "data": [event],
+                "access_token": self.access_token
+            }
+            
+            response = requests.post(url, json=payload)
+            response.raise_for_status()
+            
+            result = response.json()
+            logger.info(f"Meta event {event_name} sent via Graph API to {target_id} (campaign_id={campaign_id}): {result}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to send Meta event via Graph API: {e}")
             return None
