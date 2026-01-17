@@ -9,7 +9,7 @@ from models import User
 from config import settings
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('services.api.auth')
 
 router = APIRouter()
 
@@ -50,17 +50,29 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     Verifica che l'utente sia nella whitelist e crea la sessione.
     """
     try:
-        logger.info("Callback OAuth ricevuto")
+        # Log dei parametri della richiesta per debug
+        query_params = dict(request.query_params)
+        logger.info(f"Callback OAuth ricevuto - URL: {request.url}, Query params: {list(query_params.keys())}")
+        
+        # Verifica se ci sono errori nei parametri della richiesta (da Google)
+        if 'error' in query_params:
+            error = query_params.get('error')
+            error_description = query_params.get('error_description', 'Nessuna descrizione')
+            logger.error(f"Errore OAuth da Google: {error} - {error_description}")
+            return RedirectResponse(url=f'/?error=Errore OAuth: {error}')
+        
         token = await oauth.google.authorize_access_token(request)
+        logger.info(f"Token OAuth ricevuto - chiavi disponibili: {list(token.keys())}")
+        
         user_info = token.get('userinfo')
         
         if not user_info:
-            logger.warning("Callback OAuth: user_info non disponibile nel token")
+            logger.warning(f"Callback OAuth: user_info non disponibile nel token. Token completo: {token}")
             return RedirectResponse(url='/?error=Autenticazione fallita')
         
         email = user_info.get('email')
         if not email:
-            logger.warning("Callback OAuth: email non disponibile in user_info")
+            logger.warning(f"Callback OAuth: email non disponibile in user_info. User info: {user_info}")
             return RedirectResponse(url='/?error=Email non disponibile')
         
         logger.info(f"Callback OAuth: verifica utente con email {email}")
@@ -75,19 +87,33 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             logger.warning(f"Accesso negato: account {email} non attivo")
             return RedirectResponse(url='/?error=Account inattivo')
         
-        # Set session - include user role from database
+        # Salva i dati dell'utente nella sessione (lato server)
         session_user = dict(user_info)
         session_user['role'] = user.role
         request.session['user'] = session_user
+        request.session['user_id'] = user.id
         
         logger.info(f"Login riuscito per utente {email} con ruolo {user.role}")
+        
+        # Crea la risposta di redirect
         return RedirectResponse(url='/dashboard')
         
     except Exception as e:
-        logger.error(f"Errore durante il callback OAuth: {e}", exc_info=True)
+        logger.error(f"Errore durante il callback OAuth: {type(e).__name__}: {str(e)}", exc_info=True)
+        # Log dei dettagli della richiesta per debug
+        try:
+            logger.error(f"Dettagli richiesta - URL: {request.url}, Query: {dict(request.query_params)}")
+        except:
+            pass
         return RedirectResponse(url='/?error=Errore durante autenticazione')
 
 @router.get('/logout')
 async def logout(request: Request):
-    request.session.pop('user', None)
+    """
+    Logout: pulisce la sessione lato server
+    """
+    # Pulisci la sessione
+    request.session.clear()
+    logger.info("Logout: sessione pulita")
+    
     return RedirectResponse(url='/')

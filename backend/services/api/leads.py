@@ -3,15 +3,18 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from database import get_db
 from models import Lead, User, StatusCategory, LeadHistory
+from services.utils.crypto import hash_email_for_meta, hash_phone_for_meta
 from pydantic import BaseModel
 from datetime import datetime
+import logging
 
 router = APIRouter(prefix="/api/leads", tags=["leads"])
 
+# Usa il logger configurato centralmente
+logger = logging.getLogger('services.api.leads')
+
 # Pydantic models for response/request
 class LeadBase(BaseModel):
-    first_name: str
-    last_name: str
     email: Optional[str] = None
     phone: Optional[str] = None
     province: Optional[str] = None
@@ -64,8 +67,6 @@ class LeadCreate(LeadBase):
     status_category: str = "in_lavorazione"
 
 class LeadUpdate(BaseModel):
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     province: Optional[str] = None
@@ -78,7 +79,14 @@ class LeadUpdate(BaseModel):
 
 @router.post("/", response_model=LeadOut)
 def create_lead(lead: LeadCreate, db: Session = Depends(get_db)):
-    db_lead = Lead(**lead.dict())
+    lead_dict = lead.dict()
+    # Hash email e phone prima di salvare
+    if lead_dict.get('email'):
+        lead_dict['email'] = hash_email_for_meta(lead_dict['email'])
+    if lead_dict.get('phone'):
+        lead_dict['phone'] = hash_phone_for_meta(lead_dict['phone'])
+    
+    db_lead = Lead(**lead_dict)
     if not db_lead.magellano_id:
          db_lead.magellano_id = f"MAN-{datetime.utcnow().timestamp()}"
     
@@ -96,6 +104,12 @@ def update_lead(lead_id: int, lead_update: LeadUpdate, db: Session = Depends(get
     old_category = db_lead.status_category.value if hasattr(db_lead.status_category, 'value') else db_lead.status_category
     
     update_data = lead_update.dict(exclude_unset=True)
+    # Hash email e phone se vengono aggiornati
+    if 'email' in update_data and update_data['email']:
+        update_data['email'] = hash_email_for_meta(update_data['email'])
+    if 'phone' in update_data and update_data['phone']:
+        update_data['phone'] = hash_phone_for_meta(update_data['phone'])
+    
     for key, value in update_data.items():
         setattr(db_lead, key, value)
         
@@ -109,19 +123,18 @@ def update_lead(lead_id: int, lead_update: LeadUpdate, db: Session = Depends(get
         try:
             from services.integrations.meta import MetaService
             meta = MetaService()
+            # I dati email e phone sono già hash, MetaService li userà direttamente
             meta.send_custom_event(
                 event_name=f"LeadStatusChange_{new_category}",
                 lead_data={
-                    "email": db_lead.email,
-                    "phone": db_lead.phone,
-                    "first_name": db_lead.first_name,
-                    "last_name": db_lead.last_name,
+                    "email": db_lead.email,  # Già hash
+                    "phone": db_lead.phone,  # Già hash
                     "province": db_lead.province
                 },
                 additional_data={"old_status": old_category, "new_status": new_category}
             )
         except Exception as e:
-            print(f"Meta trigger failed: {e}")
+            logger.error(f"Meta trigger failed: {e}", exc_info=True)
 
     return db_lead
 

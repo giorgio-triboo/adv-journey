@@ -13,8 +13,10 @@ from database import SessionLocal
 from models import MetaAccount
 from sqlalchemy import update
 import logging
+from logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+# Configura logging all'inizio
+setup_logging(logging.INFO)
 logger = logging.getLogger(__name__)
 
 def clean_oauth_tokens():
