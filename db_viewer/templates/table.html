@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Database Viewer - {{ table_name }}{% endblock %}
+
+{% block header_title %}{{ table_name }}{% endblock %}
+{% block header_subtitle %}Visualizzazione dati tabella{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="/">← Torna alle tabelle</a>
+</div>
+
+<div class="card">
+    <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Cerca nella tabella..." value="{{ request.args.get('search', '') }}">
+    </div>
+    
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    {% for col in columns %}
+                    <th>{{ col.name }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data %}
+                <tr>
+                    {% for col in columns %}
+                    <td>
+                        {% if row[col.name] is none %}
+                            <em style="color: #999;">NULL</em>
+                        {% elif col.type.startswith('JSON') or (row[col.name] is string and (row[col.name].startswith('{') or row[col.name].startswith('['))) %}
+                            <div class="json-field">{{ row[col.name] }}</div>
+                        {% else %}
+                            {{ row[col.name] }}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    {% if pagination.pages > 1 %}
+    <div class="pagination">
+        {% if pagination.page > 1 %}
+        <a href="?page={{ pagination.page - 1 }}{% if request.args.get('search') %}&search={{ request.args.get('search') }}{% endif %}">← Precedente</a>
+        {% endif %}
+        
+        <span class="current">Pagina {{ pagination.page }} di {{ pagination.pages }}</span>
+        <span>Totale: {{ pagination.total }} record</span>
+        
+        {% if pagination.page < pagination.pages %}
+        <a href="?page={{ pagination.page + 1 }}{% if request.args.get('search') %}&search={{ request.args.get('search') }}{% endif %}">Successiva →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    const searchInput = document.getElementById('searchInput');
+    let searchTimeout;
+    
+    searchInput.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        const searchValue = this.value;
+        
+        searchTimeout = setTimeout(function() {
+            if (searchValue) {
+                window.location.href = '?search=' + encodeURIComponent(searchValue);
+            } else {
+                window.location.href = '/table/{{ table_name }}';
+            }
+        }, 500);
+    });
+    
+    searchInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            clearTimeout(searchTimeout);
+            const searchValue = this.value;
+            if (searchValue) {
+                window.location.href = '?search=' + encodeURIComponent(searchValue);
+            } else {
+                window.location.href = '/table/{{ table_name }}';
+            }
+        }
+    });
+</script>
+{% endblock %}
