@@ -1,7 +1,13 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
+
+# Funzione helper per datetime con timezone Europe/Rome
+def now_rome():
+    """Restituisce datetime corrente nel timezone Europe/Rome (come naive datetime per SQLAlchemy)"""
+    from services.utils.timezone import now_rome_naive
+    return now_rome_naive()
 
 Base = declarative_base()
 
@@ -24,16 +30,11 @@ class Lead(Base):
     __tablename__ = "leads"
     
     id = Column(Integer, primary_key=True, index=True)
-    magellano_id = Column(String, unique=True, index=True) # Our internal unique key (e.g. MAG-user_id)
-    external_user_id = Column(String, index=True) # "Id user" from Magellano (used as Ulixe UserId)
+    magellano_id = Column(String, unique=True, index=True) # ID da Magellano (senza prefisso)
+    external_user_id = Column(String, index=True) # ID interno con prefisso MAG- (used as Ulixe UserId)
     
-    first_name = Column(String)
-    last_name = Column(String)
-    email = Column(String)
-    phone = Column(String)
-    province = Column(String) # "County"
-    city = Column(String)
-    region = Column(String)
+    email = Column(String)  # Hash SHA256 normalizzato secondo specifiche Meta
+    phone = Column(String)  # Hash SHA256 normalizzato secondo specifiche Meta
     
     brand = Column(String) # "gruppocepu_serviziobrand" (Nome Cliente, es. ecampus)
     msg_id = Column(String, index=True) # "gruppocepu_idmessaggio" (Id Messaggio = corso)
@@ -43,8 +44,17 @@ class Lead(Base):
     magellano_campaign_id = Column(String, index=True)
     
     # Payout/Status da Magellano (sent = pagata, blocked/altri = scartata)
-    payout_status = Column(String, nullable=True) # "sent", "blocked", etc.
+    payout_status = Column(String, nullable=True) # "sent", "blocked", etc. (deprecated, usa magellano_status)
     is_paid = Column(Boolean, default=False) # True se "sent", False altrimenti
+    
+    # Stato Magellano standardizzato
+    magellano_status = Column(String, nullable=True, index=True) # "magellano_sent", "magellano_firewall", "magellano_refused", etc.
+    magellano_status_raw = Column(String, nullable=True) # Stato originale esatto da Magellano: "Sent (accept from WS or by email)", etc.
+    magellano_status_category = Column(Enum(StatusCategory), nullable=True) # Categoria normalizzata Magellano (IN_LAVORAZIONE per sent, RIFIUTATO per altri)
+    
+    # Stato Ulixe
+    ulixe_status = Column(String, nullable=True) # Stato originale esatto da Ulixe: "In Lavorazione NV", "NO CRM", etc.
+    ulixe_status_category = Column(Enum(StatusCategory), nullable=True) # Categoria normalizzata Ulixe
     
     # Facebook/Meta fields from Magellano
     facebook_ad_name = Column(String, index=True, nullable=True)
@@ -67,8 +77,8 @@ class Lead(Base):
     last_meta_event_status = Column(String, nullable=True) # Ultimo status_category per cui è stato inviato evento Meta
     meta_correlation_status = Column(String, nullable=True) # Stato correlazione: "found", "not_found", "error"
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
     
     history = relationship("LeadHistory", back_populates="lead")
     marketing_data = relationship("MetaMarketingData", back_populates="lead")
@@ -83,7 +93,7 @@ class LeadHistory(Base):
     status_category = Column(Enum(StatusCategory))
     raw_response = Column(JSON) # Store full raw response for debug
     
-    checked_at = Column(DateTime, default=datetime.utcnow)
+    checked_at = Column(DateTime, default=now_rome)
     
     lead = relationship("Lead", back_populates="history")
 
@@ -91,7 +101,7 @@ class SyncLog(Base):
     __tablename__ = "sync_logs"
     
     id = Column(Integer, primary_key=True, index=True)
-    started_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, default=now_rome)
     completed_at = Column(DateTime)
     status = Column(String) # SUCCESS, ERROR
     details = Column(JSON)
@@ -105,8 +115,8 @@ class AlertConfig(Base):
     recipients = Column(JSON, default=list)  # Lista email ["email1@example.com", "email2@example.com"]
     on_success = Column(Boolean, default=False)  # Invia email anche su successo
     on_error = Column(Boolean, default=True)  # Invia email su errore
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
 
 class SMTPConfig(Base):
     __tablename__ = "smtp_configs"
@@ -119,8 +129,8 @@ class SMTPConfig(Base):
     from_email = Column(String)  # Encrypted
     use_tls = Column(Boolean, default=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
 
 class CronJob(Base):
     __tablename__ = "cron_jobs"
@@ -135,8 +145,8 @@ class CronJob(Base):
     day_of_month = Column(String, default='*')  # '*', '1-31'
     month = Column(String, default='*')  # '*', '1-12', 'jan-dec'
     description = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
 
 class ManagedCampaign(Base):
     __tablename__ = "managed_campaigns"
@@ -156,7 +166,7 @@ class ManagedCampaign(Base):
     meta_dataset_id = Column(String, nullable=True) # Meta Dataset ID per mapping campagna Magellano -> Dataset Meta (per Conversion API)
     
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_rome)
 
 # Meta Marketing Models
 class MetaAccount(Base):
@@ -169,8 +179,8 @@ class MetaAccount(Base):
     is_active = Column(Boolean, default=True)
     sync_enabled = Column(Boolean, default=True)
     sync_frequency = Column(String, default="daily") # daily, hourly, weekly
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
     
     campaigns = relationship("MetaCampaign", back_populates="account")
     user = relationship("User", backref="meta_accounts")
@@ -193,8 +203,8 @@ class MetaCampaign(Base):
     tags = Column(JSON, default=list) # List of tags for filtering
     is_synced = Column(Boolean, default=False) # Whether to sync this campaign
     sync_filters = Column(JSON, default=dict) # Filter config: {"tag": "value", "name_pattern": "pattern"}
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
     
     account = relationship("MetaAccount", back_populates="campaigns")
     adsets = relationship("MetaAdSet", back_populates="campaign")
@@ -208,8 +218,8 @@ class MetaAdSet(Base):
     status = Column(String)
     optimization_goal = Column(String)
     targeting = Column(JSON, nullable=True) # Targeting details
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
     
     campaign = relationship("MetaCampaign", back_populates="adsets")
     ads = relationship("MetaAd", back_populates="adset")
@@ -223,8 +233,8 @@ class MetaAd(Base):
     status = Column(String)
     creative_id = Column(String, nullable=True)
     creative_thumbnail_url = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
     
     adset = relationship("MetaAdSet", back_populates="ads")
     marketing_data = relationship("MetaMarketingData", back_populates="ad")
@@ -249,8 +259,46 @@ class MetaMarketingData(Base):
     # Additional metrics (JSON for flexibility)
     additional_metrics = Column(JSON, nullable=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
     
     lead = relationship("Lead", back_populates="marketing_data")
     ad = relationship("MetaAd", back_populates="marketing_data")
+
+class MetaDataset(Base):
+    __tablename__ = "meta_datasets"
+    id = Column(Integer, primary_key=True, index=True)
+    dataset_id = Column(String, unique=True, index=True) # Meta Dataset/Pixel ID
+    name = Column(String)
+    account_id = Column(Integer, ForeignKey("meta_accounts.id"), nullable=True) # Collegato all'account Meta
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
+    
+    account = relationship("MetaAccount", backref="datasets")
+
+class MetaDatasetFetchJob(Base):
+    __tablename__ = "meta_dataset_fetch_jobs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    status = Column(String, default="pending") # pending, processing, completed, error
+    datasets = Column(JSON, nullable=True) # Lista di dataset recuperati
+    account_map = Column(JSON, nullable=True) # Mappa account
+    error_message = Column(String, nullable=True)
+    created_at = Column(DateTime, default=now_rome)
+    completed_at = Column(DateTime, nullable=True)
+    
+    user = relationship("User", backref="dataset_fetch_jobs")
+
+class Session(Base):
+    __tablename__ = "sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, unique=True, index=True) # Token univoco per la sessione
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_data = Column(JSON, default=dict) # Dati della sessione (user, meta_oauth_token, etc.)
+    is_active = Column(Boolean, default=True) # Flag per invalidare manualmente la sessione
+    created_at = Column(DateTime, default=now_rome)
+    expires_at = Column(DateTime, nullable=False, index=True) # Scadenza sessione
+    last_activity = Column(DateTime, default=now_rome) # Ultima attività
+    
+    user = relationship("User", backref="sessions")

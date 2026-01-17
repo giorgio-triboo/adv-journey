@@ -236,8 +236,19 @@ def setup_logging(log_level=logging.INFO):
     logging.info(f"File di log generale: {general_log_file.absolute()}")
     logging.info(f"File di log per sezione disponibili in: {log_dir.absolute()}")
     
-    # Elimina i file di log vuoti che potrebbero essere stati creati
-    # (TimedRotatingFileHandler crea i file anche se non ci sono log da scrivere)
-    _cleanup_empty_log_files(log_dir, log_messages=True)
+    # Flush di tutti gli handler per assicurarsi che i log vengano scritti
+    for handler in root_logger.handlers:
+        if hasattr(handler, 'flush'):
+            handler.flush()
+    
+    for section_name, section_config in sections.items():
+        section_logger = logging.getLogger(section_config['logger_name'])
+        for handler in section_logger.handlers:
+            if hasattr(handler, 'flush'):
+                handler.flush()
+    
+    # NON eliminare i file vuoti subito dopo la configurazione
+    # I file verranno creati quando ci saranno log da scrivere
+    # _cleanup_empty_log_files(log_dir, log_messages=True)
     
     return general_log_file

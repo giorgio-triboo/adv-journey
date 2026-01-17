@@ -2,8 +2,8 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, JSONResponse
-from starlette.middleware.sessions import SessionMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.sessions import SessionMiddleware
 from services.api.auth import router as auth_router
 from services.api.leads import router as leads_router
 from services.api.ui import router as ui_router
@@ -18,7 +18,10 @@ import sys
 from logging_config import setup_logging
 log_file = setup_logging(logging.INFO if not settings.DEBUG else logging.DEBUG)
 
+# Logger per questo modulo - eredita gli handler dal root logger
 logger = logging.getLogger(__name__)
+# Assicurati che il logger propaga al root logger (default, ma esplicito)
+logger.propagate = True
 
 app = FastAPI(title=settings.APP_NAME)
 
@@ -60,11 +63,32 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """
     Handler per errori HTTP (404, 500, etc.) per loggarli.
-    Filtra i 404 su /favicon.ico che sono normali e non necessitano di log.
+    Filtra i 404 su richieste comuni che sono normali e non necessitano di log.
     """
-    # Non loggare i 404 su /favicon.ico - sono normali richieste del browser
-    if exc.status_code == 404 and request.url.path == '/favicon.ico':
-        raise exc
+    # Non loggare i 404 su richieste comuni - sono normali richieste del browser/bot
+    if exc.status_code == 404:
+        common_404_paths = [
+            '/favicon.ico',
+            '/robots.txt',
+            '/apple-touch-icon.png',
+            '/apple-touch-icon-precomposed.png',
+            '/favicon.png',
+            '/favicon-16x16.png',
+            '/favicon-32x32.png',
+        ]
+        if request.url.path in common_404_paths:
+            # Non loggare e non sollevare eccezione - sono normali
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+    
+    # Raccogli informazioni dettagliate sulla richiesta
+    url_info = {
+        "method": request.method,
+        "path": request.url.path,
+        "query_string": str(request.url.query) if request.url.query else None,
+        "full_url": str(request.url),
+        "referer": request.headers.get("referer"),
+        "user_agent": request.headers.get("user-agent"),
+    }
     
     # Prova a ottenere il traceback completo
     exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -77,20 +101,25 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         except:
             error_traceback = traceback.format_exc()
     
-    logger.warning(
-        f"HTTP {exc.status_code} su {request.method} {request.url.path}: {exc.detail}\n"
-        f"Traceback:\n{error_traceback}"
-    )
+    # Per i 404, logga a livello INFO (non DEBUG) così vengono scritti nei file
+    if exc.status_code == 404:
+        logger.info(f"HTTP 404 su {request.method} {request.url.path}")
+    else:
+        # Per altri errori HTTP, logga informazioni dettagliate
+        log_message = (
+            f"HTTP {exc.status_code} su {request.method} {request.url.path}\n"
+            f"URL completo: {url_info['full_url']}\n"
+            f"Query string: {url_info['query_string']}\n"
+            f"Referer: {url_info['referer']}\n"
+            f"Dettaglio errore: {exc.detail}\n"
+            f"Traceback:\n{error_traceback}"
+        )
+        logger.error(log_message)  # Cambiato da WARNING a ERROR per assicurarsi che venga scritto
     # Re-solleva per il comportamento di default
     raise exc
 
-# Session Middleware con timeout esplicito (14 giorni)
-app.add_middleware(
-    SessionMiddleware, 
-    secret_key=settings.SECRET_KEY,
-    max_age=3600 * 24 * 14,  # 14 giorni in secondi
-    same_site='lax'
-)
+# Session Middleware - gestione sessioni lato server (standard Starlette)
+app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 
 # Mount Static Files
 # In Docker: frontend è montato in /app/frontend
@@ -112,9 +141,8 @@ app.include_router(ui_router)
 
 @app.on_event("startup")
 def startup_event():
-    from database import engine
-    from models import Base
-    Base.metadata.create_all(bind=engine)
+    # NOTA: Le tabelle vengono create da Alembic migrations, NON da create_all()
+    # Questo evita conflitti tra create_all() e le migrazioni Alembic
     
     # Seed campaigns
     from seeders.campaigns_seeder import seed_campaigns
@@ -124,10 +152,13 @@ def startup_event():
     from seeders.users_seeder import seed_users
     seed_users()
     
-    # Start scheduler - DISABILITATO
+    # Start scheduler - DISABILITATO COMPLETAMENTE
     # from services.scheduler import start_scheduler
     # start_scheduler()
-    logger.debug("Scheduler disabilitato - le schedulazioni non verranno eseguite")
+    logger.warning("=" * 80)
+    logger.warning("SCHEDULER DISABILITATO - Nessuna sincronizzazione automatica verrà eseguita")
+    logger.warning("Tutte le sync automatiche sono state disabilitate per sicurezza")
+    logger.warning("=" * 80)
 
 @app.middleware("http")
 async def error_logging_middleware(request: Request, call_next):
@@ -154,6 +185,7 @@ async def error_logging_middleware(request: Request, call_next):
             except:
                 error_traceback = traceback.format_exc()
         
+        # Usa logger.error per assicurarsi che venga scritto nei file di log
         logger.error(
             f"Errore durante la richiesta {request.method} {request.url.path}:\n"
             f"Tipo: {type(exc).__name__}\n"
@@ -165,11 +197,12 @@ async def error_logging_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def refresh_session_middleware(request: Request, call_next):
-    """Refresh session su ogni richiesta autenticata per prevenire session_expired"""
+    """
+    Refresh session su ogni richiesta autenticata per prevenire session_expired.
+    Gestisce l'estensione del token OAuth Meta se necessario.
+    """
     response = await call_next(request)
     if request.session.get('user'):
-        # Aggiorna timestamp ultima attività
-        request.session['last_activity'] = time.time()
         # Refresh anche token OAuth Meta se presente
         if 'meta_oauth_token_expires' in request.session:
             # Estendi scadenza token OAuth se ancora valido

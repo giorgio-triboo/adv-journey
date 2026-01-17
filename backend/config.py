@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "SUPER_SECRET_KEY_CHANGE_ME"
     
     # DATABASE
-    DATABASE_URL: str = "postgresql://postgres:postgres@db:5432/cepu"
+    DATABASE_URL: str = "postgresql://user:password@db:5432/cepudb"
     
     # GOOGLE OAUTH
     GOOGLE_CLIENT_ID: str
