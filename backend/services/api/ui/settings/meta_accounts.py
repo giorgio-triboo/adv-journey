@@ -453,11 +453,21 @@ async def meta_oauth_save_accounts(request: Request, db: Session = Depends(get_d
         service = MetaMarketingService(access_token=decrypted_token)
         all_accounts = service.get_accounts()
         
+        # Ottieni tutti gli account_id disponibili dall'API
+        all_account_ids_from_api = {acc.get('account_id') for acc in all_accounts}
+        
+        # Ottieni tutti gli account già presenti per questo utente (condivisi + specifici)
+        existing_user_accounts = db.query(MetaAccount).filter(
+            (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user_id)
+        ).all()
+        
         # Cripta token per salvataggio
         encrypted_token_for_db = encrypt_token(decrypted_token)
         
         saved_count = 0
+        removed_count = 0
         
+        # Prima gestisci gli account selezionati (aggiungi/aggiorna)
         for account_data in all_accounts:
             account_id = account_data.get('account_id')
             if account_id in selected_account_ids:
@@ -471,16 +481,28 @@ async def meta_oauth_save_accounts(request: Request, db: Session = Depends(get_d
                     # Se esiste già come account condiviso, crea una copia per questo utente
                     # Se esiste già come account specifico utente, aggiornalo
                     if existing.user_id is None:
-                        # Account condiviso: crea copia per questo utente
-                        new_account = MetaAccount(
-                            account_id=account_id,
-                            name=account_data.get('name', existing.name),
-                            access_token=encrypted_token_for_db,
-                            user_id=current_user_id,  # Account specifico per questo utente
-                            is_active=True,
-                            sync_enabled=True
-                        )
-                        db.add(new_account)
+                        # Account condiviso: verifica se l'utente ha già una copia specifica
+                        user_specific = db.query(MetaAccount).filter(
+                            MetaAccount.account_id == account_id,
+                            MetaAccount.user_id == current_user_id
+                        ).first()
+                        if user_specific:
+                            # Aggiorna la copia specifica dell'utente
+                            user_specific.access_token = encrypted_token_for_db
+                            user_specific.name = account_data.get('name', user_specific.name)
+                            user_specific.is_active = True
+                            user_specific.updated_at = datetime.utcnow()
+                        else:
+                            # Crea copia per questo utente
+                            new_account = MetaAccount(
+                                account_id=account_id,
+                                name=account_data.get('name', existing.name),
+                                access_token=encrypted_token_for_db,
+                                user_id=current_user_id,  # Account specifico per questo utente
+                                is_active=True,
+                                sync_enabled=True
+                            )
+                            db.add(new_account)
                     else:
                         # Account già specifico utente: aggiorna
                         existing.access_token = encrypted_token_for_db
@@ -501,16 +523,41 @@ async def meta_oauth_save_accounts(request: Request, db: Session = Depends(get_d
                     db.add(new_account)
                 saved_count += 1
         
+        # Poi gestisci gli account non selezionati (rimuovi solo quelli specifici dell'utente)
+        for existing_account in existing_user_accounts:
+            # Se l'account è disponibile dall'API ma non è stato selezionato, rimuovilo
+            if existing_account.account_id in all_account_ids_from_api:
+                if existing_account.account_id not in selected_account_ids:
+                    # Rimuovi solo se è un account specifico dell'utente (non condiviso)
+                    if existing_account.user_id == current_user_id:
+                        db.delete(existing_account)
+                        removed_count += 1
+                    # Se è condiviso (user_id = NULL), non lo rimuoviamo (è condiviso tra utenti)
+        
         db.commit()
         
         # Pulisci token dalla sessione
         request.session.pop('meta_oauth_token', None)
         request.session.pop('meta_oauth_token_expires', None)
         
-        if saved_count == 1:
-            success_msg = f"{saved_count} account aggiunto"
+        # Costruisci messaggio di successo
+        success_parts = []
+        if saved_count > 0:
+            if saved_count == 1:
+                success_parts.append(f"{saved_count} account aggiunto")
+            else:
+                success_parts.append(f"{saved_count} account aggiunti")
+        if removed_count > 0:
+            if removed_count == 1:
+                success_parts.append(f"{removed_count} account rimosso")
+            else:
+                success_parts.append(f"{removed_count} account rimossi")
+        
+        if success_parts:
+            success_msg = " e ".join(success_parts)
         else:
-            success_msg = f"{saved_count} account aggiunti"
+            success_msg = "Nessuna modifica effettuata"
+        
         return RedirectResponse(url=f'/settings/meta-accounts?success={success_msg}', status_code=303)
         
     except Exception as e:

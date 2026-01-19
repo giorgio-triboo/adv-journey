@@ -56,7 +56,7 @@
                                        name="account_ids" 
                                        value="{{ account.account_id }}"
                                        class="account-checkbox rounded border-neutral-300"
-                                       {% if account.already_added %}checked disabled data-already-added="true"{% endif %}>
+                                       {% if account.already_added %}checked data-already-added="true"{% endif %}>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-mono font-bold text-indigo-600">
                                 {{ account.account_id }}
@@ -91,7 +91,7 @@
         
         <div class="flex flex-col gap-4">
             <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-                <p><strong>💡 Suggerimento:</strong> Gli account già presenti sono selezionati automaticamente e non possono essere rimossi.</p>
+                <p><strong>💡 Suggerimento:</strong> Gli account già presenti sono selezionati automaticamente. Puoi deselezionarli per rimuoverli dalla tua configurazione.</p>
                 <p class="mt-1">Per aggiungere altri account in futuro, usa il pulsante <strong>"Aggiungi Altri Account"</strong> nella pagina principale.</p>
             </div>
             <div class="flex justify-end gap-4">
@@ -113,16 +113,14 @@
 // Select all checkboxes
 const selectAllCheckbox = document.getElementById('select-all');
 const selectAllNewCheckbox = document.getElementById('select-all-new');
-const accountCheckboxes = document.querySelectorAll('.account-checkbox:not(:disabled)');
-const newAccountCheckboxes = document.querySelectorAll('.account-checkbox:not(:disabled):not([data-already-added])');
+const accountCheckboxes = document.querySelectorAll('.account-checkbox');
+const newAccountCheckboxes = document.querySelectorAll('.account-checkbox:not([data-already-added])');
 const selectedCountSpan = document.getElementById('selected-count');
 const saveButton = document.getElementById('save-button');
 
 function updateSelectedCount() {
-    const selected = document.querySelectorAll('.account-checkbox:checked:not(:disabled)').length;
-    const alreadyAdded = document.querySelectorAll('.account-checkbox:checked[disabled]').length;
-    const total = selected + alreadyAdded;
-    selectedCountSpan.textContent = total;
+    const selected = document.querySelectorAll('.account-checkbox:checked').length;
+    selectedCountSpan.textContent = selected;
     saveButton.disabled = selected === 0;
 }
 
@@ -142,10 +140,7 @@ selectAllNewCheckbox.addEventListener('change', function(e) {
     // Seleziona solo i nuovi
     if (e.target.checked) {
         newAccountCheckboxes.forEach(cb => {
-            const row = cb.closest('tr');
-            if (row && !row.querySelector('.account-checkbox[disabled]')) {
-                cb.checked = true;
-            }
+            cb.checked = true;
         });
         selectAllCheckbox.checked = false;
     }
