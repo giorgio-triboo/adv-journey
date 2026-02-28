@@ -147,7 +147,7 @@ def run(db: Session = None) -> dict:
                                     ctr=insight['ctr'],
                                     cpc=insight['cpc'],
                                     cpm=insight['cpm'],
-                                    cpa=insight.get('cpa', '0,00'),
+                                    cpa=insight.get('cpa', 0),
                                     additional_metrics=insight.get('raw_data', {})
                                 )
                                 db.add(marketing_data)
@@ -267,9 +267,10 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
                 insights = service.get_insights(
                     account_id=account.account_id,
                     level='ad',
+                    date_preset=None,  # usa esplicitamente il range richiesto, non last_7d di default
                     start_date=start_date,
                     end_date=end_date,
-                    fields=metrics
+                    fields=metrics,
                 )
                 
                 logger.info(f"Meta Marketing Manual Sync: Retrieved {len(insights)} insights for campaign {campaign.campaign_id}")
@@ -339,14 +340,14 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
                         marketing_data = MetaMarketingData(
                             ad_id=ad_record.id,
                             date=insight_date,
-                            spend=insight.get('spend', '0,00'),
+                            spend=insight.get('spend', 0),
                             impressions=insight.get('impressions', 0),
                             clicks=insight.get('clicks', 0),
                             conversions=insight.get('conversions', 0),
-                            ctr=insight.get('ctr', '0,00'),
-                            cpc=insight.get('cpc', '0,00'),
-                            cpm=insight.get('cpm', '0,00'),
-                            cpa=insight.get('cpa', '0,00'),
+                            ctr=insight.get('ctr', 0),
+                            cpc=insight.get('cpc', 0),
+                            cpm=insight.get('cpm', 0),
+                            cpa=insight.get('cpa', 0),
                             additional_metrics=insight.get('raw_data', {})
                         )
                         db.add(marketing_data)

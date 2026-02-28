@@ -1,5 +1,5 @@
 """Settings: Gestione Account Meta e OAuth"""
-from fastapi import APIRouter, Request, Depends, BackgroundTasks
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from database import get_db
@@ -201,7 +201,7 @@ async def delete_meta_account(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse(url='/settings/meta-accounts', status_code=303)
 
 @router.post("/settings/meta-accounts/sync")
-async def sync_meta_account(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def sync_meta_account(request: Request, db: Session = Depends(get_db)):
     if not request.session.get('user'): return RedirectResponse(url='/')
     form = await request.form()
     
@@ -214,17 +214,10 @@ async def sync_meta_account(request: Request, background_tasks: BackgroundTasks,
         account = db.query(MetaAccount).filter(MetaAccount.id == account_id).first()
         if account and account.is_active:
             logger.info(f"Starting sync for account {account.account_id} ({account.name})")
-            # Decripta il token prima di usarlo
             try:
-                decrypted_token = decrypt_token(account.access_token)
-                # Sync in background
-                background_tasks.add_task(
-                    sync_meta_account_task,
-                    SessionLocal(),
-                    account.account_id,
-                    decrypted_token
-                )
-                logger.info(f"Background sync task queued for account {account.account_id}")
+                from tasks.meta_marketing import meta_sync_single_account_task
+                meta_sync_single_account_task.delay(int(account_id))
+                logger.info(f"Sync task queued for account {account.account_id}")
                 
                 # Se viene dalla pagina delle campagne, reindirizza lì con il filtro
                 if "meta-campaigns" in redirect_url:
@@ -233,7 +226,7 @@ async def sync_meta_account(request: Request, background_tasks: BackgroundTasks,
                     # Aggiungi messaggio di successo per la pagina meta-accounts
                     redirect_url = f"/settings/meta-accounts?sync_started=true&account_name={account.name}"
             except Exception as e:
-                logger.error(f"Error decrypting token for account {account.account_id}: {e}")
+                logger.error(f"Error queuing sync for account {account.account_id}: {e}")
                 redirect_url = f"/settings/meta-accounts?error=sync_failed&account_name={account.name}"
         else:
             logger.warning(f"Account {account_id} not found or not active")
@@ -258,20 +251,33 @@ async def meta_oauth_start(request: Request):
     state = secrets.token_urlsafe(32)
     request.session['meta_oauth_state'] = state
     
-    # Scopes necessari per Meta Marketing API
-    scopes = [
-        'ads_read',
-        'ads_management',
-        'business_management'
-    ]
+    # Scopes necessari per Meta Marketing API:
+    # se META_SCOPES è impostato, usa quelli da .env (separati da virgola),
+    # altrimenti fallback ai default.
+    if settings.META_SCOPES:
+        scopes = [s.strip() for s in settings.META_SCOPES.split(',') if s.strip()]
+    else:
+        scopes = [
+            'ads_read',
+            'ads_management',
+            'business_management',
+            'leads_retrieval',
+            'pages_manage_ads',
+            'pages_read_engagement',
+            'pages_show_list',
+        ]
     
     # URL di autorizzazione Meta
     base_url = str(request.base_url).rstrip('/')
     redirect_uri = f"{base_url}/settings/meta-accounts/oauth/callback"
     
+    # Se disponibile, includi anche META_CONFIG_ID (nuovo flusso Config ID di Meta)
+    config_part = f"config_id={settings.META_CONFIG_ID}&" if settings.META_CONFIG_ID else ""
+    
     auth_url = (
-        f"https://www.facebook.com/v18.0/dialog/oauth?"
+        f"https://www.facebook.com/v23.0/dialog/oauth?"
         f"client_id={settings.META_APP_ID}&"
+        f"{config_part}"
         f"redirect_uri={redirect_uri}&"
         f"scope={','.join(scopes)}&"
         f"state={state}&"
@@ -315,7 +321,7 @@ async def meta_oauth_callback(request: Request, db: Session = Depends(get_db)):
     base_url = str(request.base_url).rstrip('/')
     redirect_uri = f"{base_url}/settings/meta-accounts/oauth/callback"
     
-    token_url = "https://graph.facebook.com/v18.0/oauth/access_token"
+    token_url = "https://graph.facebook.com/v23.0/oauth/access_token"
     token_params = {
         'client_id': settings.META_APP_ID,
         'client_secret': settings.META_APP_SECRET,

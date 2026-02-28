@@ -89,6 +89,17 @@ async def settings_cron_jobs(request: Request, db: Session = Depends(get_db)):
             "day_of_month": "*",
             "month": "*",
             "description": "Meta Conversion API - Invia eventi stati aggiornati"
+        },
+        {
+            "job_name": "meta_campaigns_incremental",
+            "job_type": "meta_campaigns_incremental",
+            "enabled": False,
+            "hour": 5,
+            "minute": 0,
+            "day_of_week": "*",
+            "day_of_month": "*",
+            "month": "*",
+            "description": "Meta Campagne - Sync giornaliera campagne con impression (ieri)"
         }
     ]
     

@@ -1,0 +1,603 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Marketing Analysis</h1>
+        <p class="text-neutral-500 mt-2">
+            Analisi avanzata delle performance ADV con filtri e grafici di sintesi. I grafici sono una prima bozza e verranno raffinati in seguito.
+        </p>
+    </div>
+
+    <!-- Filtri -->
+    <div class="glass-card mb-6 p-4">
+        <form method="GET" class="grid grid-cols-1 sm:grid-cols-6 gap-4">
+            <div>
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Account</label>
+                <select name="account_id" id="accountFilter"
+                        class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">Tutti</option>
+                    {% for account in accounts %}
+                    <option value="{{ account.account_id }}" {% if selected_account_id == account.account_id %}selected{% endif %}>
+                        {{ account.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Campagna</label>
+                <select name="campaign_id" id="campaignFilter"
+                        class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">Tutte</option>
+                    {% for campaign in campaigns %}
+                    <option value="{{ campaign.campaign_id }}"
+                            data-account-id="{{ campaign.account.account_id if campaign.account else '' }}"
+                            {% if selected_campaign_id == campaign.campaign_id %}selected{% endif %}>
+                        {{ campaign.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">AdSet</label>
+                <select name="adset_id" id="adsetFilter"
+                        class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">Tutti</option>
+                    {% for adset in adsets %}
+                    <option value="{{ adset.id }}"
+                            data-account-id="{{ adset.campaign.account.account_id if adset.campaign and adset.campaign.account else '' }}"
+                            data-campaign-id="{{ adset.campaign.campaign_id if adset.campaign else '' }}"
+                            {% if selected_adset_id == adset.id %}selected{% endif %}>
+                        {{ adset.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Date range con calendario avanzato -->
+            <div class="sm:col-span-2">
+                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Periodo</label>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div class="flex-1">
+                        <input type="text" id="analysisDateRange"
+                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+                               placeholder="Seleziona intervallo">
+                        <!-- hidden fields usati dal backend -->
+                        <input type="hidden" name="date_from" id="analysisDateFrom" value="{{ date_from }}">
+                        <input type="hidden" name="date_to" id="analysisDateTo" value="{{ date_to }}">
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-end">
+                <button type="submit"
+                        class="w-full px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
+                    Applica Filtri
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- KPI Cards (nascoste, sostituite dalle card sottostanti) -->
+    <div class="hidden">
+        <!-- Speso -->
+        <div class="glass-card p-6 flex items-center border-l-4 border-green-400">
+            <div class="bg-green-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">Speso</p>
+                <p class="text-2xl font-bold text-neutral-900">
+                    € {{ "%.2f"|format(totals.total_spend or 0)|replace('.', ',') }}
+                </p>
+            </div>
+        </div>
+
+        <!-- Lead -->
+        <div class="glass-card p-6 flex items-center border-l-4 border-blue-400">
+            <div class="bg-blue-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M17 20h5v-1a6 6 0 00-5.196-5.92M9 11a4 4 0 110-8 4 4 0 010 8zm0 0a6 6 0 016 6v1H3v-1a6 6 0 016-6z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">Lead</p>
+                <p class="text-2xl font-bold text-neutral-900">
+                    {{ "{:,}".format(totals.total_conversions or 0)|replace(',', '.') }}
+                </p>
+            </div>
+        </div>
+
+        <!-- CPL -->
+        <div class="glass-card p-6 flex items-center border-l-4 border-yellow-400">
+            <div class="bg-yellow-100/50 p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-neutral-500">CPL</p>
+                <p class="text-2xl font-bold text-neutral-900">
+                    € {{ "%.2f"|format(totals.global_cpl or 0)|replace('.', ',') }}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- KPI principali -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div class="glass-card p-6">
+            <p class="text-sm font-medium text-neutral-500 mb-1">Speso</p>
+            <p class="text-3xl font-bold text-neutral-900">
+                € {{ "{:,.2f}".format(totals.total_spend or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+            </p>
+            <p class="text-xs text-neutral-500 mt-2">
+                Spesa totale nel periodo selezionato.
+            </p>
+        </div>
+        <div class="glass-card p-6">
+            <p class="text-sm font-medium text-neutral-500 mb-1">Lead</p>
+            <p class="text-3xl font-bold text-neutral-900">
+                {{ "{:,}".format(totals.total_conversions or 0)|replace(',', '.') }}
+            </p>
+            <p class="text-xs text-neutral-500 mt-2">
+                Numero di lead generati (conversioni) nel periodo.
+            </p>
+        </div>
+        <div class="glass-card p-6">
+            <p class="text-sm font-medium text-neutral-500 mb-1">CPL</p>
+            <p class="text-3xl font-bold text-neutral-900">
+                € {{ "{:,.2f}".format(totals.global_cpl or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+            </p>
+            <p class="text-xs text-neutral-500 mt-2">
+                Costo per lead calcolato come Speso / Lead nel periodo selezionato.
+            </p>
+        </div>
+    </div>
+
+    <!-- Sezione Grafici -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="glass-card p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-lg font-semibold text-neutral-900">Trend giornaliero Spend / CPL</h2>
+                    <p class="text-xs text-neutral-500 mt-1">
+                        Andamento giornaliero di spend e costo per lead (CPL) nel periodo e per i filtri selezionati.
+                    </p>
+                </div>
+            </div>
+            {% if chart_points %}
+            <div class="h-72">
+                <canvas id="spendCplChart"></canvas>
+            </div>
+            {% else %}
+            <div class="h-56 rounded-xl bg-gradient-to-br from-indigo-50 via-white to-purple-50 border border-dashed border-indigo-200 flex items-center justify-center">
+                <div class="text-center">
+                    <p class="text-sm font-semibold text-neutral-500">Nessun dato disponibile</p>
+                    <p class="text-xs text-neutral-400 mt-1">Modifica intervallo date o campagna per vedere il trend.</p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="glass-card p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-lg font-semibold text-neutral-900">Speso per campagna: periodo vs precedente</h2>
+                    <p class="text-xs text-neutral-500 mt-1">
+                        Confronto dello speso per campagna tra il periodo selezionato e il periodo precedente di uguale durata.
+                    </p>
+                </div>
+            </div>
+            {% if distribution_points %}
+            <div class="h-72">
+                <canvas id="campaignDistributionChart"></canvas>
+            </div>
+            <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div>
+                    <p class="font-semibold text-neutral-800">Periodo selezionato</p>
+                    <p class="text-neutral-700">
+                        Speso: <span class="font-semibold">€ {{ "{:,.2f}".format(distribution_points[0].spend_current)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}</span>
+                    </p>
+                    <p class="text-neutral-700">
+                        Lead: <span class="font-semibold">{{ "{:,}".format(distribution_points[0].leads_current)|replace(',', '.') }}</span>
+                    </p>
+                    <p class="text-neutral-700">
+                        CPL medio: <span class="font-semibold">€ {{ "{:,.2f}".format(distribution_points[0].cpl_current)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}</span>
+                    </p>
+                </div>
+                <div>
+                    <p class="font-semibold text-neutral-800">Periodo precedente</p>
+                    <p class="text-neutral-700">
+                        Speso: <span class="font-semibold">€ {{ "{:,.2f}".format(distribution_points[0].spend_prev)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}</span>
+                    </p>
+                    <p class="text-neutral-700">
+                        Lead: <span class="font-semibold">{{ "{:,}".format(distribution_points[0].leads_prev)|replace(',', '.') }}</span>
+                    </p>
+                    <p class="text-neutral-700">
+                        CPL medio: <span class="font-semibold">€ {{ "{:,.2f}".format(distribution_points[0].cpl_prev)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}</span>
+                    </p>
+                </div>
+            </div>
+            {% else %}
+            <div class="h-56 rounded-xl bg-gradient-to-br from-emerald-50 via-white to-sky-50 border border-dashed border-emerald-200 flex items-center justify-center">
+                <div class="text-center">
+                    <p class="text-sm font-semibold text-neutral-500">Nessun dato disponibile per la distribuzione</p>
+                    <p class="text-xs text-neutral-400 mt-1">Prova ad ampliare l'intervallo date o a rimuovere filtri.</p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(function () {
+    // Filtri dinamici Account -> Campagna -> AdSet
+    document.addEventListener('DOMContentLoaded', function () {
+        const accountSelect = document.getElementById('accountFilter');
+        const campaignSelect = document.getElementById('campaignFilter');
+        const adsetSelect = document.getElementById('adsetFilter');
+
+        if (accountSelect && campaignSelect && adsetSelect) {
+            const campaignOptions = Array.from(campaignSelect.options);
+            const adsetOptions = Array.from(adsetSelect.options);
+
+            function filterCampaigns() {
+                const selectedAccount = accountSelect.value;
+                campaignSelect.value = '';
+
+                campaignSelect.innerHTML = '';
+                const allOpt = document.createElement('option');
+                allOpt.value = '';
+                allOpt.textContent = 'Tutte';
+                campaignSelect.appendChild(allOpt);
+
+                campaignOptions.slice(1).forEach(opt => {
+                    const accId = opt.dataset.accountId || '';
+                    if (!selectedAccount || accId === selectedAccount) {
+                        campaignSelect.appendChild(opt);
+                    }
+                });
+
+                filterAdsets();
+            }
+
+            function filterAdsets() {
+                const selectedAccount = accountSelect.value;
+                const selectedCampaign = campaignSelect.value;
+                const prevSelectedAdset = adsetSelect.value;
+
+                adsetSelect.innerHTML = '';
+                const allOpt = document.createElement('option');
+                allOpt.value = '';
+                allOpt.textContent = 'Tutti';
+                adsetSelect.appendChild(allOpt);
+
+                adsetOptions.slice(1).forEach(opt => {
+                    const accId = opt.dataset.accountId || '';
+                    const campId = opt.dataset.campaignId || '';
+                    if (
+                        (!selectedAccount || accId === selectedAccount) &&
+                        (!selectedCampaign || campId === selectedCampaign)
+                    ) {
+                        adsetSelect.appendChild(opt);
+                    }
+                });
+
+                if (prevSelectedAdset) {
+                    const exists = Array.from(adsetSelect.options).some(o => o.value === prevSelectedAdset);
+                    if (exists) {
+                        adsetSelect.value = prevSelectedAdset;
+                    }
+                }
+            }
+
+            accountSelect.addEventListener('change', filterCampaigns);
+            campaignSelect.addEventListener('change', filterAdsets);
+
+            filterCampaigns();
+        }
+
+        // Date range picker con libreria dedicata e preset
+        const rangeInput = document.getElementById('analysisDateRange');
+        const hiddenFrom = document.getElementById('analysisDateFrom');
+        const hiddenTo = document.getElementById('analysisDateTo');
+        if (rangeInput && hiddenFrom && hiddenTo && window.DateRangePicker && window.moment) {
+            const form = rangeInput.closest('form');
+
+            const start = hiddenFrom.value ? moment(hiddenFrom.value, 'YYYY-MM-DD') : moment().subtract(29, 'days');
+            const end = hiddenTo.value ? moment(hiddenTo.value, 'YYYY-MM-DD') : moment();
+
+            new DateRangePicker(rangeInput, {
+                startDate: start,
+                endDate: end,
+                autoApply: true,
+                alwaysShowCalendars: true,
+                opens: 'left',
+                maxSpan: { days: 365 },
+                locale: {
+                    format: 'DD/MM/YYYY',
+                    separator: ' al ',
+                    applyLabel: 'Aggiorna',
+                    cancelLabel: 'Annulla',
+                    weekLabel: 'Set',
+                    daysOfWeek: ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'],
+                    monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'],
+                    firstDay: 1
+                },
+                ranges: {
+                    'Oggi': [moment(), moment()],
+                    'Ieri': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+                    'Ultimi 7 giorni': [moment().subtract(6, 'days'), moment()],
+                    'Ultimi 14 giorni': [moment().subtract(13, 'days'), moment()],
+                    'Ultimi 28 giorni': [moment().subtract(27, 'days'), moment()],
+                    'Ultimi 30 giorni': [moment().subtract(29, 'days'), moment()],
+                    'Questa settimana': [moment().startOf('week').add(1, 'days'), moment().endOf('week').add(1, 'days')],
+                    'Settimana scorsa': [
+                        moment().subtract(1, 'week').startOf('week').add(1, 'days'),
+                        moment().subtract(1, 'week').endOf('week').add(1, 'days')
+                    ],
+                    'Questo mese': [moment().startOf('month'), moment().endOf('month')],
+                    'Mese scorso': [
+                        moment().subtract(1, 'month').startOf('month'),
+                        moment().subtract(1, 'month').endOf('month')
+                    ]
+                }
+            }, function (startDate, endDate) {
+                hiddenFrom.value = startDate.format('YYYY-MM-DD');
+                hiddenTo.value = endDate.format('YYYY-MM-DD');
+
+                if (form) {
+                    if (typeof form.requestSubmit === 'function') {
+                        form.requestSubmit();
+                    } else {
+                        form.submit();
+                    }
+                }
+            });
+        }
+    });
+    function formatEuro(value) {
+        return Number(value || 0).toLocaleString('it-IT', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    }
+
+    function formatIntIt(value) {
+        return Number(value || 0).toLocaleString('it-IT');
+    }
+
+        const labels = [
+        {% for p in chart_points %}
+        "{{ p.date }}"{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    const spendData = [
+        {% for p in chart_points %}
+        {{ "%.2f"|format(p.spend) }}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    const cplData = [
+        {% for p in chart_points %}
+        {{ "%.2f"|format(p.cpl) }}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    const baselineCpl = {{ "%.2f"|format(totals.global_cpl or 0) }};
+    const baselineData = labels.map(() => baselineCpl);
+
+    const ctx = document.getElementById('spendCplChart');
+    if (!ctx || labels.length === 0) {
+        return;
+    }
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Spend (€)',
+                    data: spendData,
+                    borderColor: 'rgba(79, 70, 229, 1)',
+                    backgroundColor: 'rgba(79, 70, 229, 0.15)',
+                    yAxisID: 'y1',
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 2
+                },
+                {
+                    label: 'CPL (€)',
+                    data: cplData,
+                    borderColor: 'rgba(16, 185, 129, 1)',
+                    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+                    yAxisID: 'y2',
+                    tension: 0.3,
+                    fill: false,
+                    pointRadius: 2
+                },
+                {
+                    label: 'CPL medio periodo (€)',
+                    data: baselineData,
+                    borderColor: 'rgba(156, 163, 175, 1)',
+                    borderDash: [6, 4],
+                    yAxisID: 'y2',
+                    tension: 0,
+                    fill: false,
+                    pointRadius: 0
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.dataset.label || '';
+                            const value = context.parsed.y || 0;
+                                return label + ': € ' + formatEuro(value);
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 0
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'Spend (€)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return '€ ' + formatEuro(value);
+                        }
+                    }
+                },
+                y2: {
+                    type: 'linear',
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'CPL (€)'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return '€ ' + formatEuro(value);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Distribuzione per periodo: Speso e Lead (periodo vs precedente)
+    const hasDistribution = {{ 'true' if distribution_points else 'false' }};
+
+    const distLabels = hasDistribution ? ['Periodo selezionato', 'Periodo precedente'] : [];
+
+    const distSpend = hasDistribution ? [
+        {{ "%.2f"|format(distribution_points[0].spend_current if distribution_points else 0) }},
+        {{ "%.2f"|format(distribution_points[0].spend_prev if distribution_points else 0) }},
+    ] : [];
+
+    const distLeads = hasDistribution ? [
+        {{ distribution_points[0].leads_current if distribution_points else 0 }},
+        {{ distribution_points[0].leads_prev if distribution_points else 0 }},
+    ] : [];
+
+    const distCtx = document.getElementById('campaignDistributionChart');
+    if (distCtx && hasDistribution && distLabels.length > 0) {
+        new Chart(distCtx, {
+            type: 'bar',
+            data: {
+                labels: distLabels,
+                datasets: [
+                    {
+                        label: 'Speso totale (€)',
+                        data: distSpend,
+                        backgroundColor: 'rgba(79, 70, 229, 0.7)',
+                        yAxisID: 'yEuro',
+                    },
+                    {
+                        label: 'Numero lead',
+                        data: distLeads,
+                        backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                        yAxisID: 'yLeads',
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.dataset.label || '';
+                                const value = context.parsed.y || 0;
+                                const isEuro = context.dataset.yAxisID === 'yEuro';
+                                if (isEuro) {
+                                    return label + ': € ' + formatEuro(value);
+                                }
+                                return label + ': ' + formatIntIt(value);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            maxRotation: 45,
+                            minRotation: 0,
+                            autoSkip: true,
+                        }
+                    },
+                    yEuro: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Speso / CPL (€)'
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return '€ ' + formatEuro(value);
+                            }
+                        }
+                    },
+                    yLeads: {
+                        beginAtZero: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'Lead'
+                        },
+                        grid: {
+                            drawOnChartArea: false
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return formatIntIt(value);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}

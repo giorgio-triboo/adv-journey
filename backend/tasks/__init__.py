@@ -1,0 +1,9 @@
+# Celery tasks package - import task modules so they are registered with the app
+from tasks.sync_pipeline import run_full_sync_task  # noqa: F401
+from tasks.meta_marketing import (  # noqa: F401
+    meta_manual_sync_task,
+    meta_sync_accounts_sequentially_task,
+    meta_sync_single_account_task,
+)
+from tasks.magellano import magellano_sync_task  # noqa: F401
+from tasks.meta_datasets import fetch_datasets_task  # noqa: F401

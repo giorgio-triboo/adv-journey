@@ -72,14 +72,25 @@ docker-compose exec -T backend alembic upgrade head
 echo -e "${GREEN}✓ Migration completate${NC}"
 echo ""
 
-# 9. Pulire token OAuth Meta dal database (se esistono)
-echo -e "${YELLOW}9. Pulendo token OAuth Meta dal database...${NC}"
+# 9. Eseguire i seeder (campaigns, users)
+echo -e "${YELLOW}9. Eseguendo i seeder (campaigns, users)...${NC}"
+docker-compose exec -T backend python3 -c "
+from seeders.campaigns_seeder import seed_campaigns
+seed_campaigns()
+from seeders.users_seeder import seed_users
+seed_users()
+"
+echo -e "${GREEN}✓ Seeder completati${NC}"
+echo ""
+
+# 10. Pulire token OAuth Meta dal database (se esistono)
+echo -e "${YELLOW}10. Pulendo token OAuth Meta dal database...${NC}"
 docker-compose exec -T backend python3 scripts/clean_oauth_tokens.py 2>/dev/null || echo "Nessun token da pulire (database nuovo)"
 echo -e "${GREEN}✓ Token OAuth puliti${NC}"
 echo ""
 
-# 10. Verificare che tutto funzioni
-echo -e "${YELLOW}10. Verificando lo stato dei container...${NC}"
+# 11. Verificare che tutto funzioni
+echo -e "${YELLOW}11. Verificando lo stato dei container...${NC}"
 docker-compose ps
 echo ""
 
@@ -90,6 +101,7 @@ echo "  - Database completamente resettato (tutti i dati sono stati eliminati)"
 echo "  - Immagini Docker ricostruite da zero"
 echo "  - Sessioni utente e cache OAuth Meta sono state pulite"
 echo "  - Tutte le migration sono state eseguite da zero"
+echo "  - Seeder (campaigns, users) eseguiti"
 echo ""
 echo "🚀 Il sistema è pronto per essere testato!"
 echo "   Accesso: http://localhost:8003"

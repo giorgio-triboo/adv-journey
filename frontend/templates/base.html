@@ -32,12 +32,30 @@
                     </svg>
                     Lavorazioni
                 </a>
-                <a href="/marketing" class="nav-item {% if active_page == 'marketing' or active_page == 'marketing_data' %}active{% endif %}">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
-                    </svg>
-                    Marketing
-                </a>
+                <div class="nav-dropdown">
+                    <div class="nav-item nav-dropdown-trigger" onclick="toggleSubmenu('marketing-menu')">
+                        <div class="flex items-center">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+                            </svg>
+                            <span class="ml-2">Marketing</span>
+                        </div>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </div>
+                    <div id="marketing-menu" class="nav-submenu {% if active_page in ['marketing', 'marketing_analysis', 'marketing_prediction'] %}open{% endif %}">
+                        <a href="/marketing" class="nav-item {% if active_page == 'marketing' %}active{% endif %}">
+                            ADV
+                        </a>
+                        <a href="/marketing/analysis" class="nav-item {% if active_page == 'marketing_analysis' %}active{% endif %}">
+                            Analysis
+                        </a>
+                        <a href="/marketing/prediction" class="nav-item {% if active_page == 'marketing_prediction' %}active{% endif %}">
+                            Prediction
+                        </a>
+                    </div>
+                </div>
                 <div class="nav-dropdown">
                     <div class="nav-item nav-dropdown-trigger" onclick="toggleSubmenu('sync-menu')">
                         <div class="flex items-center">
@@ -181,6 +199,15 @@
         </div>
     </div>
 
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/it.js"></script>
+
+    <!-- Date range picker avanzato (vanilla-datetimerange-picker) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/alumuko/vanilla-datetimerange-picker@latest/dist/vanilla-datetimerange-picker.css">
+    <script src="https://cdn.jsdelivr.net/momentjs/latest/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/alumuko/vanilla-datetimerange-picker@latest/dist/vanilla-datetimerange-picker.js"></script>
+
     <script>
         function toggleSubmenu(id) {
             const menu = document.getElementById(id);
@@ -285,6 +312,23 @@
         window.confirm = function(message) {
             return showCustomConfirm('Conferma', message);
         };
+
+        // Datepicker globale per tutti i campi data
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.flatpickr) {
+                const commonOptions = {
+                    dateFormat: 'Y-m-d',
+                    altInput: true,
+                    altFormat: 'd/m/Y',
+                    allowInput: true,
+                    locale: flatpickr.l10ns.it,
+                };
+
+                document.querySelectorAll('input[data-datepicker="single"]').forEach(function (el) {
+                    flatpickr(el, commonOptions);
+                });
+            }
+        });
     </script>
 </body>
 </html>

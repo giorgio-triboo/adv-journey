@@ -46,6 +46,19 @@ def meta_conversion_sync_scheduled():
     logger.warning("meta_conversion_sync_scheduled chiamato ma DISABILITATO - nessuna sync verrà eseguita")
     return
 
+
+def _run_meta_campaigns_incremental():
+    """Esegue sync incrementale meta_campaigns (ieri) via Celery."""
+    from tasks.meta_marketing import meta_campaigns_incremental_task
+    meta_campaigns_incremental_task.delay()
+
+
+# Mappa job_type -> callable (usata quando lo scheduler sarà riattivato per inviare job a Celery)
+CRON_JOB_HANDLERS = {
+    "meta_campaigns_incremental": _run_meta_campaigns_incremental,
+}
+
+
 def _parse_cron_field(field: str, default: str = '*') -> str:
     """Converte campo cron da formato database a formato cron standard."""
     if not field or field == '*':

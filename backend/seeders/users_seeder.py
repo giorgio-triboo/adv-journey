@@ -25,10 +25,11 @@ INITIAL_USERS = [
     # },
 ]
 
+
 def seed_users():
     """
     Crea gli utenti iniziali se non esistono già.
-    Usa ON CONFLICT per evitare duplicati.
+    Aggiorna i dati se l'utente esiste ma ha valori diversi.
     """
     db = SessionLocal()
     try:
@@ -41,19 +42,21 @@ def seed_users():
             
             if existing_user:
                 # Aggiorna i dati se necessario (solo se sono diversi)
-                updated = False
+                needs_update = False
+                
                 if existing_user.is_active != user_data["is_active"]:
                     existing_user.is_active = user_data["is_active"]
-                    updated = True
+                    needs_update = True
+                
                 if existing_user.role != user_data["role"]:
                     existing_user.role = user_data["role"]
-                    updated = True
+                    needs_update = True
+                
                 if existing_user.id_sede != user_data.get("id_sede"):
                     existing_user.id_sede = user_data.get("id_sede")
-                    updated = True
+                    needs_update = True
                 
-                if updated:
-                    db.commit()
+                if needs_update:
                     updated_count += 1
                     logger.info(f"Utente aggiornato: {user_data['email']}")
             else:
@@ -65,17 +68,21 @@ def seed_users():
                     id_sede=user_data.get("id_sede")
                 )
                 db.add(new_user)
-                db.commit()
                 created_count += 1
                 logger.info(f"Utente creato: {user_data['email']} (ruolo: {user_data['role']})")
         
-        if created_count == 0 and updated_count == 0:
-            logger.info("Tutti gli utenti iniziali sono già presenti nel database")
-        else:
+        # Commit una sola volta alla fine per migliori performance
+        if created_count > 0 or updated_count > 0:
+            db.commit()
             logger.info(f"Seeder utenti completato: {created_count} creati, {updated_count} aggiornati")
-            
+        else:
+            logger.info("Tutti gli utenti iniziali sono già presenti nel database")
+        
+        return True
+        
     except Exception as e:
         logger.error(f"Errore durante il seeding degli utenti: {e}", exc_info=True)
         db.rollback()
+        return False
     finally:
         db.close()

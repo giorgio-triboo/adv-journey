@@ -14,6 +14,383 @@ logger = logging.getLogger('services.api.ui')
 
 router = APIRouter(include_in_schema=False)
 
+
+def _parse_amount(val) -> float:
+    """
+    Normalizza importi provenienti da MetaMarketingData:
+    - supporta tipi numerici (int/float/Decimal)
+    - supporta vecchie stringhe EU (\"1.360,71\") e nuove US (\"1360.71\").
+    """
+    if val is None:
+        return 0.0
+    # Numerici puri
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        from decimal import Decimal
+        if isinstance(val, Decimal):
+            return float(val)
+    except ImportError:
+        pass
+    s = str(val).strip()
+    if not s:
+        return 0.0
+    if '.' in s and ',' in s:
+        s = s.replace('.', '').replace(',', '.')
+    elif ',' in s:
+        s = s.replace(',', '.')
+    return float(s)
+
+
+@router.get("/marketing/analysis")
+async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
+    """
+    Vista Analysis: filtri + KPI aggregati sui MetaMarketingData.
+    I grafici verranno definiti in una fase successiva.
+    """
+    try:
+        user = request.session.get('user')
+        if not user:
+            return RedirectResponse(url='/')
+
+        current_user = db.query(User).filter(User.email == user.get('email')).first()
+        if not current_user:
+            return RedirectResponse(url='/')
+
+        # Filtri base
+        params = request.query_params
+        selected_account_id = params.get('account_id') or ''
+        selected_campaign_id = params.get('campaign_id') or ''
+        selected_adset_id_param = params.get('adset_id') or ''
+        try:
+            selected_adset_id = int(selected_adset_id_param) if selected_adset_id_param else None
+        except ValueError:
+            selected_adset_id = None
+
+        # Date range con default ultimi 30 giorni
+        date_from_str = params.get('date_from')
+        date_to_str = params.get('date_to')
+
+        try:
+            date_from = datetime.strptime(date_from_str, '%Y-%m-%d') if date_from_str else datetime.now() - timedelta(days=30)
+        except Exception:
+            date_from = datetime.now() - timedelta(days=30)
+
+        try:
+            date_to = datetime.strptime(date_to_str, '%Y-%m-%d') if date_to_str else datetime.now()
+        except Exception:
+            date_to = datetime.now()
+
+        # Accounts accessibili all'utente
+        accounts = db.query(MetaAccount).filter(
+            MetaAccount.is_active == True,
+            (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
+        ).order_by(MetaAccount.name).all()
+
+        # Campagne accessibili (per select)
+        campaigns_query = db.query(MetaCampaign).join(MetaAccount).filter(
+            MetaAccount.is_active == True,
+            (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
+        )
+
+        if selected_account_id:
+            campaigns_query = campaigns_query.filter(MetaAccount.account_id == selected_account_id)
+
+        campaigns = campaigns_query.order_by(MetaCampaign.name).all()
+
+        # AdSet accessibili (per select, dipendono da account/campagna)
+        adsets_query = db.query(MetaAdSet).join(MetaCampaign).join(MetaAccount).filter(
+            MetaAccount.is_active == True,
+            (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
+        )
+        if selected_account_id:
+            adsets_query = adsets_query.filter(MetaAccount.account_id == selected_account_id)
+        if selected_campaign_id:
+            adsets_query = adsets_query.filter(MetaCampaign.campaign_id == selected_campaign_id)
+        adsets = adsets_query.order_by(MetaAdSet.name).all()
+
+        # Query principale sui MetaMarketingData
+        query = (
+            db.query(MetaMarketingData, MetaAd, MetaAdSet, MetaCampaign, MetaAccount)
+            .join(MetaAd, MetaMarketingData.ad_id == MetaAd.id)
+            .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+            .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+            .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+            .filter(
+                MetaAccount.is_active == True,
+                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
+                MetaMarketingData.date >= date_from,
+                MetaMarketingData.date <= date_to,
+            )
+        )
+
+        if selected_account_id:
+            query = query.filter(MetaAccount.account_id == selected_account_id)
+        if selected_campaign_id:
+            query = query.filter(MetaCampaign.campaign_id == selected_campaign_id)
+        if selected_adset_id:
+            query = query.filter(MetaAdSet.id == selected_adset_id)
+
+        marketing_rows = query.all()
+
+        # Calcolo KPI aggregati base
+        total_spend = 0.0
+        total_impressions = 0
+        total_clicks = 0
+        total_conversions = 0
+        ctr_values = []
+        cpc_values = []
+        cpm_values = []
+
+        for md, _ad, _adset, _campaign, _account in marketing_rows:
+            total_spend += _parse_amount(md.spend)
+            total_impressions += md.impressions or 0
+            total_clicks += md.clicks or 0
+            total_conversions += md.conversions or 0
+
+            if md.ctr is not None:
+                ctr_values.append(float(md.ctr))
+            if md.cpc is not None:
+                cpc_values.append(float(md.cpc))
+            if md.cpm is not None:
+                cpm_values.append(float(md.cpm))
+
+        def _avg(values):
+            return float(sum(values) / len(values)) if values else 0.0
+
+        # CPL aggregato (spend totale / lead totali)
+        global_cpl = (total_spend / total_conversions) if total_conversions > 0 else 0.0
+
+        totals = {
+            "total_spend": round(total_spend, 2),
+            "total_impressions": total_impressions,
+            "total_clicks": total_clicks,
+            "total_conversions": total_conversions,
+            "global_cpl": round(global_cpl, 2),
+            "avg_ctr": round(_avg(ctr_values), 2),
+            "avg_cpc": round(_avg(cpc_values), 4),
+            "avg_cpm": round(_avg(cpm_values), 2),
+        }
+
+        # Serie giornaliera per grafico Spend vs CPL
+        daily_query = (
+            db.query(
+                func.date(MetaMarketingData.date).label("day"),
+                func.sum(MetaMarketingData.spend).label("total_spend"),
+                func.sum(MetaMarketingData.conversions).label("total_conversions"),
+            )
+            .join(MetaAd, MetaMarketingData.ad_id == MetaAd.id)
+            .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+            .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+            .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+            .filter(
+                MetaAccount.is_active == True,
+                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
+                MetaMarketingData.date >= date_from,
+                MetaMarketingData.date <= date_to,
+            )
+        )
+
+        if selected_account_id:
+            daily_query = daily_query.filter(MetaAccount.account_id == selected_account_id)
+        if selected_campaign_id:
+            daily_query = daily_query.filter(MetaCampaign.campaign_id == selected_campaign_id)
+        if selected_adset_id:
+            daily_query = daily_query.filter(MetaAdSet.id == selected_adset_id)
+
+        daily_rows = (
+            daily_query
+            .group_by(func.date(MetaMarketingData.date))
+            .order_by(func.date(MetaMarketingData.date))
+            .all()
+        )
+
+        chart_points = []
+        for row in daily_rows:
+            day = row.day
+            try:
+                date_str = day.strftime('%Y-%m-%d')
+            except AttributeError:
+                date_str = str(day)
+
+            day_spend = _parse_amount(row.total_spend) if row.total_spend is not None else 0.0
+            day_conversions = int(row.total_conversions or 0)
+            day_cpl = (day_spend / day_conversions) if day_conversions > 0 else 0.0
+
+            chart_points.append(
+                {
+                    "date": date_str,
+                    "spend": round(day_spend, 2),
+                    "conversions": day_conversions,
+                    "cpl": round(day_cpl, 2),
+                }
+            )
+
+        # Distribuzione per campagne: periodo corrente vs periodo precedente (stessa durata)
+        period_days = max((date_to.date() - date_from.date()).days + 1, 1)
+        prev_end = date_from - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=period_days - 1)
+
+        # Aggregazione per campagna - periodo corrente (speso + lead)
+        current_dist_query = (
+            db.query(
+                MetaCampaign.id.label("campaign_id"),
+                MetaCampaign.name.label("campaign_name"),
+                func.sum(MetaMarketingData.spend).label("spend_current"),
+                func.sum(MetaMarketingData.conversions).label("conv_current"),
+            )
+            .join(MetaAdSet, MetaAdSet.campaign_id == MetaCampaign.id)
+            .join(MetaAd, MetaAd.adset_id == MetaAdSet.id)
+            .join(MetaMarketingData, MetaMarketingData.ad_id == MetaAd.id)
+            .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+            .filter(
+                MetaAccount.is_active == True,
+                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
+                MetaMarketingData.date >= date_from,
+                MetaMarketingData.date <= date_to,
+            )
+        )
+
+        # Applica sempre i filtri selezionati (account / campagna / adset)
+        if selected_account_id:
+            current_dist_query = current_dist_query.filter(MetaAccount.account_id == selected_account_id)
+        if selected_campaign_id:
+            current_dist_query = current_dist_query.filter(MetaCampaign.campaign_id == selected_campaign_id)
+        if selected_adset_id:
+            current_dist_query = current_dist_query.filter(MetaAdSet.id == selected_adset_id)
+
+        current_dist_rows = (
+            current_dist_query
+            .group_by(MetaCampaign.id, MetaCampaign.name)
+            .all()
+        )
+
+        # Aggregazione per campagna - periodo precedente (speso + lead)
+        prev_dist_query = (
+            db.query(
+                MetaCampaign.id.label("campaign_id"),
+                func.sum(MetaMarketingData.spend).label("spend_prev"),
+                func.sum(MetaMarketingData.conversions).label("conv_prev"),
+            )
+            .join(MetaAdSet, MetaAdSet.campaign_id == MetaCampaign.id)
+            .join(MetaAd, MetaAd.adset_id == MetaAdSet.id)
+            .join(MetaMarketingData, MetaMarketingData.ad_id == MetaAd.id)
+            .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+            .filter(
+                MetaAccount.is_active == True,
+                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
+                MetaMarketingData.date >= prev_start,
+                MetaMarketingData.date <= prev_end,
+            )
+        )
+
+        if selected_account_id:
+            prev_dist_query = prev_dist_query.filter(MetaAccount.account_id == selected_account_id)
+        if selected_campaign_id:
+            prev_dist_query = prev_dist_query.filter(MetaCampaign.campaign_id == selected_campaign_id)
+        if selected_adset_id:
+            prev_dist_query = prev_dist_query.filter(MetaAdSet.id == selected_adset_id)
+
+        prev_dist_rows = (
+            prev_dist_query
+            .group_by(MetaCampaign.id)
+            .all()
+        )
+
+        prev_map = {
+            row.campaign_id: {
+                "spend_prev": _parse_amount(row.spend_prev) if row.spend_prev is not None else 0.0,
+                "conv_prev": int(row.conv_prev or 0),
+            }
+            for row in prev_dist_rows
+        }
+
+        # Aggrega su TUTTE le campagne: confronto solo per periodo (data come discriminante)
+        total_spend_current = 0.0
+        total_spend_prev = 0.0
+        total_leads_current = 0
+        total_leads_prev = 0
+
+        for row in current_dist_rows:
+            current_spend = _parse_amount(row.spend_current) if row.spend_current is not None else 0.0
+            current_leads = int(row.conv_current or 0)
+            total_spend_current += current_spend
+            total_leads_current += current_leads
+
+            prev_info = prev_map.get(row.campaign_id, {"spend_prev": 0.0, "conv_prev": 0})
+            prev_spend = prev_info["spend_prev"]
+            prev_leads = prev_info["conv_prev"]
+            total_spend_prev += prev_spend
+            total_leads_prev += prev_leads
+
+        cpl_current_agg = (total_spend_current / total_leads_current) if total_leads_current > 0 else 0.0
+        cpl_prev_agg = (total_spend_prev / total_leads_prev) if total_leads_prev > 0 else 0.0
+
+        distribution_points = [
+            {
+                "name": "Periodo selezionato",
+                "spend_current": round(total_spend_current, 2),
+                "spend_prev": round(total_spend_prev, 2),
+                "leads_current": total_leads_current,
+                "leads_prev": total_leads_prev,
+                "cpl_current": round(cpl_current_agg, 2),
+                "cpl_prev": round(cpl_prev_agg, 2),
+            }
+        ]
+
+        return templates.TemplateResponse(
+            "marketing_analysis.html",
+            {
+                "request": request,
+                "title": "Marketing Analysis",
+                "user": user,
+                "accounts": accounts,
+                "campaigns": campaigns,
+                "adsets": adsets,
+                "totals": totals,
+                "chart_points": chart_points,
+                "distribution_points": distribution_points,
+                "selected_account_id": selected_account_id,
+                "selected_campaign_id": selected_campaign_id,
+                "selected_adset_id": selected_adset_id,
+                "date_from": date_from.strftime('%Y-%m-%d'),
+                "date_to": date_to.strftime('%Y-%m-%d'),
+                "active_page": "marketing_analysis",
+            },
+        )
+    except Exception as e:
+        logger.error(f"Errore nel route /marketing/analysis: {e}", exc_info=True)
+        raise
+
+
+@router.get("/marketing/prediction")
+async def marketing_prediction(request: Request, db: Session = Depends(get_db)):
+    """
+    Vista Marketing Prediction (WIP) con sola documentazione e layout base.
+    """
+    try:
+        user = request.session.get('user')
+        if not user:
+            return RedirectResponse(url='/')
+
+        # Manteniamo controllo utente coerente con le altre viste
+        current_user = db.query(User).filter(User.email == user.get('email')).first()
+        if not current_user:
+            return RedirectResponse(url='/')
+
+        return templates.TemplateResponse(
+            "marketing_prediction.html",
+            {
+                "request": request,
+                "title": "Marketing Prediction",
+                "user": user,
+                "active_page": "marketing_prediction",
+            },
+        )
+    except Exception as e:
+        logger.error(f"Errore nel route /marketing/prediction: {e}", exc_info=True)
+        raise
+
 @router.get("/marketing")
 async def marketing(request: Request, db: Session = Depends(get_db)):
     """Maschera Marketing - Vista unificata con tab gerarchica e dati"""
@@ -49,7 +426,7 @@ async def marketing(request: Request, db: Session = Depends(get_db)):
         logger.debug(f"Rendering template marketing.html")
         return templates.TemplateResponse("marketing.html", {
             "request": request,
-            "title": "Marketing",
+            "title": "Marketing ADV",
             "user": user,
             "campaigns": campaigns,
             "accounts": accounts,
@@ -168,7 +545,7 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                     MetaMarketingData.date <= date_to_obj
                 ).all()
                 
-                total_spend_meta = sum(float(md.spend.replace(',', '.')) if md.spend else 0 for md in marketing_data)
+                total_spend_meta = sum(_parse_amount(md.spend) for md in marketing_data)
                 total_conversions_meta = sum(md.conversions or 0 for md in marketing_data)
                 
                 # Lead = Conversioni (sono la stessa cosa)
@@ -416,7 +793,7 @@ async def api_marketing_campaign_adsets(campaign_id: int, request: Request, db: 
             MetaMarketingData.date <= date_to_obj
         ).all()
         
-        total_spend_meta = sum(float(md.spend.replace(',', '.')) for md in marketing_data if md.spend)
+        total_spend_meta = sum(_parse_amount(md.spend) for md in marketing_data)
         total_conversions_meta = sum(md.conversions or 0 for md in marketing_data)
         
         # Lead = Conversioni (sono la stessa cosa)
@@ -522,7 +899,7 @@ async def api_marketing_adset_ads(adset_id: int, request: Request, db: Session =
             MetaMarketingData.date <= date_to_obj
         ).all()
         
-        total_spend_meta = sum(float(md.spend.replace(',', '.')) for md in marketing_data if md.spend)
+        total_spend_meta = sum(_parse_amount(md.spend) for md in marketing_data)
         total_conversions_meta = sum(md.conversions or 0 for md in marketing_data)
         
         # Lead = Conversioni (sono la stessa cosa)
@@ -669,7 +1046,7 @@ async def api_marketing_adsets(request: Request, db: Session = Depends(get_db)):
                 MetaMarketingData.date <= date_to_obj
             ).all()
             
-            total_spend_meta = sum(float(md.spend.replace(',', '.')) for md in marketing_data if md.spend)
+            total_spend_meta = sum(_parse_amount(md.spend) for md in marketing_data)
             total_conversions_meta = sum(md.conversions or 0 for md in marketing_data)
             
             total_leads = total_conversions_meta
@@ -825,7 +1202,7 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
                     MetaMarketingData.date <= date_to_obj
                 ).all()
                 
-                total_spend_meta = sum(float(md.spend.replace(',', '.')) for md in marketing_data if md.spend)
+                total_spend_meta = sum(_parse_amount(md.spend) for md in marketing_data)
                 total_conversions_meta = sum(md.conversions or 0 for md in marketing_data)
                 
                 total_leads = total_conversions_meta

@@ -378,6 +378,45 @@ class MagellanoService:
             df = pd.read_excel(xls_path)
             leads = []
             
+            # Mappa colonne normalizzate (lowercase, stripped) per essere robusti a maiuscole/spazi
+            normalized_columns = {str(col).strip().lower(): col for col in df.columns}
+            # Prova a individuare la colonna dello stato con diversi alias possibili
+            status_col = None
+            for candidate in ["sent status", "status", "stato", "lead_status", "lead status"]:
+                if candidate in normalized_columns:
+                    status_col = normalized_columns[candidate]
+                    break
+            
+            # Colonna data iscrizione: export Magellano "Subscr. date" (formato "2026-01-28 20:35:42")
+            subscr_date_col = None
+            # Prima prova con alias noti su nomi normalizzati
+            for candidate in ["subscr. date", "subscr_date", "subscription date", "subscr date"]:
+                if candidate in normalized_columns:
+                    subscr_date_col = normalized_columns[candidate]
+                    break
+            # Fallback robusto: cerca qualunque colonna che contenga "subscr" e "date"
+            if not subscr_date_col:
+                for col in df.columns:
+                    name_norm = str(col).strip().lower()
+                    compact = name_norm.replace(" ", "").replace(".", "").replace("_", "")
+                    if ("subscr" in name_norm and "date" in name_norm) or compact == "subscrdate":
+                        subscr_date_col = col
+                        break
+            if not subscr_date_col:
+                logger.warning(
+                    f"Colonna 'Subscr. date' non trovata in file Magellano {xls_path}. "
+                    f"Colonne disponibili: {list(df.columns)}"
+                )
+            else:
+                logger.info(f"Colonna data iscrizione Magellano trovata: {repr(subscr_date_col)}")
+            
+            if not status_col:
+                # Log di debug per capire perché gli stati risultano tutti unknown
+                logger.warning(
+                    f"Colonna 'Status' non trovata in file Magellano {xls_path}. "
+                    f"Colonne disponibili: {list(df.columns)}"
+                )
+            
             for _, row in df.iterrows():
                 # Map based on identified columns from inspection
                 email = str(row.get('Email', '')).strip()
@@ -387,10 +426,43 @@ class MagellanoService:
                 # External User ID is a good candidate for dedup
                 ext_user_id = str(row.get('Id user', ''))
                 
-                # Estrai e normalizza lo stato Magellano
-                status_raw = str(row.get('Status', '')).strip() if not pd.isna(row.get('Status', '')) else None
+                # Estrai e normalizza lo stato Magellano in modo robusto (case-insensitive, alias)
+                status_raw = None
+                if status_col:
+                    raw_val = row.get(status_col, None)
+                    if raw_val is not None and not pd.isna(raw_val):
+                        status_raw = str(raw_val).strip()
                 magellano_status = self._normalize_magellano_status(status_raw)
                 magellano_status_category = self._get_magellano_status_category(magellano_status)
+
+                # Estrai data iscrizione Magellano (Subscr. date): formato "2026-01-28 20:35:42" → solo date
+                magellano_subscr_date = None
+                if subscr_date_col:
+                    raw_date = row.get(subscr_date_col, None)
+                    if raw_date is not None and not pd.isna(raw_date):
+                        try:
+                            # Oggetto con .date() (pandas Timestamp, datetime)
+                            if hasattr(raw_date, "date"):
+                                magellano_subscr_date = raw_date.date()
+                            else:
+                                # Stringa: formato Magellano "2026-01-28 20:35:42" o "2026-01-28"
+                                s = str(raw_date).strip()
+                                if s:
+                                    parsed = pd.to_datetime(s, format="%Y-%m-%d %H:%M:%S", errors="coerce")
+                                    if pd.isna(parsed):
+                                        parsed = pd.to_datetime(s, format="%Y-%m-%d", errors="coerce")
+                                    if pd.isna(parsed):
+                                        parsed = pd.to_datetime(s, errors="coerce")
+                                    if parsed is not None and not pd.isna(parsed):
+                                        magellano_subscr_date = parsed.date()
+                        except Exception as e:
+                            logger.warning(f"Impossibile parsare Subscr. date '{raw_date}': {e}")
+                
+                # Log prima riga per debug data (solo una volta)
+                if not leads and subscr_date_col:
+                    logger.info(
+                        f"Subscr. date esempio: raw={repr(raw_date)}, parsed={magellano_subscr_date}"
+                    )
                 
                 # Mantieni compatibilità con payout_status per retrocompatibilità
                 payout_status = status_raw.lower() if status_raw else None
@@ -424,6 +496,8 @@ class MagellanoService:
                     'facebook_campaign_name': str(row.get('facebook_campaign_name', '')).strip() if not pd.isna(row.get('facebook_campaign_name', '')) else None,
                     'facebook_id': str(row.get('facebook_id', '')).strip() if not pd.isna(row.get('facebook_id', '')) else None,  # ID utente Facebook
                     'facebook_piattaforma': str(row.get('facebook_piattaforma', '')).strip() if not pd.isna(row.get('facebook_piattaforma', '')) else None,
+                    # Data di iscrizione Magellano
+                    'magellano_subscr_date': magellano_subscr_date,
                     # NON impostare status_category di default - verrà determinato in base a magellano_status
                     # 'status_category': 'in_lavorazione'  # Rimosso - non più default
                 })

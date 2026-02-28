@@ -18,9 +18,9 @@ from datetime import datetime, timedelta, date
 logger = logging.getLogger('services.integrations.meta_marketing')
 
 # Rate limiting: delay tra chiamate API (in secondi)
-API_CALL_DELAY = 2.0  # 2 secondi tra chiamate per evitare rate limit (aumentato per ridurre errori)
-MAX_RETRIES = 3  # Numero massimo di retry per errori di rate limit
-RETRY_BACKOFF_BASE = 10  # Base per backoff esponenziale (10, 100, 1000 secondi) - aumentato per essere più conservativi
+API_CALL_DELAY = 1.0  # 1 secondo tra chiamate (best practice Meta)
+MAX_RETRIES = 4  # Numero massimo di tentativi (1 iniziale + 3 retry con backoff 2s, 5s, 7s)
+RETRY_BACKOFF_TIMES = [2, 5, 7]  # Backoff incrementale per retry: 2s, 5s, 7s
 
 class MetaMarketingService:
     def __init__(self, access_token: Optional[str] = None):
@@ -36,7 +36,8 @@ class MetaMarketingService:
     
     def _make_api_call_with_retry(self, api_call_func, *args, **kwargs):
         """
-        Esegue una chiamata API con retry automatico in caso di rate limit.
+        Esegue una chiamata API con retry automatico in caso di rate limit o timeout.
+        Usa backoff esponenziale incrementale per i retry.
         
         Args:
             api_call_func: Funzione che esegue la chiamata API
@@ -51,8 +52,8 @@ class MetaMarketingService:
             try:
                 # Delay prima della chiamata (eccetto il primo tentativo)
                 if attempt > 0:
-                    backoff_time = RETRY_BACKOFF_BASE ** attempt
-                    logger.warning(f"[RATE LIMIT] Retry {attempt}/{MAX_RETRIES} dopo {backoff_time} secondi...")
+                    backoff_time = RETRY_BACKOFF_TIMES[attempt - 1] if attempt - 1 < len(RETRY_BACKOFF_TIMES) else RETRY_BACKOFF_TIMES[-1]
+                    logger.warning(f"[RETRY] Retry {attempt}/{MAX_RETRIES} dopo {backoff_time} secondi...")
                     time.sleep(backoff_time)
                 
                 result = api_call_func(*args, **kwargs)
@@ -77,11 +78,22 @@ class MetaMarketingService:
                 if hasattr(e, 'api_error_message'):
                     logger.error(f"[API ERROR] Messaggio errore: {e.api_error_message}")
                 
-                # Verifica se è un errore di rate limit
+                # Verifica se è un errore di rate limit o timeout
                 # Controlla anche l'oggetto exception per errori strutturati di Facebook
                 is_rate_limit = False
+                is_timeout = False
                 
-                # Controlla stringa errore
+                # Controlla timeout
+                if any(term in error_str.lower() for term in ['timeout', 'timed out', 'connection timeout', 'read timeout', 'request timeout']):
+                    is_timeout = True
+                    logger.warning(f"[TIMEOUT] Timeout rilevato dalla stringa errore")
+                
+                # Controlla anche errori di connessione che potrebbero essere timeout
+                if any(term in error_str.lower() for term in ['connection', 'network', 'socket', 'unreachable']):
+                    is_timeout = True
+                    logger.warning(f"[TIMEOUT] Errore di connessione/network rilevato (trattato come timeout)")
+                
+                # Controlla stringa errore per rate limit
                 if any(term in error_str.lower() for term in ['rate limit', 'request limit', 'too many', 'user request limit', 'troppe chiamate']):
                     is_rate_limit = True
                     logger.warning(f"[RATE LIMIT] Rate limit rilevato dalla stringa errore")
@@ -102,14 +114,19 @@ class MetaMarketingService:
                         is_rate_limit = True
                         logger.warning(f"[RATE LIMIT] Rate limit rilevato da OAuthException con codice 17")
                 
-                if is_rate_limit and attempt < MAX_RETRIES - 1:
-                    backoff_time = RETRY_BACKOFF_BASE ** (attempt + 1)
-                    logger.warning(f"[RATE LIMIT] Rate limit rilevato (tentativo {attempt + 1}/{MAX_RETRIES}). Attendo {backoff_time} secondi prima del retry...")
+                # Retry per rate limit o timeout con backoff incrementale
+                if (is_rate_limit or is_timeout) and attempt < MAX_RETRIES - 1:
+                    backoff_time = RETRY_BACKOFF_TIMES[attempt] if attempt < len(RETRY_BACKOFF_TIMES) else RETRY_BACKOFF_TIMES[-1]  # Backoff incrementale: 2s, 5s, 7s
+                    error_type = "Rate limit" if is_rate_limit else "Timeout"
+                    logger.warning(f"[{error_type.upper()}] {error_type} rilevato (tentativo {attempt + 1}/{MAX_RETRIES}). Attendo {backoff_time} secondi prima del retry...")
+                    time.sleep(backoff_time)
                     continue
                 else:
-                    # Se non è rate limit o abbiamo esaurito i retry, rilanciamo l'eccezione
+                    # Se non è rate limit/timeout o abbiamo esaurito i retry, rilanciamo l'eccezione
                     if is_rate_limit:
                         logger.error(f"[RATE LIMIT] Rate limit persistente dopo {MAX_RETRIES} tentativi. Interrompo la sincronizzazione.")
+                    elif is_timeout:
+                        logger.error(f"[TIMEOUT] Timeout persistente dopo {MAX_RETRIES} tentativi. Interrompo la sincronizzazione.")
                     else:
                         logger.error(f"[API ERROR] Errore non recuperabile dopo {MAX_RETRIES} tentativi. Interrompo la sincronizzazione.")
                     raise
@@ -284,27 +301,50 @@ class MetaMarketingService:
                     "created_time": campaign.get('created_time', '')
                 }
                 
-                # Apply filters - name_pattern è sempre obbligatorio
-                if not filters or 'name_pattern' not in filters:
-                    logger.warning(f"[SYNC] Filtro name_pattern mancante, saltando campagna {camp_data['campaign_id']}")
-                    continue
-                
-                # Filter by name pattern (obbligatorio) - verifica se il nome contiene il pattern
-                pattern = filters['name_pattern'].lower()
-                campaign_name_lower = camp_data['name'].lower()
-                
-                # Verifica se il pattern è contenuto nel nome (case-insensitive)
-                if pattern not in campaign_name_lower:
-                    logger.debug(f"[SYNC] Campagna '{camp_data['name']}' non contiene pattern '{pattern}', saltata")
-                    continue
-                
-                logger.debug(f"[SYNC] Campagna '{camp_data['name']}' contiene pattern '{pattern}', inclusa")
+                # Apply filters: campaign_ids (per sync da impressions) oppure name_pattern obbligatorio
+                if filters and 'campaign_ids' in filters and filters['campaign_ids']:
+                    # Filtro per lista ID: solo campagne in elenco (es. da insights impressions > 0)
+                    cid = str(camp_data.get('campaign_id') or '').strip()
+                    if not cid or cid not in {str(x).strip() for x in filters['campaign_ids']}:
+                        continue
+                else:
+                    if not filters or 'name_pattern' not in filters:
+                        logger.warning(f"[SYNC] Filtro name_pattern mancante, saltando campagna {camp_data['campaign_id']}")
+                        continue
+                    # Filter by name pattern - verifica se il nome contiene il pattern
+                    pattern = (filters['name_pattern'] or '').lower()
+                    campaign_name_lower = camp_data['name'].lower()
+                    if pattern and pattern not in campaign_name_lower:
+                        logger.debug(f"[SYNC] Campagna '{camp_data['name']}' non contiene pattern '{pattern}', saltata")
+                        continue
+                    logger.debug(f"[SYNC] Campagna '{camp_data['name']}' contiene pattern '{pattern}', inclusa")
                 
                 # Filter by status (opzionale)
                 if 'status' in filters and filters['status']:
                     status_list = filters['status'] if isinstance(filters['status'], list) else [filters['status']]
                     if camp_data['status'] not in status_list:
                         continue
+                
+                # Filter by date_from (opzionale) - filtra campagne create dopo la data specificata
+                if 'date_from' in filters and filters['date_from']:
+                    try:
+                        from datetime import datetime
+                        filter_date = datetime.strptime(filters['date_from'], '%Y-%m-%d').date()
+                        created_time_str = camp_data.get('created_time', '')
+                        if created_time_str:
+                            # created_time è in formato ISO 8601: "2024-01-15T10:30:00+0000"
+                            # Estrai solo la parte data
+                            created_date_str = created_time_str.split('T')[0]
+                            created_date = datetime.strptime(created_date_str, '%Y-%m-%d').date()
+                            if created_date < filter_date:
+                                logger.debug(f"[SYNC] Campagna '{camp_data['name']}' creata il {created_date} è precedente a {filter_date}, saltata")
+                                continue
+                        else:
+                            # Se non c'è created_time, includiamo la campagna per sicurezza
+                            logger.debug(f"[SYNC] Campagna '{camp_data['name']}' senza created_time, inclusa per sicurezza")
+                    except Exception as e:
+                        logger.warning(f"[SYNC] Errore nel parsing della data per campagna {camp_data['campaign_id']}: {e}, inclusa per sicurezza")
+                        # In caso di errore, includiamo la campagna per sicurezza
                 
                 result.append(camp_data)
             
@@ -462,13 +502,16 @@ class MetaMarketingService:
                 'actions', 'action_values', 'cost_per_action_type'
             ]
         
-        # Aggiungi sempre ad_id, campaign_id, adset_id ai fields se level='ad'
-        # perché sono necessari per associare i dati agli ads nel database
+        # Campi richiesti per livello
         if level == 'ad':
             required_fields = ['ad_id', 'campaign_id', 'adset_id', 'date_start']
             for field in required_fields:
                 if field not in fields:
                     fields.append(field)
+        elif level == 'campaign':
+            for f in ['campaign_id', 'date_start']:
+                if f not in fields:
+                    fields.append(f)
         
         try:
             account = AdAccount(f"act_{account_id}")
@@ -544,13 +587,11 @@ class MetaMarketingService:
                     "campaign_id": insight.get('campaign_id', ''),
                     "adset_id": insight.get('adset_id', ''),
                     "ad_id": ad_id_clean,  # Usa la versione pulita
-                    "spend": self._format_currency(spend),
                     "impressions": impressions,
                     "clicks": clicks,
                     "conversions": conversions,
                     "ctr": self._format_percentage(ctr),
-                    "cpc": self._format_currency(cpc),
-                    "cpm": self._format_currency(cpm),
+                    "spend": self._format_currency(spend),
                     "raw_data": dict(insight)
                 })
             
@@ -560,12 +601,22 @@ class MetaMarketingService:
             return []
 
     def _format_currency(self, value: float) -> str:
-        """Formatta valore monetario con virgola come separatore decimale."""
-        return f"{value:,.2f}".replace('.', ',')
+        """
+        Restituisce una stringa numerica in formato \"americano\":
+        - separatore decimale '.'
+        - nessun separatore per le migliaia
+        
+        Questo formato è adatto allo storage in database e ai calcoli numerici.
+        La formattazione \"locale\" (es. virgole, simbolo valuta) va fatta a livello di UI.
+        """
+        return f"{value:.2f}"
 
     def _format_percentage(self, value: float) -> str:
-        """Formatta percentuale con virgola come separatore decimale."""
-        return f"{value:.2f}".replace('.', ',')
+        """
+        Restituisce una stringa con separatore decimale '.' per le percentuali.
+        Anche qui l'eventuale '%' o formattazione locale è demandata alla UI.
+        """
+        return f"{value:.2f}"
 
     def sync_account_campaigns(self, account_id: str, db_session, filters: Optional[Dict] = None):
         """
@@ -607,18 +658,19 @@ class MetaMarketingService:
         else:
             logger.info(f"[SYNC] Account {account_id} trovato: {account_record.name} (ID DB: {account_record.id})")
         
-        # Get campaigns - i filtri sono sempre obbligatori
-        if not filters or not filters.get('name_pattern'):
+        # Get campaigns: serve name_pattern OPPURE campaign_ids (es. da bootstrap/impressions)
+        if not filters:
+            logger.warning(f"[SYNC] Account {account_id}: filtri mancanti. Sync saltata.")
+            return {"campaigns_created": 0, "campaigns_updated": 0, "skipped": True, "reason": "Filtri mancanti"}
+        if not filters.get('name_pattern') and not filters.get('campaign_ids'):
             logger.warning(
-                f"[SYNC] Account {account_id}: filtri obbligatori mancanti (name_pattern richiesto). "
-                f"Sync saltata per questo account. Configura i filtri via UI prima di abilitare la sync automatica."
+                f"[SYNC] Account {account_id}: serve name_pattern o campaign_ids. Sync saltata."
             )
-            # Non sollevare eccezione, ma loggare un warning e saltare la sync
             return {
                 "campaigns_created": 0,
                 "campaigns_updated": 0,
                 "skipped": True,
-                "reason": "Filtri obbligatori mancanti: name_pattern è richiesto"
+                "reason": "Filtri obbligatori mancanti: name_pattern o campaign_ids richiesti"
             }
         
         logger.info(f"[SYNC] Recupero campagne da Meta API per account {account_id} con filtri: {filters}")

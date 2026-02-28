@@ -1,6 +1,6 @@
 """Settings: Gestione Campagne Meta"""
-from fastapi import APIRouter, Request, Depends, BackgroundTasks
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Request, Depends
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import MetaAccount, MetaCampaign, User
@@ -12,6 +12,7 @@ import logging
 import traceback
 import time
 from ..common import templates
+from celery_app import celery_app
 
 logger = logging.getLogger('services.api.ui')
 
@@ -79,72 +80,84 @@ async def settings_meta_campaigns(request: Request, db: Session = Depends(get_db
         "active_page": "meta_campaigns"
     })
 
+
+@router.get("/api/tasks/{task_id}/status")
+async def api_task_status(task_id: str, request: Request):
+    """
+    Restituisce lo stato di un task Celery dato il task_id.
+    Usato dal front-end per mostrare \"processo in esecuzione\" / completato.
+    """
+    if not request.session.get("user"):
+        return JSONResponse({"success": False, "error": "Non autorizzato"}, status_code=401)
+    
+    try:
+        async_result = celery_app.AsyncResult(task_id)
+        state = async_result.state
+        ready = async_result.ready()
+        response = {
+            "success": True,
+            "task_id": task_id,
+            "state": state,
+            "ready": ready,
+        }
+        if async_result.failed():
+            # info può essere un'eccezione o un dict
+            info = async_result.info
+            response["error"] = str(info)
+        return JSONResponse(response)
+    except Exception as e:
+        logger.exception("api_task_status")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/api/meta-campaigns/bootstrap")
+async def api_meta_campaigns_bootstrap(request: Request, db: Session = Depends(get_db)):
+    """Avvia bootstrap meta_campaigns (periodo con impression). Richiede start_date, end_date (YYYY-MM-DD)."""
+    if not request.session.get("user"):
+        return JSONResponse({"success": False, "error": "Non autorizzato"}, status_code=401)
+    try:
+        data = await request.json()
+        start_date = (data.get("start_date") or "").strip()
+        end_date = (data.get("end_date") or "").strip()
+        if not start_date or not end_date:
+            return JSONResponse({"success": False, "error": "start_date e end_date obbligatori (YYYY-MM-DD)"}, status_code=400)
+        from datetime import date
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+        if start > end:
+            return JSONResponse({"success": False, "error": "start_date deve essere <= end_date"}, status_code=400)
+        from tasks.meta_marketing import meta_campaigns_bootstrap_task
+        t = meta_campaigns_bootstrap_task.delay(start_date, end_date, dry_run=False)
+        return JSONResponse({"success": True, "task_id": t.id, "message": "Bootstrap avviato in background."})
+    except ValueError as e:
+        return JSONResponse({"success": False, "error": f"Date non valide: {e}"}, status_code=400)
+    except Exception as e:
+        logger.exception("api_meta_campaigns_bootstrap")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/api/meta-campaigns/incremental-sync")
+async def api_meta_campaigns_incremental_sync(request: Request, db: Session = Depends(get_db)):
+    """Avvia sync incrementale meta_campaigns per una data (default ieri). Richiede target_date (YYYY-MM-DD) opzionale."""
+    if not request.session.get("user"):
+        return JSONResponse({"success": False, "error": "Non autorizzato"}, status_code=401)
+    try:
+        data = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+        if not data:
+            data = {}
+        target_date = (data.get("target_date") or "").strip()
+        from tasks.meta_marketing import meta_campaigns_incremental_task
+        t = meta_campaigns_incremental_task.delay(target_date if target_date else None)
+        return JSONResponse({"success": True, "task_id": t.id, "message": "Sync incrementale avviata in background."})
+    except Exception as e:
+        logger.exception("api_meta_campaigns_incremental_sync")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
 @router.post("/settings/meta-campaigns/filter")
-async def filter_meta_campaigns(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """Filtra e sincronizza campagne Meta in tutti gli account con filtri master"""
-    if not request.session.get('user'): 
-        return RedirectResponse(url='/')
-    
-    form = await request.form()
-    
-    current_user = db.query(User).filter(User.email == request.session.get('user').get('email')).first()
-    if not current_user:
-        return RedirectResponse(url='/')
-    
-    name_pattern = form.get("name_pattern", "").strip()
-    status = form.get("status", "").strip()
-    
-    # Validazione: pattern nome è obbligatorio
-    if not name_pattern:
-        return RedirectResponse(url='/settings/meta-campaigns?error=name_pattern_required', status_code=303)
-    
-    # Salva i filtri nella sessione
-    master_filter = {
-        'name_pattern': name_pattern
-    }
-    if status:
-        master_filter['status'] = status
-    
-    request.session['meta_campaigns_master_filter'] = master_filter
-    
-    logger.info(f"[FILTER] Master filter applied: {master_filter}")
-    
-    # Ottieni tutti gli account attivi accessibili all'utente
-    accounts = db.query(MetaAccount).filter(
-        MetaAccount.is_active == True,
-        (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
-    ).all()
-    
-    # Costruisci i filtri per la sync - SEMPRE applicati
-    filters = {
-        'name_pattern': name_pattern  # Sempre presente
-    }
-    if status:
-        filters['status'] = [status]
-    
-    # Sincronizza un account per volta per evitare rate limiting
-    # Processa solo il primo account in background, gli altri verranno processati in sequenza
-    synced_accounts = []
-    if accounts:
-        # Processa solo il primo account per ora
-        account = accounts[0]
-        try:
-            decrypted_token = decrypt_token(account.access_token)
-            # Sync in background con filtri - un account per volta
-            background_tasks.add_task(
-                sync_meta_accounts_sequentially,
-                [acc.account_id for acc in accounts],
-                filters
-            )
-            synced_accounts.append(account.account_id)
-            logger.info(f"[FILTER] Background sync queued for {len(accounts)} accounts (processing sequentially) with filters: {filters}")
-        except Exception as e:
-            error_traceback = traceback.format_exc()
-            logger.error(f"[FILTER] Error queuing sync: {e}")
-            logger.error(f"[FILTER] Traceback: {error_traceback}")
-    
-    redirect_url = f"/settings/meta-campaigns?filter_applied=true&accounts_synced={len(accounts)}"
-    return RedirectResponse(url=redirect_url, status_code=303)
+async def filter_meta_campaigns(request: Request, db: Session = Depends(get_db)):
+    """Deprecato: la pagina meta-campaigns è ora sola lettura. Redirect senza sync."""
+    return RedirectResponse(url='/settings/meta-campaigns', status_code=303)
 
 def sync_meta_accounts_sequentially(account_ids: list, filters: dict):
     """

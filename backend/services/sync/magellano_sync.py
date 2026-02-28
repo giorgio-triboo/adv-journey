@@ -84,6 +84,7 @@ def run(db: Session = None) -> dict:
                     source=data.get('source'),
                     campaign_name=data.get('campaign_name'),
                     magellano_campaign_id=data.get('magellano_campaign_id'),
+                    magellano_subscr_date=data.get('magellano_subscr_date'),
                     # Stato Magellano: originale, normalizzato e categoria
                     magellano_status_raw=magellano_status_raw,
                     magellano_status=magellano_status,
@@ -134,6 +135,9 @@ def run(db: Session = None) -> dict:
                     existing.payout_status = data.get('payout_status')
                 if 'is_paid' in data:
                     existing.is_paid = data.get('is_paid', False)
+                # Aggiorna data iscrizione se presente
+                if data.get('magellano_subscr_date'):
+                    existing.magellano_subscr_date = data.get('magellano_subscr_date')
                 
                 # Update altri campi se disponibili
                 if data.get('campaign_name'):

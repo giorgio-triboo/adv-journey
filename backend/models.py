@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, JSON, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Enum, JSON, UniqueConstraint, Numeric
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime, timezone
 import enum
@@ -67,6 +67,9 @@ class Lead(Base):
     meta_campaign_id = Column(String, index=True, nullable=True) # Meta Campaign ID
     meta_adset_id = Column(String, index=True, nullable=True) # Meta AdSet ID
     meta_ad_id = Column(String, index=True, nullable=True) # Meta Ad ID
+
+    # Data di iscrizione/ingresso lead in Magellano (colonna \"Subscr. date\" dell'export)
+    magellano_subscr_date = Column(Date, nullable=True, index=True)
 
     current_status = Column(String)
     status_category = Column(Enum(StatusCategory), default=StatusCategory.IN_LAVORAZIONE)
@@ -246,15 +249,15 @@ class MetaMarketingData(Base):
     ad_id = Column(Integer, ForeignKey("meta_ads.id"), nullable=True)
     date = Column(DateTime, index=True) # Date of the metrics
     
-    # Metrics
-    spend = Column(String, default="0,00") # Using comma as decimal separator
+    # Metrics - store numeric values (DECIMAL) for reliability
+    spend = Column(Numeric(18, 4), default=0)
     impressions = Column(Integer, default=0)
     clicks = Column(Integer, default=0)
     conversions = Column(Integer, default=0)
-    ctr = Column(String, default="0,00") # Click-through rate
-    cpc = Column(String, default="0,00") # Cost per click
-    cpm = Column(String, default="0,00") # Cost per mille
-    cpa = Column(String, default="0,00") # Cost per acquisition
+    ctr = Column(Numeric(10, 4), default=0) # Click-through rate (percentuale come numero)
+    cpc = Column(Numeric(18, 4), default=0) # Cost per click
+    cpm = Column(Numeric(18, 4), default=0) # Cost per mille
+    cpa = Column(Numeric(18, 4), default=0) # Cost per acquisition
     
     # Additional metrics (JSON for flexibility)
     additional_metrics = Column(JSON, nullable=True)

@@ -146,8 +146,8 @@ def seed_campaigns():
     """
     db = SessionLocal()
     try:
-        added = 0
-        updated = 0
+        created_count = 0
+        updated_count = 0
         
         for camp_data in CAMPAIGNS_DATA:
             cliente_name = camp_data.get("cliente")
@@ -162,7 +162,7 @@ def seed_campaigns():
             ).first()
             
             if existing:
-                # Update existing
+                # Aggiorna i dati se necessario
                 needs_update = False
                 
                 # Aggiorna nome se diverso
@@ -203,13 +203,14 @@ def seed_campaigns():
                     existing.ulixe_ids = msg_ids_raw
                     needs_update = True
                 
-                if needs_update:
-                    updated += 1
-                
-                # Ensure it's active
+                # Assicura che sia attivo
                 if not existing.is_active:
                     existing.is_active = True
-                    updated += 1
+                    needs_update = True
+                
+                if needs_update:
+                    updated_count += 1
+                    logger.info(f"Campagna aggiornata: {cliente_name}")
             else:
                 # Crea nuovo record
                 new_campaign = ManagedCampaign(
@@ -222,15 +223,20 @@ def seed_campaigns():
                     ulixe_ids=msg_ids_raw  # Sincronizzato con msg_ids
                 )
                 db.add(new_campaign)
-                added += 1
+                created_count += 1
+                logger.info(f"Campagna creata: {cliente_name}")
         
-        db.commit()
-        if added > 0 or updated > 0:
-            logger.info(f"Campaigns seeder: {added} added, {updated} updated")
+        # Commit una sola volta alla fine per migliori performance
+        if created_count > 0 or updated_count > 0:
+            db.commit()
+            logger.info(f"Seeder campagne completato: {created_count} create, {updated_count} aggiornate")
+        else:
+            logger.info("Tutte le campagne iniziali sono già presenti nel database")
+        
         return True
         
     except Exception as e:
-        logger.error(f"Error seeding campaigns: {e}", exc_info=True)
+        logger.error(f"Errore durante il seeding delle campagne: {e}", exc_info=True)
         db.rollback()
         return False
     finally:

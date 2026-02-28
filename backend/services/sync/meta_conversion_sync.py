@@ -109,15 +109,49 @@ def run(db: Session = None) -> dict:
         
         for lead in leads_for_events:
             try:
-                # Map status category to event name
-                event_name_map = {
-                    StatusCategory.IN_LAVORAZIONE: "LeadStatus_InLavorazione",
-                    StatusCategory.CRM: "LeadStatus_CRM",
-                    StatusCategory.FINALE: "LeadStatus_Converted",
-                    StatusCategory.RIFIUTATO: "LeadStatus_Rejected"
-                }
+                # Event name unico e stabile per tutti gli aggiornamenti di stato lead
+                event_name = "LeadStatus_Update"
                 
-                event_name = event_name_map.get(lead.status_category, "LeadStatus_Update")
+                # Calcola codici aggregati per Magellano (ingresso) e Ulixe/WS (uscita)
+                mag_cat = lead.magellano_status_category
+                if mag_cat == StatusCategory.IN_LAVORAZIONE:
+                    mag_code = "magellano_approved"
+                elif mag_cat == StatusCategory.RIFIUTATO:
+                    mag_code = "magellano_refused"
+                else:
+                    mag_code = "magellano_unknown"
+                
+                ulixe_cat = lead.ulixe_status_category
+                if ulixe_cat == StatusCategory.IN_LAVORAZIONE:
+                    ulixe_code = "ulixe_in_lavorazione"
+                elif ulixe_cat == StatusCategory.RIFIUTATO:
+                    ulixe_code = "ulixe_rifiutato"
+                elif ulixe_cat == StatusCategory.CRM:
+                    ulixe_code = "ulixe_crm"
+                elif ulixe_cat == StatusCategory.FINALE:
+                    ulixe_code = "ulixe_finale"
+                elif ulixe_cat == StatusCategory.UNKNOWN:
+                    ulixe_code = "ulixe_unknown"
+                else:
+                    ulixe_code = None
+                
+                # Stato WS aggregato: approved/refused/unknown in base alla categoria Ulixe
+                if ulixe_cat in (StatusCategory.IN_LAVORAZIONE, StatusCategory.CRM, StatusCategory.FINALE):
+                    ws_status_code = "ws_approved"
+                elif ulixe_cat == StatusCategory.RIFIUTATO:
+                    ws_status_code = "ws_refused"
+                else:
+                    ws_status_code = "ws_unknown"
+                
+                # Sorgente principale dello stato corrente: Ulixe se presente, altrimenti Magellano
+                if ulixe_cat is not None:
+                    status_source = "ulixe"
+                    status_stage = "uscita_ws"
+                    status_code = ws_status_code
+                else:
+                    status_source = "magellano"
+                    status_stage = "ingresso_magellano"
+                    status_code = mag_code
                 
                 # Recupera account Meta e token
                 account, access_token, pixel_id = _get_meta_account_for_lead(lead, db)
@@ -145,12 +179,32 @@ def run(db: Session = None) -> dict:
                 # Crea servizio Meta con token e dataset_id (o pixel_id come fallback)
                 meta_service = MetaService(access_token=access_token, pixel_id=pixel_id, dataset_id=dataset_id)
                 
-                # Prepara dati aggiuntivi
+                # Prepara dati aggiuntivi per custom_data
                 additional_data = {
+                    # Stato canonico (Magellano/Ulixe combinati)
                     "status": lead.current_status,
                     "status_category": lead.status_category.value if hasattr(lead.status_category, 'value') else str(lead.status_category),
+                    "status_source": status_source,
+                    "status_stage": status_stage,
+                    "status_code": status_code,
+                    # Ingresso Magellano
+                    "magellano_status_code": mag_code,
+                    "magellano_status_raw": lead.magellano_status_raw,
+                    "magellano_status_category": mag_cat.value if hasattr(mag_cat, 'value') else (str(mag_cat) if mag_cat is not None else None),
+                    # Uscita Magellano / WS (Ulixe)
+                    "ws_status_code": ws_status_code,
+                    "ulixe_status_code": ulixe_code,
+                    "ulixe_status_raw": lead.ulixe_status,
+                    "ulixe_status_category": ulixe_cat.value if hasattr(ulixe_cat, 'value') else (str(ulixe_cat) if ulixe_cat is not None else None),
+                    # Identificativi di correlazione
                     "lead_id": lead.id,
-                    "magellano_id": lead.magellano_id
+                    "magellano_id": lead.magellano_id,
+                    "external_user_id": lead.external_user_id,
+                    "meta_campaign_id": lead.meta_campaign_id,
+                    "meta_adset_id": lead.meta_adset_id,
+                    "meta_ad_id": lead.meta_ad_id,
+                    "brand": lead.brand,
+                    "campaign_name": lead.campaign_name
                 }
                 
                 # Send event al dataset (adset_id, campaign_id, ad_id sono opzionali per attribuzione metriche)

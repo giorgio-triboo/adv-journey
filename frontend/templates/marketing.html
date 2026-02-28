@@ -31,15 +31,13 @@
                         <option value="inactive">Non attive</option>
                     </select>
                 </div>
-                <div>
-                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Dal</label>
-                    <input type="date" id="dateFrom" name="date_from" 
-                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Al</label>
-                    <input type="date" id="dateTo" name="date_to" 
-                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                <div class="sm:col-span-2 lg:col-span-2">
+                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Periodo</label>
+                    <input type="text" id="marketingDateRange"
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+                           placeholder="Seleziona intervallo">
+                    <input type="hidden" id="dateFrom" name="date_from">
+                    <input type="hidden" id="dateTo" name="date_to">
                 </div>
                 <div class="flex items-end">
                     <button type="button" onclick="applyFilters()" 
@@ -127,14 +125,66 @@
 </div>
 
 <script>
-// Set default dates
+// Set default dates e inizializza date range picker
 document.addEventListener('DOMContentLoaded', function() {
-    const today = new Date();
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(today.getDate() - 30);
-    
-    document.getElementById('dateFrom').value = thirtyDaysAgo.toISOString().split('T')[0];
-    document.getElementById('dateTo').value = today.toISOString().split('T')[0];
+    const hiddenFrom = document.getElementById('dateFrom');
+    const hiddenTo = document.getElementById('dateTo');
+    const rangeInput = document.getElementById('marketingDateRange');
+
+    if (hiddenFrom && hiddenTo && rangeInput && window.DateRangePicker && window.moment) {
+        const start = hiddenFrom.value ? moment(hiddenFrom.value, 'YYYY-MM-DD') : moment().subtract(29, 'days');
+        const end = hiddenTo.value ? moment(hiddenTo.value, 'YYYY-MM-DD') : moment();
+
+        hiddenFrom.value = start.format('YYYY-MM-DD');
+        hiddenTo.value = end.format('YYYY-MM-DD');
+
+        new DateRangePicker(rangeInput, {
+            startDate: start,
+            endDate: end,
+            autoApply: true,
+            alwaysShowCalendars: true,
+            opens: 'left',
+            maxSpan: { days: 365 },
+            locale: {
+                format: 'DD/MM/YYYY',
+                separator: ' al ',
+                applyLabel: 'Aggiorna',
+                cancelLabel: 'Annulla',
+                weekLabel: 'Set',
+                daysOfWeek: ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'],
+                monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'],
+                firstDay: 1
+            },
+            ranges: {
+                'Oggi': [moment(), moment()],
+                'Ieri': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+                'Ultimi 7 giorni': [moment().subtract(6, 'days'), moment()],
+                'Ultimi 14 giorni': [moment().subtract(13, 'days'), moment()],
+                'Ultimi 28 giorni': [moment().subtract(27, 'days'), moment()],
+                'Ultimi 30 giorni': [moment().subtract(29, 'days'), moment()],
+                'Questa settimana': [moment().startOf('week').add(1, 'days'), moment().endOf('week').add(1, 'days')],
+                'Settimana scorsa': [
+                    moment().subtract(1, 'week').startOf('week').add(1, 'days'),
+                    moment().subtract(1, 'week').endOf('week').add(1, 'days')
+                ],
+                'Questo mese': [moment().startOf('month'), moment().endOf('month')],
+                'Mese scorso': [
+                    moment().subtract(1, 'month').startOf('month'),
+                    moment().subtract(1, 'month').endOf('month')
+                ]
+            }
+        }, function (startDate, endDate) {
+            hiddenFrom.value = startDate.format('YYYY-MM-DD');
+            hiddenTo.value = endDate.format('YYYY-MM-DD');
+            applyFilters();
+        });
+    } else if (hiddenFrom && hiddenTo) {
+        const today = new Date();
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(today.getDate() - 30);
+        hiddenFrom.value = thirtyDaysAgo.toISOString().split('T')[0];
+        hiddenTo.value = today.toISOString().split('T')[0];
+    }
     
     // Load accounts and campaigns on page load
     loadAccounts();

@@ -1,5 +1,5 @@
 """Settings: Gestione Campagne"""
-from fastapi import APIRouter, Request, Depends, BackgroundTasks
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session, joinedload
 from database import get_db, SessionLocal
@@ -200,7 +200,7 @@ def fetch_datasets_background_task(job_id: int, account_ids: list, user_id: int)
         db.close()
 
 @router.post("/settings/meta-datasets/fetch")
-async def fetch_datasets(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def fetch_datasets(request: Request, db: Session = Depends(get_db)):
     """Avvia recupero dataset dagli account selezionati in background"""
     user_session = request.session.get('user')
     if not user_session:
@@ -229,14 +229,8 @@ async def fetch_datasets(request: Request, background_tasks: BackgroundTasks, db
         # Converti account IDs a int
         account_ids = [int(aid) for aid in selected_account_ids]
         
-        # Avvia task in background
-        background_tasks.add_task(
-            fetch_datasets_background_task,
-            job.id,
-            account_ids,
-            current_user.id
-        )
-        
+        from tasks.meta_datasets import fetch_datasets_task
+        fetch_datasets_task.delay(job.id, account_ids, current_user.id)
         return RedirectResponse(url=f'/settings/meta-datasets/select-datasets?job_id={job.id}', status_code=303)
             
     except Exception as e:

@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     META_PIXEL_ID: Optional[str] = None
     META_APP_ID: Optional[str] = None
     META_APP_SECRET: Optional[str] = None
+    # Config per OAuth Meta (login/collegamento account)
+    META_CONFIG_ID: Optional[str] = None
+    META_SCOPES: Optional[str] = None  # es. "public_profile,email,ads_read,ads_management,business_management"
     
     # EMAIL ALERTS
     SMTP_HOST: Optional[str] = None
@@ -36,6 +39,10 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = None
     SMTP_FROM_EMAIL: Optional[str] = None
     SMTP_USE_TLS: bool = True
+    
+    # CELERY / TASK QUEUE
+    CELERY_BROKER_URL: str = "redis://redis:6379/0"
+    CELERY_RESULT_BACKEND: Optional[str] = "redis://redis:6379/1"
     
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

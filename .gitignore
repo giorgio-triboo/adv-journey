@@ -11,4 +11,6 @@ dist/
 coverage/
 *.log
 logs/
-logs/
+test_venv/
+backend/exports/
+backend/magellano-user-export.csv

@@ -232,9 +232,9 @@ def setup_logging(log_level=logging.INFO):
         section_console_handler.setFormatter(console_formatter)
         section_logger.addHandler(section_console_handler)
     
-    logging.info(f"Logging configurato. Directory log: {log_dir.absolute()}")
-    logging.info(f"File di log generale: {general_log_file.absolute()}")
-    logging.info(f"File di log per sezione disponibili in: {log_dir.absolute()}")
+    logging.debug(f"Logging configurato. Directory log: {log_dir.absolute()}")
+    logging.debug(f"File di log generale: {general_log_file.absolute()}")
+    logging.debug(f"File di log per sezione disponibili in: {log_dir.absolute()}")
     
     # Flush di tutti gli handler per assicurarsi che i log vengano scritti
     for handler in root_logger.handlers:

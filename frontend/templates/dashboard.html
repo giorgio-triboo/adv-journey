@@ -77,12 +77,12 @@
                 </div>
                 <div class="flex gap-2 w-full lg:w-auto">
                     <div class="flex-1">
-                        <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Dal</label>
-                        <input type="date" name="start_date" id="dashboardStartDate" class="w-full px-4 py-2 rounded-lg border border-neutral-200 outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
-                    </div>
-                    <div class="flex-1">
-                        <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Al</label>
-                        <input type="date" name="end_date" id="dashboardEndDate" class="w-full px-4 py-2 rounded-lg border border-neutral-200 outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                        <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Periodo</label>
+                        <input type="text" id="dashboardDateRange"
+                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 outline-none focus:ring-2 focus:ring-indigo-500 text-sm cursor-pointer"
+                               placeholder="Seleziona intervallo">
+                        <input type="hidden" name="start_date" id="dashboardStartDate">
+                        <input type="hidden" name="end_date" id="dashboardEndDate">
                     </div>
                 </div>
                 <button type="button" id="dashboardSyncBtn" class="w-full lg:w-auto px-8 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95">
@@ -160,6 +160,56 @@ document.getElementById('confirmModalConfirm').addEventListener('click', functio
 document.getElementById('confirmModal').addEventListener('click', function(e) {
     if (e.target.id === 'confirmModal') {
         hideConfirmModal();
+    }
+});
+
+// Inizializza date range picker per sync Magellano
+document.addEventListener('DOMContentLoaded', function () {
+    const rangeInput = document.getElementById('dashboardDateRange');
+    const hiddenFrom = document.getElementById('dashboardStartDate');
+    const hiddenTo = document.getElementById('dashboardEndDate');
+
+    if (rangeInput && hiddenFrom && hiddenTo && window.DateRangePicker && window.moment) {
+        const start = hiddenFrom.value ? moment(hiddenFrom.value, 'YYYY-MM-DD') : moment().subtract(7, 'days');
+        const end = hiddenTo.value ? moment(hiddenTo.value, 'YYYY-MM-DD') : moment();
+
+        hiddenFrom.value = start.format('YYYY-MM-DD');
+        hiddenTo.value = end.format('YYYY-MM-DD');
+
+        new DateRangePicker(rangeInput, {
+            startDate: start,
+            endDate: end,
+            autoApply: true,
+            alwaysShowCalendars: true,
+            opens: 'left',
+            maxSpan: { days: 365 },
+            locale: {
+                format: 'DD/MM/YYYY',
+                separator: ' al ',
+                applyLabel: 'Aggiorna',
+                cancelLabel: 'Annulla',
+                weekLabel: 'Set',
+                daysOfWeek: ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'],
+                monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'],
+                firstDay: 1
+            },
+            ranges: {
+                'Oggi': [moment(), moment()],
+                'Ieri': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+                'Ultimi 7 giorni': [moment().subtract(6, 'days'), moment()],
+                'Ultimi 14 giorni': [moment().subtract(13, 'days'), moment()],
+                'Ultimi 28 giorni': [moment().subtract(27, 'days'), moment()],
+                'Ultimi 30 giorni': [moment().subtract(29, 'days'), moment()],
+                'Questo mese': [moment().startOf('month'), moment().endOf('month')],
+                'Mese scorso': [
+                    moment().subtract(1, 'month').startOf('month'),
+                    moment().subtract(1, 'month').endOf('month')
+                ]
+            }
+        }, function (startDate, endDate) {
+            hiddenFrom.value = startDate.format('YYYY-MM-DD');
+            hiddenTo.value = endDate.format('YYYY-MM-DD');
+        });
     }
 });
 

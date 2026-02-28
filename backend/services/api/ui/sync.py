@@ -1,5 +1,5 @@
 """Sync endpoints per Magellano, Ulixe e Meta"""
-from fastapi import APIRouter, Request, Depends, BackgroundTasks, UploadFile, File, Form
+from fastapi import APIRouter, Request, Depends, UploadFile, File, Form
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from database import get_db
@@ -12,6 +12,7 @@ import time
 import tempfile
 import os
 from services.integrations.magellano import MagellanoService
+from services.integrations.lead_correlation import LeadCorrelationService
 from .common import templates
 
 logger = logging.getLogger('services.api.ui')
@@ -22,9 +23,12 @@ def run_magellano_sync(db: Session, campaigns: List[int], start_date: date, end_
     logger.info(f"Starting Magellano Sync Task for campaigns {campaigns} ({start_date} to {end_date})...")
     from services.integrations.magellano import MagellanoService
     service = MagellanoService()
+    correlation_service = LeadCorrelationService()
     try:
         leads_data = service.fetch_leads(start_date, end_date, campaigns)
         logger.info(f"Fetched {len(leads_data)} leads from Magellano.")
+        
+        new_leads = []
         
         for data in leads_data:
             # Check if exists
@@ -53,6 +57,7 @@ def run_magellano_sync(db: Session, campaigns: List[int], start_date: date, end_
                     source=data.get('source'),
                     campaign_name=data.get('campaign_name'),
                     magellano_campaign_id=data.get('magellano_campaign_id'),
+                    magellano_subscr_date=data.get('magellano_subscr_date'),
                     # Stato Magellano: originale, normalizzato e categoria
                     magellano_status_raw=magellano_status_raw,
                     magellano_status=magellano_status,
@@ -70,6 +75,7 @@ def run_magellano_sync(db: Session, campaigns: List[int], start_date: date, end_
                     status_category=status_category
                 )
                 db.add(new_lead)
+                new_leads.append(new_lead)
             else:
                 # Aggiorna lead esistente con nuovo stato Magellano
                 if magellano_status_raw:
@@ -107,6 +113,16 @@ def run_magellano_sync(db: Session, campaigns: List[int], start_date: date, end_
                     existing.facebook_id = data.get('facebook_id')
         
         db.commit()
+        
+        # Correlazione automatica delle nuove lead con Meta Marketing
+        if new_leads:
+            correlation_stats = correlation_service.correlate_batch(new_leads, db)
+            logger.info(
+                f"Lead Correlation (Magellano Sync): "
+                f"{correlation_stats['correlated']} correlated, "
+                f"{correlation_stats['not_found']} not found"
+            )
+        
         logger.info("Magellano Sync Task Completed Successfully.")
         
     except Exception as e:
@@ -116,7 +132,7 @@ def run_magellano_sync(db: Session, campaigns: List[int], start_date: date, end_
         db.close()
 
 @router.post("/sync")
-async def trigger_sync(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def trigger_sync(request: Request, db: Session = Depends(get_db)):
     user = request.session.get('user')
     if not user:
         return RedirectResponse(url='/')
@@ -163,13 +179,12 @@ async def trigger_sync(request: Request, background_tasks: BackgroundTasks, db: 
     else:
         end_date = today
 
-    from database import SessionLocal
-    background_tasks.add_task(run_magellano_sync, SessionLocal(), campaigns, start_date, end_date)
-    
+    from tasks.magellano import magellano_sync_task
+    magellano_sync_task.delay(campaigns, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
     return RedirectResponse(url='/dashboard', status_code=303)
 
 @router.post("/api/magellano/sync")
-async def api_magellano_sync(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def api_magellano_sync(request: Request, db: Session = Depends(get_db)):
     """
     API endpoint per sincronizzazione Magellano con date variabili.
     Accetta JSON con campaigns (lista ID), start_date, end_date (opzionali).
@@ -239,10 +254,8 @@ async def api_magellano_sync(request: Request, background_tasks: BackgroundTasks
     if start_date > end_date:
         return JSONResponse({"error": "start_date deve essere <= end_date"}, status_code=400)
     
-    # Avvia sync in background
-    from database import SessionLocal
-    background_tasks.add_task(run_magellano_sync, SessionLocal(), campaigns, start_date, end_date)
-    
+    from tasks.magellano import magellano_sync_task
+    magellano_sync_task.delay(campaigns, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
     return JSONResponse({
         "success": True,
         "message": "Sincronizzazione Magellano avviata in background",
@@ -252,20 +265,13 @@ async def api_magellano_sync(request: Request, background_tasks: BackgroundTasks
     })
 
 @router.post("/sync/full")
-async def trigger_full_sync(request: Request, background_tasks: BackgroundTasks):
-    """Esegue il sync completo tramite orchestrator"""
+async def trigger_full_sync(request: Request):
+    """Esegue il sync completo tramite orchestrator (coda Celery)."""
     user = request.session.get('user')
     if not user:
         return RedirectResponse(url='/')
-    
-    from services.sync_orchestrator import SyncOrchestrator
-    
-    def run_full_sync():
-        orchestrator = SyncOrchestrator()
-        orchestrator.run_all()
-    
-    background_tasks.add_task(run_full_sync)
-    
+    from tasks.sync_pipeline import run_full_sync_task
+    run_full_sync_task.delay()
     return RedirectResponse(url='/dashboard?sync_started=true', status_code=303)
 
 @router.get("/settings/magellano-sync")
@@ -344,6 +350,7 @@ async def magellano_upload(
         # Salva leads nel DB
         imported_count = 0
         updated_count = 0
+        new_leads = []
         
         for data in leads_data:
             magellano_id = data.get('magellano_id')
@@ -371,6 +378,7 @@ async def magellano_upload(
                     source=data.get('source'),
                     campaign_name=data.get('campaign_name'),
                     magellano_campaign_id=data.get('magellano_campaign_id'),
+                    magellano_subscr_date=data.get('magellano_subscr_date'),
                     # Stato Magellano: originale, normalizzato e categoria
                     magellano_status_raw=magellano_status_raw,
                     magellano_status=magellano_status,
@@ -388,6 +396,7 @@ async def magellano_upload(
                 )
                 db.add(new_lead)
                 imported_count += 1
+                new_leads.append(new_lead)
             else:
                 # Update existing lead - aggiorna anche lo stato Magellano
                 magellano_status_raw = data.get('magellano_status_raw') or data.get('status_raw')
@@ -435,11 +444,26 @@ async def magellano_upload(
                     existing.facebook_campaign_name = data.get('facebook_campaign_name')
                 if data.get('facebook_id'):
                     existing.facebook_id = data.get('facebook_id')
+                if data.get('magellano_subscr_date'):
+                    existing.magellano_subscr_date = data.get('magellano_subscr_date')
                 updated_count += 1
         
         db.commit()
         
-        logger.info(f"Magellano upload completed: {imported_count} imported, {updated_count} updated, {len(leads_data)} total")
+        # Correlazione automatica delle nuove lead con Meta Marketing
+        if new_leads:
+            correlation_service = LeadCorrelationService()
+            correlation_stats = correlation_service.correlate_batch(new_leads, db)
+            logger.info(
+                f"Lead Correlation (Magellano Upload): "
+                f"{correlation_stats['correlated']} correlated, "
+                f"{correlation_stats['not_found']} not found"
+            )
+        
+        logger.info(
+            f"Magellano upload completed: {imported_count} imported, "
+            f"{updated_count} updated, {len(leads_data)} total"
+        )
         
         return JSONResponse({
             "success": True,
@@ -497,7 +521,7 @@ async def settings_meta_sync(request: Request, db: Session = Depends(get_db)):
     })
 
 @router.post("/settings/meta-sync/manual")
-async def manual_meta_sync(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def manual_meta_sync(request: Request, db: Session = Depends(get_db)):
     """Endpoint per sync manuale con date e metriche custom"""
     if not request.session.get('user'):
         return JSONResponse({"success": False, "message": "Non autorizzato"}, status_code=401)
@@ -565,20 +589,14 @@ async def manual_meta_sync(request: Request, background_tasks: BackgroundTasks, 
             
             account_name = f"{len(accounts_to_sync)} account"
         
-        # Avvia sync in background per ogni account
-        from database import SessionLocal
-        from services.sync.meta_marketing_sync import run_manual_sync
-        
+        from tasks.meta_marketing import meta_manual_sync_task
         for account in accounts_to_sync:
-            background_tasks.add_task(
-                run_manual_sync,
-                SessionLocal(),
+            meta_manual_sync_task.delay(
                 account.account_id,
-                start_date,
-                end_date,
-                metrics
+                start_date_str,
+                end_date_str,
+                metrics,
             )
-        
         logger.info(f"Manual sync started: {account_name}, period: {start_date} - {end_date}, metrics: {metrics}")
         
         return JSONResponse({

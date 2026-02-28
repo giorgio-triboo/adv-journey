@@ -231,7 +231,7 @@ class MetaService:
             }
             
             # URL Graph API per Conversions API
-            url = f"https://graph.facebook.com/v18.0/{target_id}/events"
+            url = f"https://graph.facebook.com/v23.0/{target_id}/events"
             
             payload = {
                 "data": [event],

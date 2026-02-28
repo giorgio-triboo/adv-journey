@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Marketing Prediction (WIP)</h1>
+        <p class="text-neutral-500 mt-2">
+            Area di lavoro per la futura predizione delle performance ADV (lead, chiusure, CPL, ecc.).
+            Questa pagina è in stato <strong>Work In Progress</strong> e al momento funge da documentazione operativa.
+        </p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Obiettivi -->
+        <div class="lg:col-span-2 glass-card p-6">
+            <h2 class="text-lg font-semibold mb-3">Obiettivi della sezione Prediction</h2>
+            <ul class="list-disc list-inside text-sm text-neutral-700 space-y-1">
+                <li>Prevedere volume di lead generati per campagna / adset in un certo orizzonte temporale.</li>
+                <li>Stimare CPL atteso (Meta, ingresso Magellano, uscita Magellano) in base allo storico.</li>
+                <li>Stimare chiusure Ulixe attese e tasso di conversione lungo la pipeline.</li>
+                <li>Identificare campagne/creatività ad alto rischio di underperformance prima che accada.</li>
+            </ul>
+        </div>
+
+        <!-- Stato progetto -->
+        <div class="glass-card p-6">
+            <h2 class="text-lg font-semibold mb-3">Stato progetto</h2>
+            <div class="space-y-2 text-sm text-neutral-700">
+                <p><span class="font-semibold">Stato attuale:</span> WIP / design &amp; analisi requisiti.</p>
+                <p><span class="font-semibold">Dati disponibili:</span> storico MetaMarketingData + lead Magellano/Ulixe.</p>
+                <p><span class="font-semibold">Prossimo step tecnico:</span> definire feature engineering e scelta modello (es. regressione, gradient boosting, modelli time-series).</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Roadmap tecnica high-level -->
+    <div class="mt-8 glass-card p-6">
+        <h2 class="text-lg font-semibold mb-4">Roadmap tecnica (bozza)</h2>
+        <ol class="list-decimal list-inside text-sm text-neutral-700 space-y-2">
+            <li>
+                <span class="font-semibold">Data model &amp; dataset di training:</span>
+                definire tabelle o viste per unire MetaMarketingData, campagne, adset, ads e stati lead (Magellano/Ulixe) in un dataset “per giorno x campagna/adset”.
+            </li>
+            <li>
+                <span class="font-semibold">Feature engineering:</span>
+                creare feature derivate (spend rolling, CTR/CPC/CPM storici, stagionalità giorno-settimana, periodo del mese, tipo campagna, ecc.).
+            </li>
+            <li>
+                <span class="font-semibold">Scelta modello e validazione:</span>
+                valutare modelli di regressione (lineare, tree-based) e time-series (es. modelli autoregressivi), con split temporale train/validation.
+            </li>
+            <li>
+                <span class="font-semibold">Servizio di inference:</span>
+                esporre un endpoint API interno (es. <code>/api/marketing/predictions</code>) che, dato un range date e un set di campagne/adset,
+                restituisca le previsioni (lead attesi, CPL atteso, chiusure attese).
+            </li>
+            <li>
+                <span class="font-semibold">UI finale:</span>
+                integrare grafici (es. previsioni vs storico, bande di confidenza) e tabelle di dettaglio in questa pagina, con gli stessi filtri di Analysis.
+            </li>
+        </ol>
+    </div>
+
+    <!-- Placeholder UI per futura integrazione -->
+    <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="glass-card p-6">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-md font-semibold text-neutral-900">Placeholder futuro grafico previsioni</h3>
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-600">
+                    TODO
+                </span>
+            </div>
+            <div class="h-52 rounded-xl bg-gradient-to-br from-indigo-50 via-white to-sky-50 border border-dashed border-indigo-200 flex items-center justify-center">
+                <div class="text-center">
+                    <p class="text-sm font-semibold text-neutral-500">Grafico previsioni vs storico</p>
+                    <p class="text-xs text-neutral-400 mt-1">Qui verrà mostrata la curva prevista di lead / chiusure.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-card p-6">
+            <h3 class="text-md font-semibold text-neutral-900 mb-3">Note operative / decisioni aperte</h3>
+            <ul class="list-disc list-inside text-sm text-neutral-700 space-y-1">
+                <li>Definire con business quali KPI vogliono effettivamente predire (solo lead? chiusure? revenue?).</li>
+                <li>Decidere granularità: per account, campagna, adset, creatività o mix.</li>
+                <li>Definire orizzonte di previsione (es. 7/14/30 giorni) e frequenza di ricalcolo.</li>
+                <li>Stabilire limite minimo di storico per abilitare la predizione su una campagna (es. almeno X giorni / Y eventi).</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
