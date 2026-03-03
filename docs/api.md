@@ -17,8 +17,8 @@
 
 #### richiesta XML (campi User e Pw):
 
-- **User:** Triboo202 5
-- **Password:** 9Nb6!*HsH812*m7m*
+- **User:** (configurare ULIXE_USER in .env)
+- **Password:** (configurare ULIXE_PASSWORD in .env)
 
 ## 3. Metodo: AddLead
 

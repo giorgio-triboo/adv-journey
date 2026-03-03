@@ -1,14 +1,15 @@
-# Cepu-lavorazioni - produzione
+# adj-journey - produzione
 # Uso: docker compose -f deploy/docker-compose.prod.yml up -d
+name: adj-journey
 # Con blue-green: -f deploy/docker-compose.bluegreen.yml
-# Porta principale: 80 (nginx reverse proxy)
+# Porta principale: 3000 (nginx reverse proxy)
 
 services:
   nginx:
     image: nginx:alpine
     restart: always
     ports:
-      - "80:80"
+      - "3000:80"
     volumes:
       - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./deploy/nginx/upstream.conf:/etc/nginx/conf.d/upstream.conf:ro
@@ -16,7 +17,7 @@ services:
     depends_on:
       - backend-blue
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:80/health"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:80/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -25,12 +26,15 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile
-    image: cepu-lavorazioni-app:latest
+    image: adj-journey-app:latest
     restart: always
     expose:
       - "8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://user:password@db:5432/cepudb}
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - TZ=Europe/Rome
     depends_on:
@@ -52,12 +56,15 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile
-    image: cepu-lavorazioni-app:latest
+    image: adj-journey-app:latest
     restart: always
     expose:
       - "8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://user:password@db:5432/cepudb}
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - TZ=Europe/Rome
     depends_on:
@@ -74,10 +81,10 @@ services:
       start_period: 30s
 
   backend-worker:
-    image: cepu-lavorazioni-app:latest
+    image: adj-journey-app:latest
     restart: always
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://user:password@db:5432/cepudb}
+      - DATABASE_URL=${DATABASE_URL}
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - TZ=Europe/Rome
     depends_on:
@@ -111,8 +118,8 @@ services:
   adminer:
     image: adminer:latest
     restart: always
-    ports:
-      - "18080:8080"
+    expose:
+      - "8080"
     environment:
       - ADMINER_DEFAULT_SERVER=db
     depends_on:

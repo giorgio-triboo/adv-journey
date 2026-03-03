@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% if user %}
+    <meta name="csrf-token" content="{{ request.state.csrf_token }}">
+    {% endif %}
     <title>{{ title }} - Cepu Lavorazioni</title>
     <meta name="description" content="Sistema di gestione lead Cepu - Dashboard moderna e intuitiva">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -15,7 +18,7 @@
     {% if user %}
     <aside class="sidebar">
         <div class="sidebar-header">
-            <h1 class="text-2xl font-bold gradient-text">Cepu System</h1>
+            <h1 class="text-2xl font-bold gradient-text">ADV Journey</h1>
         </div>
         
         <div class="sidebar-content">
@@ -144,6 +147,12 @@
                     </svg>
                     Gestione Cron
                 </a>
+                <a href="/adminer/" target="_blank" rel="noopener noreferrer" class="nav-item" title="Adminer - Database (apre in nuova scheda)">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+                    </svg>
+                    Adminer DB
+                </a>
                 {% endif %}
             </nav>
         </div>
@@ -209,6 +218,29 @@
     <script src="https://cdn.jsdelivr.net/gh/alumuko/vanilla-datetimerange-picker@latest/dist/vanilla-datetimerange-picker.js"></script>
 
     <script>
+        // CSRF: aggiungi token a fetch POST e a FormData
+        (function() {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            if (!meta || !meta.content) return;
+            const csrfToken = meta.content;
+            const origFetch = window.fetch;
+            window.fetch = function(url, options) {
+                options = options || {};
+                const method = (options.method || 'GET').toUpperCase();
+                if (['POST','PUT','PATCH','DELETE'].includes(method)) {
+                    if (options.body instanceof FormData && !options.body.has('csrf_token')) {
+                        options.body.append('csrf_token', csrfToken);
+                    } else {
+                        options.headers = options.headers || {};
+                        const h = options.headers instanceof Headers ? options.headers : new Headers(options.headers);
+                        h.set('X-CSRF-Token', csrfToken);
+                        options.headers = h;
+                    }
+                }
+                return origFetch.call(this, url, options);
+            };
+        })();
+
         function toggleSubmenu(id) {
             const menu = document.getElementById(id);
             menu.classList.toggle('open');

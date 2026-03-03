@@ -1,10 +1,22 @@
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
+
+def _get_client_ip(request: Request) -> str:
+    """IP client per rate limiting - supporta proxy (Docker/nginx)."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "127.0.0.1"
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 from services.api.auth import router as auth_router
+from services.middleware.csrf import CSRFMiddleware
 from services.api.leads import router as leads_router
 from services.api.ui import router as ui_router
 from config import settings
@@ -23,7 +35,10 @@ logger = logging.getLogger(__name__)
 # Assicurati che il logger propaga al root logger (default, ma esplicito)
 logger.propagate = True
 
+limiter = Limiter(key_func=_get_client_ip, default_limits=["200/minute"])
 app = FastAPI(title=settings.APP_NAME)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Exception handler globale per loggare tutti gli errori non gestiti
 @app.exception_handler(Exception)
@@ -120,6 +135,29 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 # Session Middleware - gestione sessioni lato server (standard Starlette)
 app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+# CSRF protection per form POST
+app.add_middleware(CSRFMiddleware)
+# Rate limiting
+from slowapi.middleware import SlowAPIMiddleware
+app.add_middleware(SlowAPIMiddleware)
+# CORS - whitelist origini (vuoto = stessa origine)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[],  # Solo same-origin; aggiungere origini se serve (es. frontend separato)
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+# Security headers
+from starlette.middleware.base import BaseHTTPMiddleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        return response
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Mount Static Files
 # In Docker: frontend è montato in /app/frontend
@@ -141,6 +179,11 @@ app.include_router(ui_router)
 
 @app.on_event("startup")
 def startup_event():
+    if not settings.DEBUG and settings.SECRET_KEY == "SUPER_SECRET_KEY_CHANGE_ME":
+        logger.warning(
+            "ATTENZIONE: SECRET_KEY non configurata (usa default). "
+            "In produzione imposta SECRET_KEY nel file .env"
+        )
     # NOTA: Le tabelle vengono create da Alembic migrations, NON da create_all()
     # Questo evita conflitti tra create_all() e le migrazioni Alembic
     
@@ -221,7 +264,8 @@ async def root(request: Request):
     return templates.TemplateResponse("login.html", {"request": request, "title": "Login", "user": None})
 
 @app.get("/health")
-async def health_check():
+@limiter.exempt
+async def health_check(request: Request):
     """
     Healthcheck endpoint per monitoraggio applicazione.
     Verifica connessione DB e stato generale dell'applicazione.

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, Depends
+from fastapi.responses import PlainTextResponse
 from starlette.config import Config
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
@@ -106,6 +107,24 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         except:
             pass
         return RedirectResponse(url='/?error=Errore durante autenticazione')
+
+@router.get("/api/auth/adminer-check")
+async def adminer_check(request: Request, db: Session = Depends(get_db)):
+    """
+    Endpoint usato da nginx auth_request per proteggere Adminer.
+    Restituisce 200 solo se l'utente è autenticato via OAuth e ha ruolo super-admin.
+    """
+    user_session = request.session.get("user")
+    if not user_session:
+        return PlainTextResponse("Unauthorized", status_code=401)
+    email = user_session.get("email")
+    if not email:
+        return PlainTextResponse("Unauthorized", status_code=401)
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not user.is_active or user.role != "super-admin":
+        return PlainTextResponse("Unauthorized", status_code=401)
+    return PlainTextResponse("OK", status_code=200)
+
 
 @router.get('/logout')
 async def logout(request: Request):

@@ -4,6 +4,7 @@ from typing import List, Optional
 from database import get_db
 from models import Lead, User, StatusCategory, LeadHistory
 from services.utils.crypto import hash_email_for_meta, hash_phone_for_meta
+from services.api.dependencies import require_api_user
 from pydantic import BaseModel
 from datetime import datetime
 import logging
@@ -40,10 +41,11 @@ class LeadOut(LeadBase):
 
 @router.get("/", response_model=List[LeadOut])
 def get_leads(
-    skip: int = 0, 
-    limit: int = 100, 
+    skip: int = 0,
+    limit: int = 100,
     status_category: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_api_user),
 ):
     query = db.query(Lead)
     
@@ -54,7 +56,11 @@ def get_leads(
     return leads
 
 @router.get("/{lead_id}", response_model=LeadOut)
-def get_lead(lead_id: int, db: Session = Depends(get_db)):
+def get_lead(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_api_user),
+):
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -78,7 +84,11 @@ class LeadUpdate(BaseModel):
     status_category: Optional[str] = None
 
 @router.post("/", response_model=LeadOut)
-def create_lead(lead: LeadCreate, db: Session = Depends(get_db)):
+def create_lead(
+    lead: LeadCreate,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_api_user),
+):
     lead_dict = lead.dict()
     # Hash email e phone prima di salvare
     if lead_dict.get('email'):
@@ -96,7 +106,12 @@ def create_lead(lead: LeadCreate, db: Session = Depends(get_db)):
     return db_lead
 
 @router.patch("/{lead_id}", response_model=LeadOut)
-def update_lead(lead_id: int, lead_update: LeadUpdate, db: Session = Depends(get_db)):
+def update_lead(
+    lead_id: int,
+    lead_update: LeadUpdate,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_api_user),
+):
     db_lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not db_lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -139,7 +154,11 @@ def update_lead(lead_id: int, lead_update: LeadUpdate, db: Session = Depends(get
     return db_lead
 
 @router.post("/{lead_id}/check-ulixe", response_model=LeadOut)
-def check_lead_ulixe(lead_id: int, db: Session = Depends(get_db)):
+def check_lead_ulixe(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_api_user),
+):
     db_lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not db_lead:
         raise HTTPException(status_code=404, detail="Lead not found")

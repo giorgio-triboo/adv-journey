@@ -19,10 +19,11 @@ if not std_logging.getLogger().handlers:
 logger = logging.getLogger('services.integrations.magellano')
 
 class MagellanoAutomation:
-    def __init__(self, username="giorgio", password="Magellano2025!"):
+    def __init__(self, username: str = None, password: str = None):
+        from config import settings
         self.base_url = "https://magellano.ai/admin/index.php"
-        self.username = username
-        self.password = password
+        self.username = username or settings.MAGELLANO_USER or ""
+        self.password = password or settings.MAGELLANO_PASSWORD or ""
 
     def generate_password(self):
         """Genera la password dinamica: ggmmaaT-Direct"""

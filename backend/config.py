@@ -5,23 +5,24 @@ class Settings(BaseSettings):
     # App Settings
     APP_NAME: str = "Magellano Lead Automation"
     DEBUG: bool = False
+    # SECRET_KEY obbligatoria in produzione - non usare default
     SECRET_KEY: str = "SUPER_SECRET_KEY_CHANGE_ME"
     
-    # DATABASE
+    # DATABASE - usare variabili env in produzione
     DATABASE_URL: str = "postgresql://user:password@db:5432/cepudb"
     
     # GOOGLE OAUTH
     GOOGLE_CLIENT_ID: str
     GOOGLE_CLIENT_SECRET: str
     
-    # MAGELLANO
-    MAGELLANO_USER: str = "giorgio"
-    MAGELLANO_PASSWORD: str = "Magellano2025!"
+    # MAGELLANO - da .env
+    MAGELLANO_USER: Optional[str] = None
+    MAGELLANO_PASSWORD: Optional[str] = None
     
-    # ULIXE - DISABILITATO: credenziali impostate a None per prevenire sync accidentale
-    ULIXE_USER: Optional[str] = None  # "Triboo2025"
-    ULIXE_PASSWORD: Optional[str] = None  # "9Nb6!*HsH812*m7m*"
-    ULIXE_WSDL: Optional[str] = None  # "https://tmkprows2.cepu.it/Triboo2025.asmx?WSDL"
+    # ULIXE - da .env
+    ULIXE_USER: Optional[str] = None
+    ULIXE_PASSWORD: Optional[str] = None
+    ULIXE_WSDL: Optional[str] = None
     
     # META
     META_ACCESS_TOKEN: Optional[str] = None

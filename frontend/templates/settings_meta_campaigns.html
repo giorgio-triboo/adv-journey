@@ -142,6 +142,7 @@
             <p class="text-sm text-neutral-500 mt-1" id="modalCampaignName"></p>
         </div>
         <form id="filterForm" method="POST" action="/settings/meta-campaigns/filters" class="p-6">
+            {% include "csrf_input.html" %}
             <input type="hidden" name="id" id="modalCampaignId">
             
             <div class="mb-4">
