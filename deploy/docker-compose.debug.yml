@@ -1,0 +1,13 @@
+# Override per debug locale: codice montato, hot-reload.
+# Uso: docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.debug.yml up -d
+# Migrazioni: docker compose ... exec backend-blue alembic upgrade head
+
+services:
+  backend-blue:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    volumes:
+      - ./backend:/app
+      - ./frontend:/app/frontend
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload

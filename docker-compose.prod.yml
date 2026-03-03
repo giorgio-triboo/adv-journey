@@ -1,0 +1,128 @@
+# Produzione: blue-green deployment con nginx reverse proxy
+# Porta principale: 80 (nginx). Adminer su 18080.
+# Per pipeline CodeDeploy usa deploy/docker-compose.prod.yml
+#
+# Deploy iniziale:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Deploy nuova versione (blue -> green):
+#   1. docker compose -f docker-compose.prod.yml --profile green up -d --build backend-green
+#   2. curl http://localhost:8004/health  # verifica green
+#   3. Modifica nginx/conf.d/default.conf: server backend-green:8000
+#   4. docker exec cepu-lavorazioni-nginx-1 nginx -s reload
+#   5. docker compose -f docker-compose.prod.yml stop backend-blue
+#
+# Switch green -> blue (per prossimo ciclo): inverti i passi 3–5
+
+services:
+  nginx:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - nginx_cache:/var/cache/nginx
+    depends_on:
+      - backend-blue
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  backend-blue:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    restart: always
+    expose:
+      - "8000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/cepudb
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      - TZ=Europe/Rome
+    depends_on:
+      - db
+      - redis
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  backend-green:
+    profiles:
+      - green
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    restart: always
+    expose:
+      - "8000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/cepudb
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      - TZ=Europe/Rome
+    depends_on:
+      - db
+      - redis
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  backend-worker:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    restart: always
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/cepudb
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      - TZ=Europe/Rome
+    # --concurrency=1: Playwright in sequenza (minor uso RAM su t4g.small)
+    command: celery -A celery_app.celery_app worker --loglevel=INFO --concurrency=1
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=cepudb
+      - TZ=Europe/Rome
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d cepudb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  adminer:
+    image: adminer:latest
+    restart: always
+    ports:
+      - "18080:8080"
+    environment:
+      - ADMINER_DEFAULT_SERVER=db
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
+  nginx_cache:

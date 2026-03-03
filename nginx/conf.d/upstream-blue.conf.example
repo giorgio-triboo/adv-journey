@@ -1,0 +1,2 @@
+# Copia in default.conf per puntare su BLUE:
+# upstream backend_active { server backend-blue:8000; }

@@ -1,0 +1,39 @@
+---
+# AWS CodeBuild - cepu-lavorazioni
+# Valida codice sorgente; build Docker sul server in afterinstall.sh
+
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Build started on $(date)"
+      - echo "Preparing source code for deployment..."
+
+  build:
+    commands:
+      - echo "Validating source code..."
+      - test -f deploy/Dockerfile && echo "✓ deploy/Dockerfile found" || exit 1
+      - test -f deploy/docker-compose.prod.yml && echo "✓ deploy/docker-compose.prod.yml found" || exit 1
+      - test -f backend/requirements.txt && echo "✓ backend/requirements.txt found" || exit 1
+      - test -f backend/main.py && echo "✓ backend/main.py found" || exit 1
+      - test -f backend/celery_app.py && echo "✓ backend/celery_app.py found" || exit 1
+      - test -d backend/alembic && echo "✓ backend/alembic found" || exit 1
+
+  post_build:
+    commands:
+      - echo "Build completed on $(date)"
+      - echo "Source code ready for deployment"
+      - test "$CODEBUILD_BUILD_SUCCEEDING" = "1" || exit 1
+
+artifacts:
+  files:
+    - '**/*'
+  exclude-paths:
+    - .git/**
+    - __pycache__/**
+    - *.pyc
+    - .venv/**
+    - venv/**
+    - .env
+    - .env.*
