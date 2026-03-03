@@ -1,18 +1,67 @@
 """Marketing views e API"""
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 from database import get_db
-from models import MetaAccount, MetaCampaign, MetaAdSet, MetaAd, MetaMarketingData, Lead, StatusCategory, User
-from sqlalchemy import func, desc
+from models import MetaAccount, MetaCampaign, MetaAdSet, MetaAd, MetaMarketingData, Lead, StatusCategory, User, ManagedCampaign
+from sqlalchemy import func, desc, or_, and_
 from datetime import datetime, timedelta
 from typing import List
+from urllib.parse import urlparse
+import httpx
 import logging
 from .common import templates
 
 logger = logging.getLogger('services.api.ui')
 
 router = APIRouter(include_in_schema=False)
+
+
+def _get_pay_for_leads(db: Session, leads: list) -> float | None:
+    """
+    Ottiene il prezzo medio per lead dalle ManagedCampaign (pay_level in settings/campaigns).
+    Mappa magellano_campaign_id -> pay_level e restituisce il pay più frequente tra le lead.
+    """
+    if not leads:
+        return None
+    managed = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True).all()
+    mag_to_pay = {}
+    for mc in managed:
+        if mc.magellano_ids and mc.pay_level:
+            try:
+                pay_val = float(str(mc.pay_level).replace(',', '.'))
+                for mid in mc.magellano_ids:
+                    mag_to_pay[str(mid)] = pay_val
+            except (ValueError, TypeError):
+                pass
+    pays = []
+    for l in leads:
+        if l.magellano_campaign_id and str(l.magellano_campaign_id) in mag_to_pay:
+            pays.append(mag_to_pay[str(l.magellano_campaign_id)])
+    if not pays:
+        return None
+    # Usa il pay più frequente (moda) o media
+    from collections import Counter
+    counts = Counter(pays)
+    return counts.most_common(1)[0][0]
+
+
+def _lead_date_filter(date_from_obj, date_to_obj):
+    """Filtra lead per data: usa magellano_subscr_date se presente, altrimenti created_at."""
+    date_from_d = date_from_obj.date() if hasattr(date_from_obj, "date") else date_from_obj
+    date_to_d = date_to_obj.date() if hasattr(date_to_obj, "date") else date_to_obj
+    return or_(
+        and_(
+            Lead.magellano_subscr_date.isnot(None),
+            Lead.magellano_subscr_date >= date_from_d,
+            Lead.magellano_subscr_date <= date_to_d,
+        ),
+        and_(
+            Lead.magellano_subscr_date.is_(None),
+            Lead.created_at >= date_from_obj,
+            Lead.created_at <= date_to_obj,
+        ),
+    )
 
 
 def _parse_amount(val) -> float:
@@ -338,6 +387,49 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             }
         ]
 
+        # Metriche Magellano/Ulixe: scope da campaign_ids/adset_ids presenti in marketing_rows
+        campaign_ids = set()
+        adset_ids = set()
+        for md, ad, adset, campaign, account in marketing_rows:
+            if campaign and campaign.campaign_id:
+                campaign_ids.add(str(campaign.campaign_id))
+            if adset and adset.adset_id:
+                adset_ids.add(str(adset.adset_id))
+
+        total_magellano_entrate = 0
+        total_magellano_doppioni = 0
+        total_magellano_scartate = 0
+        total_ulixe_scartate = 0
+        leads_count = 0
+
+        if campaign_ids:
+            lead_query = db.query(Lead).filter(_lead_date_filter(date_from, date_to))
+            lead_query = lead_query.filter(Lead.meta_campaign_id.in_(campaign_ids))
+            if adset_ids and selected_adset_id:
+                lead_query = lead_query.filter(Lead.meta_adset_id.in_(adset_ids))
+            leads_in_scope = lead_query.all()
+            leads_count = len(leads_in_scope)
+            total_magellano_entrate = len([l for l in leads_in_scope if l.magellano_campaign_id])
+            # Doppioni = Meta conta più di noi (conversioni duplicate in Meta)
+            total_magellano_doppioni = max(0, total_conversions - leads_count)
+            # Scartate = lead in Magellano non inviate al cliente (include firewall; esclude solo refused da WS)
+            total_magellano_scartate = len([
+                l for l in leads_in_scope
+                if l.magellano_campaign_id
+                and l.magellano_status not in ("magellano_sent", "magellano_refused")
+            ])
+            total_ulixe_scartate = len([l for l in leads_in_scope if l.status_category == StatusCategory.RIFIUTATO])
+
+        totals["total_magellano_entrate"] = total_magellano_entrate
+        totals["total_magellano_doppioni"] = total_magellano_doppioni
+        totals["total_magellano_scartate"] = total_magellano_scartate
+        totals["total_ulixe_scartate"] = total_ulixe_scartate
+        totals["leads_count"] = leads_count
+        # % rispetto a Lead (leads_count per scartate; total_conversions per doppioni)
+        totals["magellano_doppioni_pct"] = round((total_magellano_doppioni / total_conversions * 100), 1) if total_conversions > 0 else 0
+        totals["magellano_scartate_pct"] = round((total_magellano_scartate / leads_count * 100), 1) if leads_count > 0 else 0
+        totals["ulixe_scartate_pct"] = round((total_ulixe_scartate / leads_count * 100), 1) if leads_count > 0 else 0
+
         return templates.TemplateResponse(
             "marketing_analysis.html",
             {
@@ -440,6 +532,60 @@ async def marketing(request: Request, db: Session = Depends(get_db)):
         # Re-solleva l'eccezione per essere gestita dall'exception handler globale
         raise
 
+
+@router.get("/api/marketing/proxy-image")
+async def proxy_creative_image(request: Request, db: Session = Depends(get_db)):
+    """
+    Proxy per le thumbnail delle creatività Meta.
+    Ottiene un URL fresco dalla Graph API (con token) poi scarica l'immagine.
+    """
+    from services.utils.crypto import decrypt_token
+
+    ad_id_param = request.query_params.get("ad_id")
+    if not ad_id_param:
+        return Response(status_code=400)
+    try:
+        ad_id_int = int(ad_id_param)
+    except ValueError:
+        return Response(status_code=400)
+
+    ad = db.query(MetaAd).filter(MetaAd.id == ad_id_int).first()
+    if not ad or not ad.creative_id:
+        return Response(status_code=404)
+    account = None
+    if ad.adset and ad.adset.campaign:
+        account = ad.adset.campaign.account
+    if not account or not account.access_token:
+        return Response(status_code=404)
+    try:
+        access_token = decrypt_token(account.access_token)
+    except Exception:
+        return Response(status_code=500)
+
+    # Ottieni URL fresco dalla Graph API (evita URL scaduti/signed)
+    graph_url = f"https://graph.facebook.com/v21.0/{ad.creative_id}/?fields=thumbnail_url,image_url&access_token={access_token}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(graph_url)
+            r.raise_for_status()
+            data = r.json()
+            thumbnail_url = data.get("thumbnail_url") or data.get("image_url")
+            if not thumbnail_url:
+                return Response(status_code=404)
+            # Scarica l'immagine (URL dalla Graph API è valido)
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            r2 = await client.get(thumbnail_url, headers=headers, follow_redirects=True)
+            r2.raise_for_status()
+            content_type = r2.headers.get("content-type", "image/jpeg")
+            return Response(content=r2.content, media_type=content_type)
+    except httpx.HTTPStatusError as e:
+        logger.debug(f"Proxy image HTTP error: {e}")
+        return Response(status_code=502)
+    except Exception as e:
+        logger.debug(f"Proxy image failed: {e}")
+        return Response(status_code=502)
+
+
 @router.get("/api/marketing/campaigns")
 async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db)):
     """API: Lista campagne con metriche aggregate"""
@@ -534,8 +680,7 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                 # Get leads for this campaign (per calcoli Magellano/Ulixe)
                 leads = db.query(Lead).filter(
                     Lead.meta_campaign_id == campaign.campaign_id,
-                    Lead.created_at >= date_from_obj,
-                    Lead.created_at <= date_to_obj
+                    _lead_date_filter(date_from_obj, date_to_obj),
                 ).all()
                 
                 # Calculate CPL Meta (from MetaMarketingData)
@@ -576,6 +721,17 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                 ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
                 ulixe_chiusure = len([l for l in leads if l.status_category == StatusCategory.FINALE])
                 
+                # Margine: lead inviate × pay (CPL campagna da settings/campaigns)
+                pay_campagna = _get_pay_for_leads(db, leads)
+                revenue = (magellano_inviate * pay_campagna) if pay_campagna and magellano_inviate else 0
+                margine_singola = (pay_campagna - cpl_uscita) if pay_campagna and magellano_inviate else None
+                margine_lordo = (revenue - total_spend_meta) if pay_campagna and magellano_inviate else None
+                margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
+                
+                # Nascondi campagne a 0 per il periodo (meno rumore)
+                if total_leads == 0 and total_spend_meta == 0:
+                    continue
+                
                 result.append({
                     "id": campaign.id,
                     "campaign_id": campaign.campaign_id,
@@ -602,7 +758,11 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                     # Ulixe
                     "ulixe_lavorazione": ulixe_lavorazione,
                     "ulixe_rifiutate": ulixe_rifiutate,
-                    "ulixe_chiusure": ulixe_chiusure
+                    "ulixe_chiusure": ulixe_chiusure,
+                    # Margine
+                    "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
+                    "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
+                    "margine_pct": round(margine_pct, 2) if margine_pct is not None else None
                 })
                 
                 # Aggiorna totali per le 4 fasi
@@ -782,8 +942,7 @@ async def api_marketing_campaign_adsets(campaign_id: int, request: Request, db: 
         # Get leads for this adset (per calcoli Magellano/Ulixe)
         leads = db.query(Lead).filter(
             Lead.meta_adset_id == adset.adset_id,
-            Lead.created_at >= date_from_obj,
-            Lead.created_at <= date_to_obj
+            _lead_date_filter(date_from_obj, date_to_obj),
         ).all()
         
         # Calculate CPL Meta
@@ -820,6 +979,17 @@ async def api_marketing_campaign_adsets(campaign_id: int, request: Request, db: 
         ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
         ulixe_chiusure = len([l for l in leads if l.status_category == StatusCategory.FINALE])
         
+        # Margine: lead inviate × pay (CPL campagna da settings/campaigns)
+        pay_campagna = _get_pay_for_leads(db, leads)
+        revenue = (magellano_inviate * pay_campagna) if pay_campagna and magellano_inviate else 0
+        margine_singola = (pay_campagna - cpl_uscita) if pay_campagna and magellano_inviate else None
+        margine_lordo = (revenue - total_spend_meta) if pay_campagna and magellano_inviate else None
+        margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
+        
+        # Nascondi adset a 0 per il periodo
+        if total_leads == 0 and total_spend_meta == 0:
+            continue
+        
         result.append({
             "id": adset.id,
             "adset_id": adset.adset_id,
@@ -843,7 +1013,11 @@ async def api_marketing_campaign_adsets(campaign_id: int, request: Request, db: 
             # Ulixe
             "ulixe_lavorazione": ulixe_lavorazione,
             "ulixe_rifiutate": ulixe_rifiutate,
-            "ulixe_chiusure": ulixe_chiusure
+            "ulixe_chiusure": ulixe_chiusure,
+            # Margine
+            "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
+            "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
+            "margine_pct": round(margine_pct, 2) if margine_pct is not None else None
         })
     
     return JSONResponse(result)
@@ -888,8 +1062,7 @@ async def api_marketing_adset_ads(adset_id: int, request: Request, db: Session =
         # Get leads for this ad (per calcoli Magellano/Ulixe)
         leads = db.query(Lead).filter(
             Lead.meta_ad_id == ad.ad_id,
-            Lead.created_at >= date_from_obj,
-            Lead.created_at <= date_to_obj
+            _lead_date_filter(date_from_obj, date_to_obj),
         ).all()
         
         # Calculate CPL Meta
@@ -926,12 +1099,24 @@ async def api_marketing_adset_ads(adset_id: int, request: Request, db: Session =
         ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
         ulixe_chiusure = len([l for l in leads if l.status_category == StatusCategory.FINALE])
         
+        # Margine: lead inviate × pay (CPL campagna da settings/campaigns)
+        pay_campagna = _get_pay_for_leads(db, leads)
+        revenue = (magellano_inviate * pay_campagna) if pay_campagna and magellano_inviate else 0
+        margine_singola = (pay_campagna - cpl_uscita) if pay_campagna and magellano_inviate else None
+        margine_lordo = (revenue - total_spend_meta) if pay_campagna and magellano_inviate else None
+        margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
+        
+        # Nascondi creatività a 0 per il periodo
+        if total_leads == 0 and total_spend_meta == 0:
+            continue
+        
         result.append({
             "id": ad.id,
             "ad_id": ad.ad_id,
             "name": ad.name,
             "status": ad.status,
             "creative_thumbnail_url": ad.creative_thumbnail_url or "",
+            "creative_id": ad.creative_id or "",
             # Dati Meta
             "total_leads": total_leads,
             "cpl_meta": round(cpl_meta, 2),
@@ -950,7 +1135,11 @@ async def api_marketing_adset_ads(adset_id: int, request: Request, db: Session =
             # Ulixe
             "ulixe_lavorazione": ulixe_lavorazione,
             "ulixe_rifiutate": ulixe_rifiutate,
-            "ulixe_chiusure": ulixe_chiusure
+            "ulixe_chiusure": ulixe_chiusure,
+            # Margine
+            "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
+            "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
+            "margine_pct": round(margine_pct, 2) if margine_pct is not None else None
         })
     
     return JSONResponse(result)
@@ -1035,8 +1224,7 @@ async def api_marketing_adsets(request: Request, db: Session = Depends(get_db)):
             # Get leads for this adset
             leads = db.query(Lead).filter(
                 Lead.meta_adset_id == adset.adset_id,
-                Lead.created_at >= date_from_obj,
-                Lead.created_at <= date_to_obj
+                _lead_date_filter(date_from_obj, date_to_obj),
             ).all()
             
             # Calculate CPL Meta
@@ -1070,6 +1258,17 @@ async def api_marketing_adsets(request: Request, db: Session = Depends(get_db)):
             ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
             ulixe_chiusure = len([l for l in leads if l.status_category == StatusCategory.FINALE])
             
+            # Margine: lead inviate × pay (CPL campagna da settings/campaigns)
+            pay_campagna = _get_pay_for_leads(db, leads)
+            revenue = (magellano_inviate * pay_campagna) if pay_campagna and magellano_inviate else 0
+            margine_singola = (pay_campagna - cpl_uscita) if pay_campagna and magellano_inviate else None
+            margine_lordo = (revenue - total_spend_meta) if pay_campagna and magellano_inviate else None
+            margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
+            
+            # Nascondi adset a 0 per il periodo
+            if total_leads == 0 and total_spend_meta == 0:
+                continue
+            
             result.append({
                 "id": adset.id,
                 "adset_id": adset.adset_id,
@@ -1097,7 +1296,11 @@ async def api_marketing_adsets(request: Request, db: Session = Depends(get_db)):
                 # Ulixe
                 "ulixe_lavorazione": ulixe_lavorazione,
                 "ulixe_rifiutate": ulixe_rifiutate,
-                "ulixe_chiusure": ulixe_chiusure
+                "ulixe_chiusure": ulixe_chiusure,
+                # Margine
+                "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
+                "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
+                "margine_pct": round(margine_pct, 2) if margine_pct is not None else None
             })
     
     return JSONResponse(result)
@@ -1191,8 +1394,7 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
                 # Get leads for this ad
                 leads = db.query(Lead).filter(
                     Lead.meta_ad_id == ad.ad_id,
-                    Lead.created_at >= date_from_obj,
-                    Lead.created_at <= date_to_obj
+                    _lead_date_filter(date_from_obj, date_to_obj),
                 ).all()
                 
                 # Calculate CPL Meta
@@ -1226,12 +1428,24 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
                 ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
                 ulixe_chiusure = len([l for l in leads if l.status_category == StatusCategory.FINALE])
                 
+                # Margine: lead inviate × pay (CPL campagna da settings/campaigns)
+                pay_campagna = _get_pay_for_leads(db, leads)
+                revenue = (magellano_inviate * pay_campagna) if pay_campagna and magellano_inviate else 0
+                margine_singola = (pay_campagna - cpl_uscita) if pay_campagna and magellano_inviate else None
+                margine_lordo = (revenue - total_spend_meta) if pay_campagna and magellano_inviate else None
+                margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
+                
+                # Nascondi creatività a 0 per il periodo
+                if total_leads == 0 and total_spend_meta == 0:
+                    continue
+                
                 result.append({
                     "id": ad.id,
                     "ad_id": ad.ad_id,
                     "name": ad.name,
                     "status": ad.status,
                     "creative_thumbnail_url": ad.creative_thumbnail_url or "",
+                    "creative_id": ad.creative_id or "",
                     "adset_id": adset.id,
                     "adset_name": adset.name,
                     "campaign_id": campaign.id,
@@ -1256,7 +1470,11 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
                     # Ulixe
                     "ulixe_lavorazione": ulixe_lavorazione,
                     "ulixe_rifiutate": ulixe_rifiutate,
-                    "ulixe_chiusure": ulixe_chiusure
+                    "ulixe_chiusure": ulixe_chiusure,
+                    # Margine
+                    "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
+                    "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
+                    "margine_pct": round(margine_pct, 2) if margine_pct is not None else None
                 })
     
     return JSONResponse(result)

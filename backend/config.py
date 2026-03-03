@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     # SECRET_KEY obbligatoria in produzione - non usare default
     SECRET_KEY: str = "SUPER_SECRET_KEY_CHANGE_ME"
+    # Cookie Secure flag: True in produzione con HTTPS
+    SECURE_COOKIES: bool = False
     
     # DATABASE - usare variabili env in produzione
     DATABASE_URL: str = "postgresql://user:password@db:5432/cepudb"

@@ -131,9 +131,9 @@
         </div>
     </div>
 
-    <!-- KPI principali -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        <div class="glass-card p-6">
+    <!-- KPI principali (card bianche) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div class="glass-card p-6 bg-white border border-neutral-200">
             <p class="text-sm font-medium text-neutral-500 mb-1">Speso</p>
             <p class="text-3xl font-bold text-neutral-900">
                 € {{ "{:,.2f}".format(totals.total_spend or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
@@ -142,7 +142,7 @@
                 Spesa totale nel periodo selezionato.
             </p>
         </div>
-        <div class="glass-card p-6">
+        <div class="glass-card p-6 bg-white border border-neutral-200">
             <p class="text-sm font-medium text-neutral-500 mb-1">Lead</p>
             <p class="text-3xl font-bold text-neutral-900">
                 {{ "{:,}".format(totals.total_conversions or 0)|replace(',', '.') }}
@@ -151,7 +151,7 @@
                 Numero di lead generati (conversioni) nel periodo.
             </p>
         </div>
-        <div class="glass-card p-6">
+        <div class="glass-card p-6 bg-white border border-neutral-200">
             <p class="text-sm font-medium text-neutral-500 mb-1">CPL</p>
             <p class="text-3xl font-bold text-neutral-900">
                 € {{ "{:,.2f}".format(totals.global_cpl or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
@@ -159,6 +159,37 @@
             <p class="text-xs text-neutral-500 mt-2">
                 Costo per lead calcolato come Speso / Lead nel periodo selezionato.
             </p>
+        </div>
+    </div>
+
+    <!-- Metriche Magellano / Ulixe (card bianche) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div class="glass-card p-6 bg-white border border-neutral-200">
+            <p class="text-sm font-medium text-neutral-500">Entrate in Magellano</p>
+            <p class="text-2xl font-bold text-neutral-900 mt-1">{{ "{:,}".format(totals.total_magellano_entrate or 0)|replace(',', '.') }}</p>
+            <p class="text-xs text-neutral-500 mt-2">Lead entrate in Magellano nel periodo</p>
+        </div>
+        <div class="glass-card p-6 bg-white border border-neutral-200">
+            <p class="text-sm font-medium text-neutral-500 mb-3">Doppioni / Scartate Magellano</p>
+            <div class="grid grid-cols-2 gap-4 divide-x divide-neutral-200">
+                <div>
+                    <p class="text-xs text-neutral-500">Doppioni</p>
+                    <p class="text-xl font-bold text-neutral-900">{{ "{:,}".format(totals.total_magellano_doppioni or 0)|replace(',', '.') }}</p>
+                    <p class="text-xs text-neutral-400">{{ totals.magellano_doppioni_pct or 0 }}% su Lead Meta</p>
+                </div>
+                <div class="pl-4">
+                    <p class="text-xs text-neutral-500">Scartate</p>
+                    <p class="text-xl font-bold text-neutral-900">{{ "{:,}".format(totals.total_magellano_scartate or 0)|replace(',', '.') }}</p>
+                    <p class="text-xs text-neutral-400">{{ totals.magellano_scartate_pct or 0 }}% su Lead</p>
+                </div>
+            </div>
+            <p class="text-xs text-neutral-500 mt-2">Doppioni: Meta − lead DB. Scartate: in Magellano non inviate (include firewall, escluse refused WS)</p>
+        </div>
+        <div class="glass-card p-6 bg-white border border-neutral-200">
+            <p class="text-sm font-medium text-neutral-500">Scartate Ulixe</p>
+            <p class="text-2xl font-bold text-neutral-900 mt-1">{{ "{:,}".format(totals.total_ulixe_scartate or 0)|replace(',', '.') }}</p>
+            <p class="text-xs text-neutral-400">{{ totals.ulixe_scartate_pct or 0 }}% su Lead</p>
+            <p class="text-xs text-neutral-500 mt-2">Lead rifiutate/scartate da Ulixe</p>
         </div>
     </div>
 
@@ -453,6 +484,14 @@
                 },
                 tooltip: {
                     callbacks: {
+                        title: function(tooltipItems) {
+                            const dateStr = tooltipItems[0] && tooltipItems[0].label;
+                            if (!dateStr) return [dateStr];
+                            const date = new Date(dateStr + 'T12:00:00');
+                            const days = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+                            const dayName = days[date.getDay()];
+                            return [dateStr, dayName];
+                        },
                         label: function(context) {
                             const label = context.dataset.label || '';
                             const value = context.parsed.y || 0;

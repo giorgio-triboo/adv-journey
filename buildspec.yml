@@ -1,5 +1,5 @@
 ---
-# AWS CodeBuild - cepu-lavorazioni
+# AWS CodeBuild - adj-journey
 # Valida codice sorgente; build Docker sul server in afterinstall.sh
 
 version: 0.2

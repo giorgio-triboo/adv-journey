@@ -134,7 +134,12 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     raise exc
 
 # Session Middleware - gestione sessioni lato server (standard Starlette)
-app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    https_only=settings.SECURE_COOKIES,
+    same_site="lax",
+)
 # CSRF protection per form POST
 app.add_middleware(CSRFMiddleware)
 # Rate limiting
@@ -156,6 +161,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # CSP: consenti CDN Tailwind, Google Fonts, img da https
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' https://cdn.tailwindcss.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data: https:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'self'"
+        )
+        if settings.SECURE_COOKIES:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 app.add_middleware(SecurityHeadersMiddleware)
 

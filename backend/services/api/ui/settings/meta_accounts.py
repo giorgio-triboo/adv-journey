@@ -206,7 +206,9 @@ async def sync_meta_account(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     
     account_id = form.get("id")
-    redirect_url = form.get("redirect_url", "/settings/meta-accounts")
+    raw_redirect = form.get("redirect_url", "/settings/meta-accounts")
+    # Validazione: accetta solo path relativi (no open redirect)
+    redirect_url = raw_redirect if raw_redirect.startswith("/") and "//" not in raw_redirect else "/settings/meta-accounts"
     
     logger.info(f"Sync request received for account_id: {account_id}, redirect_url: {redirect_url}")
     

@@ -381,7 +381,7 @@ class MetaMarketingService:
             campaign = Campaign(campaign_id)
             # Usa rate limiting con retry
             adsets = self._make_api_call_with_retry(
-                lambda: list(campaign.get_ad_sets(fields=['id', 'name', 'status', 'optimization_goal', 'targeting']))
+                lambda: list(campaign.get_ad_sets(fields=['id', 'name', 'status', 'effective_status', 'optimization_goal', 'targeting']))
             )
             
             result = []
@@ -402,10 +402,11 @@ class MetaMarketingService:
                         logger.warning(f"Error converting targeting to dict: {e}, using empty dict")
                         targeting = {}
                 
+                effective = adset.get('effective_status') or adset.get('status')
                 result.append({
                     "adset_id": adset.get('id'),
                     "name": adset.get('name', ''),
-                    "status": adset.get('status', 'UNKNOWN'),
+                    "status": effective if effective else 'UNKNOWN',
                     "optimization_goal": adset.get('optimization_goal', ''),
                     "targeting": targeting if isinstance(targeting, dict) else {}
                 })
@@ -427,7 +428,7 @@ class MetaMarketingService:
             adset = AdSet(adset_id)
             # Richiedi i campi necessari incluso creative con thumbnail_url
             ads = self._make_api_call_with_retry(
-                lambda: list(adset.get_ads(fields=['id', 'name', 'status', 'creative{id,thumbnail_url,image_url,object_story_spec}']))
+                lambda: list(adset.get_ads(fields=['id', 'name', 'status', 'effective_status', 'creative{id,thumbnail_url,image_url,object_story_spec}']))
             )
             
             result = []
@@ -458,10 +459,12 @@ class MetaMarketingService:
                             if not thumbnail_url and photo_data:
                                 thumbnail_url = photo_data.get('image_url', '')
                 
+                # effective_status riflette lo stato reale (include pause di campagna/adset)
+                effective = ad.get('effective_status') or ad.get('status')
                 result.append({
                     "ad_id": ad.get('id'),
                     "name": ad.get('name', ''),
-                    "status": ad.get('status', 'UNKNOWN'),
+                    "status": effective if effective else 'UNKNOWN',
                     "creative_id": creative.get('id', '') if creative else '',
                     "creative_thumbnail_url": thumbnail_url
                 })

@@ -111,8 +111,12 @@
                             </span>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <button onclick="openFilterModal({{ campaign.id }}, '{{ campaign.name|replace("'", "\\'") }}', '{{ campaign.sync_filters|tojson|safe }}', {{ 'true' if campaign.is_synced else 'false' }})" 
-                                    class="text-indigo-600 hover:text-indigo-900 transition-colors">
+                            <button class="text-indigo-600 hover:text-indigo-900 transition-colors"
+                                    data-campaign-id="{{ campaign.id }}"
+                                    data-campaign-name="{{ campaign.name|e }}"
+                                    data-sync-filters="{{ campaign.sync_filters|tojson }}"
+                                    data-is-synced="{{ 'true' if campaign.is_synced else 'false' }}"
+                                    onclick="openFilterModalFromButton(this)">
                                 Configura
                             </button>
                         </td>
@@ -184,6 +188,15 @@
 </div>
 
 <script>
+function openFilterModalFromButton(btn) {
+    openFilterModal(
+        btn.dataset.campaignId,
+        btn.dataset.campaignName,
+        btn.dataset.syncFilters,
+        btn.dataset.isSynced === 'true'
+    );
+}
+
 function openFilterModal(campaignId, campaignName, filtersJson, isSynced) {
     document.getElementById('modalCampaignId').value = campaignId;
     document.getElementById('modalCampaignName').textContent = campaignName;

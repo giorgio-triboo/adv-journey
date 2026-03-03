@@ -1,10 +1,10 @@
 #!/bin/bash
-# Avvia lo stack cepu-lavorazioni sul server (dopo SSH).
+# Avvia lo stack adj-journey sul server (dopo SSH).
 # Esegui: sudo bash deploy/scripts/start-stack.sh
-# oppure: APP_DIR=/path/to/cepu-lavorazioni ./deploy/scripts/start-stack.sh
+# oppure: APP_DIR=/path/to/adj-journey ./deploy/scripts/start-stack.sh
 
 set -e
-APP_DIR="${APP_DIR:-/home/ec2-user/cepu-lavorazioni}"
+APP_DIR="${APP_DIR:-/home/ec2-user/adj-journey}"
 cd "$APP_DIR"
 
 if [[ ! -f .env ]]; then
@@ -21,7 +21,7 @@ fi
 
 mkdir -p deploy/nginx deploy/scripts
 
-echo "Avvio stack cepu-lavorazioni..."
+echo "Avvio stack adj-journey..."
 set -a
 source .env 2>/dev/null || true
 set +a
@@ -39,4 +39,4 @@ echo "=== Log nginx (ultime 15 righe) ==="
 docker compose $COMPOSE_OPTS logs --tail=15 nginx 2>/dev/null || true
 
 echo ""
-echo "App su http://localhost:80 - Adminer su http://localhost:18080"
+echo "App su http://localhost:3000 - Adminer su http://localhost:18080"

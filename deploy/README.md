@@ -75,5 +75,5 @@ Oppure modifica `deploy/nginx/upstream.conf` e `docker exec <nginx-container> ng
 ## Risorse (t4g.small)
 
 - Celery worker con `--concurrency=1` (Playwright in sequenza)
-- Solo Adminer (no db_viewer)
+- Solo Adminer
 - Consigliata **t4g.medium** per carichi più alti

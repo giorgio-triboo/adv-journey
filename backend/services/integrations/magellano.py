@@ -47,10 +47,10 @@ class MagellanoService:
             # Se è un ZIP, estrailo
             if file_path.endswith('.zip'):
                 password_used = self.generate_password(file_date)
-                logger.info(f"Tentativo estrazione ZIP: file={os.path.basename(file_path)}, data={file_date}, password={password_used}")
+                logger.info(f"Tentativo estrazione ZIP: file={os.path.basename(file_path)}, data={file_date}")
                 xls_path = self._extract_zip_with_password(file_path, temp_dir, file_date)
                 if not xls_path:
-                    raise Exception(f"Impossibile estrarre il file ZIP. Password tentata: {password_used} (formato: ddmmyyyyT-Direct). Verifica che la data fornita ({file_date}) corrisponda alla data usata per creare il file ZIP.")
+                    raise Exception(f"Impossibile estrarre il file ZIP (formato password: ddmmyyyyT-Direct). Verifica che la data fornita ({file_date}) corrisponda alla data usata per creare il file ZIP.")
                 extracted_files.append(xls_path)
             elif file_path.endswith(('.xls', '.xlsx', '.csv')):
                 xls_path = file_path
@@ -101,7 +101,7 @@ class MagellanoService:
         """Estrae un file ZIP con password basata sulla data fornita"""
         try:
             password = self.generate_password(file_date)
-            logger.info(f"Tentativo estrazione ZIP: file={os.path.basename(zip_path)}, data={file_date}, password={password}")
+            logger.info(f"Tentativo estrazione ZIP: file={os.path.basename(zip_path)}, data={file_date}")
             with zipfile.ZipFile(zip_path, 'r') as z:
                 z.extractall(extract_to, pwd=password.encode('utf-8'))
                 
@@ -117,12 +117,12 @@ class MagellanoService:
             return None
         except RuntimeError as e:
             if "Bad password" in str(e) or "Bad CRC" in str(e):
-                logger.error(f"Password errata per ZIP. Password tentata: {password} (data: {file_date})")
+                logger.error(f"Password errata per ZIP (data: {file_date})")
             else:
                 logger.error(f"Errore durante estrazione ZIP: {e}")
             return None
         except Exception as e:
-            logger.error(f"ZIP extraction failed: {e} (password tentata: {password})")
+            logger.error(f"ZIP extraction failed: {e}")
             return None
 
     def fetch_leads(self, start_date: date, end_date: date, campaigns: List[int]) -> List[Dict]:

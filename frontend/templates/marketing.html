@@ -67,11 +67,11 @@
         </form>
     </div>
 
-    <!-- Summary Cards -->
+    <!-- Summary Cards (bianche) -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <div class="glass-card p-6 flex items-center border-l-4 border-blue-400">
-            <div class="bg-blue-100/50 p-3 rounded-xl mr-4">
-                <svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="glass-card p-6 flex items-center bg-white border border-neutral-200">
+            <div class="p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                 </svg>
             </div>
@@ -80,9 +80,9 @@
                 <p class="text-2xl font-bold text-neutral-900" id="totalMagellanoEntrate">0</p>
             </div>
         </div>
-        <div class="glass-card p-6 flex items-center border-l-4 border-yellow-400">
-            <div class="bg-yellow-100/50 p-3 rounded-xl mr-4">
-                <svg class="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="glass-card p-6 flex items-center bg-white border border-neutral-200">
+            <div class="p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
                 </svg>
             </div>
@@ -91,9 +91,9 @@
                 <p class="text-2xl font-bold text-neutral-900" id="totalMagellanoInviate">0</p>
             </div>
         </div>
-        <div class="glass-card p-6 flex items-center border-l-4 border-orange-400">
-            <div class="bg-orange-100/50 p-3 rounded-xl mr-4">
-                <svg class="h-6 w-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="glass-card p-6 flex items-center bg-white border border-neutral-200">
+            <div class="p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                 </svg>
             </div>
@@ -102,9 +102,9 @@
                 <p class="text-2xl font-bold text-neutral-900" id="totalUlixeLavorazione">0</p>
             </div>
         </div>
-        <div class="glass-card p-6 flex items-center border-l-4 border-green-400">
-            <div class="bg-green-100/50 p-3 rounded-xl mr-4">
-                <svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="glass-card p-6 flex items-center bg-white border border-neutral-200">
+            <div class="p-3 rounded-xl mr-4">
+                <svg class="h-6 w-6 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                 </svg>
             </div>
@@ -132,8 +132,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const rangeInput = document.getElementById('marketingDateRange');
 
     if (hiddenFrom && hiddenTo && rangeInput && window.DateRangePicker && window.moment) {
-        const start = hiddenFrom.value ? moment(hiddenFrom.value, 'YYYY-MM-DD') : moment().subtract(29, 'days');
-        const end = hiddenTo.value ? moment(hiddenTo.value, 'YYYY-MM-DD') : moment();
+        const start = hiddenFrom.value ? moment(hiddenFrom.value, 'YYYY-MM-DD') : moment('2026-01-01');
+        const end = hiddenTo.value ? moment(hiddenTo.value, 'YYYY-MM-DD') : moment('2026-01-31');
 
         hiddenFrom.value = start.format('YYYY-MM-DD');
         hiddenTo.value = end.format('YYYY-MM-DD');
@@ -162,6 +162,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 'Ultimi 14 giorni': [moment().subtract(13, 'days'), moment()],
                 'Ultimi 28 giorni': [moment().subtract(27, 'days'), moment()],
                 'Ultimi 30 giorni': [moment().subtract(29, 'days'), moment()],
+                'Ultimi 60 giorni': [moment().subtract(59, 'days'), moment()],
+                'Gennaio 2026': [moment('2026-01-01'), moment('2026-01-31')],
                 'Questa settimana': [moment().startOf('week').add(1, 'days'), moment().endOf('week').add(1, 'days')],
                 'Settimana scorsa': [
                     moment().subtract(1, 'week').startOf('week').add(1, 'days'),
@@ -401,11 +403,12 @@ function createCampaignRow(campaign) {
     }
     console.log('Campaign CPL:', campaign.cpl_meta, 'Display:', cplDisplay, 'Total leads:', campaign.total_leads);
     
-    // Status badge
-    const isActive = campaign.status === 'ACTIVE';
-    const statusBadge = isActive 
-        ? '<span class="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">Attiva</span>'
-        : '<span class="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">Non attiva</span>';
+    // Status: pallino verde se attiva, grigio se non attiva
+    const isActive = (campaign.status || '').toUpperCase() === 'ACTIVE';
+    const statusLabel = campaign.status ? ` (${campaign.status})` : '';
+    const statusDot = isActive 
+        ? '<span class="inline-block w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" title="Attiva' + statusLabel + '"></span>'
+        : '<span class="inline-block w-2.5 h-2.5 rounded-full bg-gray-400 shrink-0" title="Non attiva' + statusLabel + '"></span>';
     
     row.innerHTML = `
         <div class="flex items-center justify-between p-4 hover:bg-neutral-50 cursor-pointer transition-colors" onclick="toggleCampaign(${campaign.id})">
@@ -414,11 +417,11 @@ function createCampaignRow(campaign) {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                 </svg>
                 <div class="flex-1">
-                    <div class="flex items-center gap-2">
-                        <div class="font-semibold text-neutral-900">${escapeHtml(campaign.name)}</div>
-                        ${statusBadge}
+                    <div class="font-semibold text-neutral-900">${escapeHtml(campaign.name)}</div>
+                    <div class="text-sm text-neutral-500 flex items-center gap-2">
+                        ${statusDot}
+                        Campagna
                     </div>
-                    <div class="text-sm text-neutral-500">Campagna</div>
                 </div>
             </div>
             <div class="flex items-center gap-8 text-sm">
@@ -437,7 +440,7 @@ function createCampaignRow(campaign) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Speso</div>
-                                <div class="font-semibold text-green-600">€${(campaign.spend || 0).toFixed(2).replace('.', ',')}</div>
+                                <div class="font-semibold text-neutral-900">€${(campaign.spend || 0).toFixed(2).replace('.', ',')}</div>
                             </div>
                         </div>
                     </div>
@@ -449,7 +452,7 @@ function createCampaignRow(campaign) {
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Entrate</div>
-                                <div class="font-semibold text-green-600">${campaign.magellano_entrate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${campaign.magellano_entrate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">CPL</div>
@@ -457,11 +460,11 @@ function createCampaignRow(campaign) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Scartate</div>
-                                <div class="font-semibold text-red-600">${campaign.magellano_scartate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${campaign.magellano_scartate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-red-600">${campaign.magellano_scarto_pct_ingresso !== undefined && campaign.magellano_scarto_pct_ingresso !== null ? campaign.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="font-semibold text-neutral-900">${campaign.magellano_scarto_pct_ingresso !== undefined && campaign.magellano_scarto_pct_ingresso !== null ? campaign.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
@@ -473,7 +476,7 @@ function createCampaignRow(campaign) {
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Inviate</div>
-                                <div class="font-semibold text-green-600">${campaign.magellano_inviate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${campaign.magellano_inviate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">CPL</div>
@@ -481,18 +484,25 @@ function createCampaignRow(campaign) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Rifiutate</div>
-                                <div class="font-semibold text-red-600">${campaign.magellano_rifiutate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${campaign.magellano_rifiutate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-red-600">${campaign.magellano_scarto_pct_uscita !== undefined && campaign.magellano_scarto_pct_uscita !== null ? campaign.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="font-semibold text-neutral-900">${campaign.magellano_scarto_pct_uscita !== undefined && campaign.magellano_scarto_pct_uscita !== null ? campaign.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
                 </div>
+                <!-- Margine % -->
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine %</div>
+                        <div class="font-semibold text-neutral-900">${campaign.margine_pct != null ? campaign.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                    </div>
+                </div>
                 <!-- Ulixe -->
                 <div class="flex items-center gap-4">
-                <div class="text-right">
+                    <div class="text-right">
                         <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ulixe</div>
                         <div class="flex items-center gap-3">
                             <div>
@@ -508,7 +518,7 @@ function createCampaignRow(campaign) {
                                 <div class="font-semibold text-neutral-900">${campaign.ulixe_chiusure || 0}</div>
                             </div>
                         </div>
-                </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -585,8 +595,14 @@ function displayAdsets(campaignId, adsets) {
 
 function createAdsetRow(campaignId, adset) {
     const row = document.createElement('div');
-    row.className = 'adset-row border-t border-neutral-200';
+    row.className = 'adset-row border-t border-neutral-200 bg-sky-50/60 hover:bg-sky-50';
     row.dataset.adsetId = adset.id;
+    
+    const isActive = (adset.status || '').toUpperCase() === 'ACTIVE';
+    const statusLabel = adset.status ? ` (${adset.status})` : '';
+    const statusDot = isActive
+        ? '<span class="inline-block w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" title="Attivo' + statusLabel + '"></span>'
+        : '<span class="inline-block w-2.5 h-2.5 rounded-full bg-gray-400 shrink-0" title="Non attivo' + statusLabel + '"></span>';
     
     // Format CPL Meta with comma as decimal separator
     let cplDisplay = '-';
@@ -599,14 +615,17 @@ function createAdsetRow(campaignId, adset) {
     }
     
     row.innerHTML = `
-        <div class="flex items-center justify-between p-4 hover:bg-neutral-50 cursor-pointer transition-colors" onclick="toggleAdset(${campaignId}, ${adset.id})">
+        <div class="flex items-center justify-between p-4 cursor-pointer transition-colors" onclick="toggleAdset(${campaignId}, ${adset.id})">
             <div class="flex items-center gap-3 flex-1">
                 <svg class="expand-icon w-5 h-5 text-neutral-400 transition-transform" id="icon-adset-${adset.id}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                 </svg>
                 <div class="flex-1">
                     <div class="font-medium text-neutral-800">${escapeHtml(adset.name)}</div>
-                    <div class="text-sm text-neutral-500">AdSet</div>
+                    <div class="text-sm text-neutral-500 flex items-center gap-2">
+                        ${statusDot}
+                        AdSet
+                    </div>
                 </div>
             </div>
             <div class="flex items-center gap-8 text-sm">
@@ -625,7 +644,7 @@ function createAdsetRow(campaignId, adset) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Speso</div>
-                                <div class="font-semibold text-green-600">€${(adset.spend || 0).toFixed(2).replace('.', ',')}</div>
+                                <div class="font-semibold text-neutral-900">€${(adset.spend || 0).toFixed(2).replace('.', ',')}</div>
                             </div>
                         </div>
                     </div>
@@ -637,7 +656,7 @@ function createAdsetRow(campaignId, adset) {
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Entrate</div>
-                                <div class="font-semibold text-green-600">${adset.magellano_entrate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_entrate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">CPL</div>
@@ -645,11 +664,11 @@ function createAdsetRow(campaignId, adset) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Scartate</div>
-                                <div class="font-semibold text-red-600">${adset.magellano_scartate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_scartate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-red-600">${adset.magellano_scarto_pct_ingresso !== undefined && adset.magellano_scarto_pct_ingresso !== null ? adset.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_scarto_pct_ingresso !== undefined && adset.magellano_scarto_pct_ingresso !== null ? adset.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
@@ -661,7 +680,7 @@ function createAdsetRow(campaignId, adset) {
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Inviate</div>
-                                <div class="font-semibold text-green-600">${adset.magellano_inviate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_inviate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">CPL</div>
@@ -669,18 +688,25 @@ function createAdsetRow(campaignId, adset) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Rifiutate</div>
-                                <div class="font-semibold text-red-600">${adset.magellano_rifiutate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_rifiutate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-red-600">${adset.magellano_scarto_pct_uscita !== undefined && adset.magellano_scarto_pct_uscita !== null ? adset.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_scarto_pct_uscita !== undefined && adset.magellano_scarto_pct_uscita !== null ? adset.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
                 </div>
+                <!-- Margine % -->
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine %</div>
+                        <div class="font-semibold text-neutral-900">${adset.margine_pct != null ? adset.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                    </div>
+                </div>
                 <!-- Ulixe -->
                 <div class="flex items-center gap-4">
-                <div class="text-right">
+                    <div class="text-right">
                         <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ulixe</div>
                         <div class="flex items-center gap-3">
                             <div>
@@ -696,11 +722,11 @@ function createAdsetRow(campaignId, adset) {
                                 <div class="font-semibold text-neutral-900">${adset.ulixe_chiusure || 0}</div>
                             </div>
                         </div>
-                </div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="ads-container hidden pl-8 bg-neutral-50/50" id="ads-adset-${adset.id}"></div>
+        <div class="ads-container hidden pl-8" id="ads-adset-${adset.id}"></div>
     `;
     
     return row;
@@ -773,7 +799,13 @@ function displayAds(adsetId, ads) {
 
 function createAdRow(ad) {
     const row = document.createElement('div');
-    row.className = 'ad-row border-t border-neutral-200';
+    row.className = 'ad-row border-t border-neutral-200 bg-amber-50/50 hover:bg-amber-50';
+    
+    const isActive = (ad.status || '').toUpperCase() === 'ACTIVE';
+    const statusLabel = ad.status ? ` (${ad.status})` : '';
+    const statusDot = isActive
+        ? '<span class="inline-block w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" title="Attiva' + statusLabel + '"></span>'
+        : '<span class="inline-block w-2.5 h-2.5 rounded-full bg-gray-400 shrink-0" title="Non attiva' + statusLabel + '"></span>';
     
     // Format CPL Meta with comma as decimal separator
     let cplDisplay = '-';
@@ -786,12 +818,15 @@ function createAdRow(ad) {
     }
     
     row.innerHTML = `
-        <div class="flex items-center justify-between p-4 hover:bg-neutral-50 transition-colors">
+        <div class="flex items-center justify-between p-4 transition-colors">
             <div class="flex items-center gap-3 flex-1 pl-8">
-                ${ad.creative_thumbnail_url ? `<img src="${ad.creative_thumbnail_url}" alt="Creative" class="w-16 h-16 object-cover rounded border border-neutral-200" onerror="this.style.display='none'">` : ''}
+                ${(ad.creative_id && ad.id) ? `<img src="/api/marketing/proxy-image?ad_id=${ad.id}" alt="Creative" class="w-16 h-16 object-cover rounded border border-neutral-200" onerror="this.style.display='none'">` : ''}
                 <div class="flex-1">
                     <div class="font-medium text-neutral-700">${escapeHtml(ad.name)}</div>
-                    <div class="text-sm text-neutral-500">Creatività</div>
+                    <div class="text-sm text-neutral-500 flex items-center gap-2">
+                        ${statusDot}
+                        Creatività
+                    </div>
                 </div>
             </div>
             <div class="flex items-center gap-8 text-sm">
@@ -810,7 +845,7 @@ function createAdRow(ad) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Speso</div>
-                                <div class="font-semibold text-green-600">€${(ad.spend || 0).toFixed(2).replace('.', ',')}</div>
+                                <div class="font-semibold text-neutral-900">€${(ad.spend || 0).toFixed(2).replace('.', ',')}</div>
                             </div>
                         </div>
                     </div>
@@ -822,7 +857,7 @@ function createAdRow(ad) {
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Entrate</div>
-                                <div class="font-semibold text-green-600">${ad.magellano_entrate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${ad.magellano_entrate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">CPL</div>
@@ -830,11 +865,11 @@ function createAdRow(ad) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Scartate</div>
-                                <div class="font-semibold text-red-600">${ad.magellano_scartate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${ad.magellano_scartate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-red-600">${ad.magellano_scarto_pct_ingresso !== undefined && ad.magellano_scarto_pct_ingresso !== null ? ad.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="font-semibold text-neutral-900">${ad.magellano_scarto_pct_ingresso !== undefined && ad.magellano_scarto_pct_ingresso !== null ? ad.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
@@ -846,7 +881,7 @@ function createAdRow(ad) {
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Inviate</div>
-                                <div class="font-semibold text-green-600">${ad.magellano_inviate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${ad.magellano_inviate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">CPL</div>
@@ -854,18 +889,25 @@ function createAdRow(ad) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Rifiutate</div>
-                                <div class="font-semibold text-red-600">${ad.magellano_rifiutate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${ad.magellano_rifiutate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-red-600">${ad.magellano_scarto_pct_uscita !== undefined && ad.magellano_scarto_pct_uscita !== null ? ad.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="font-semibold text-neutral-900">${ad.magellano_scarto_pct_uscita !== undefined && ad.magellano_scarto_pct_uscita !== null ? ad.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
                 </div>
+                <!-- Margine % -->
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine %</div>
+                        <div class="font-semibold text-neutral-900">${ad.margine_pct != null ? ad.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                    </div>
+                </div>
                 <!-- Ulixe -->
                 <div class="flex items-center gap-4">
-                <div class="text-right">
+                    <div class="text-right">
                         <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ulixe</div>
                         <div class="flex items-center gap-3">
                             <div>
@@ -881,7 +923,7 @@ function createAdRow(ad) {
                                 <div class="font-semibold text-neutral-900">${ad.ulixe_chiusure || 0}</div>
                             </div>
                         </div>
-                </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1110,7 +1152,13 @@ async function loadAdsDirectly(dateFrom, dateTo, accountId, status, campaignName
 // Versione di createAdsetRow senza expand (per visualizzazione diretta)
 function createAdsetRowDirectly(adset) {
     const row = document.createElement('div');
-    row.className = 'adset-row border-t border-neutral-200';
+    row.className = 'adset-row border-t border-neutral-200 bg-sky-50/60 hover:bg-sky-50';
+    
+    const isActive = (adset.status || '').toUpperCase() === 'ACTIVE';
+    const statusLabel = adset.status ? ` (${adset.status})` : '';
+    const statusDot = isActive
+        ? '<span class="inline-block w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" title="Attivo' + statusLabel + '"></span>'
+        : '<span class="inline-block w-2.5 h-2.5 rounded-full bg-gray-400 shrink-0" title="Non attivo' + statusLabel + '"></span>';
     
     let cplDisplay = '-';
     if (adset.cpl_meta !== undefined && adset.cpl_meta !== null) {
@@ -1122,11 +1170,14 @@ function createAdsetRowDirectly(adset) {
     }
     
     row.innerHTML = `
-        <div class="flex items-center justify-between p-4 hover:bg-neutral-50 transition-colors">
+        <div class="flex items-center justify-between p-4 transition-colors">
             <div class="flex items-center gap-3 flex-1">
                 <div class="flex-1">
                     <div class="font-medium text-neutral-800">${escapeHtml(adset.name)}</div>
-                    <div class="text-sm text-neutral-500">AdSet</div>
+                    <div class="text-sm text-neutral-500 flex items-center gap-2">
+                        ${statusDot}
+                        AdSet
+                    </div>
                 </div>
             </div>
             <div class="flex items-center gap-8 text-sm">
@@ -1145,7 +1196,7 @@ function createAdsetRowDirectly(adset) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Speso</div>
-                                <div class="font-semibold text-green-600">€${(adset.spend || 0).toFixed(2).replace('.', ',')}</div>
+                                <div class="font-semibold text-neutral-900">€${(adset.spend || 0).toFixed(2).replace('.', ',')}</div>
                             </div>
                         </div>
                     </div>
@@ -1157,7 +1208,7 @@ function createAdsetRowDirectly(adset) {
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Entrate</div>
-                                <div class="font-semibold text-green-600">${adset.magellano_entrate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_entrate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">CPL</div>
@@ -1165,11 +1216,11 @@ function createAdsetRowDirectly(adset) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Scartate</div>
-                                <div class="font-semibold text-red-600">${adset.magellano_scartate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_scartate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-red-600">${adset.magellano_scarto_pct_ingresso !== undefined && adset.magellano_scarto_pct_ingresso !== null ? adset.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_scarto_pct_ingresso !== undefined && adset.magellano_scarto_pct_ingresso !== null ? adset.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
@@ -1181,7 +1232,7 @@ function createAdsetRowDirectly(adset) {
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Inviate</div>
-                                <div class="font-semibold text-green-600">${adset.magellano_inviate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_inviate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">CPL</div>
@@ -1189,18 +1240,25 @@ function createAdsetRowDirectly(adset) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">Rifiutate</div>
-                                <div class="font-semibold text-red-600">${adset.magellano_rifiutate || 0}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_rifiutate || 0}</div>
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-red-600">${adset.magellano_scarto_pct_uscita !== undefined && adset.magellano_scarto_pct_uscita !== null ? adset.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="font-semibold text-neutral-900">${adset.magellano_scarto_pct_uscita !== undefined && adset.magellano_scarto_pct_uscita !== null ? adset.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
                 </div>
+                <!-- Margine % -->
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine %</div>
+                        <div class="font-semibold text-neutral-900">${adset.margine_pct != null ? adset.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                    </div>
+                </div>
                 <!-- Ulixe -->
                 <div class="flex items-center gap-4">
-                <div class="text-right">
+                    <div class="text-right">
                         <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ulixe</div>
                         <div class="flex items-center gap-3">
                             <div>
@@ -1216,7 +1274,7 @@ function createAdsetRowDirectly(adset) {
                                 <div class="font-semibold text-neutral-900">${adset.ulixe_chiusure || 0}</div>
                             </div>
                         </div>
-                </div>
+                    </div>
                 </div>
             </div>
         </div>

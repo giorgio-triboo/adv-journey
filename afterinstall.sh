@@ -1,5 +1,5 @@
 #!/bin/bash
-# AfterInstall: deploy cepu-lavorazioni (FastAPI + Celery).
+# AfterInstall: deploy adj-journey (FastAPI + Celery).
 # Build Docker, avvio stack, blue-green opzionale (zero downtime).
 # Esecuzione locale: APP_DIR=$(pwd) LOCAL_DEPLOY=1 ./afterinstall.sh
 
@@ -7,7 +7,7 @@ set -e
 
 echo "Starting afterinstall script..."
 
-APP_DIR="${APP_DIR:-/home/ec2-user/cepu-lavorazioni}"
+APP_DIR="${APP_DIR:-/home/ec2-user/adj-journey}"
 LOCAL_DEPLOY="${LOCAL_DEPLOY:-false}"
 cd "$APP_DIR"
 
@@ -17,6 +17,11 @@ if [ -n "$BLUE_GREEN" ]; then
 else
     USE_BLUE_GREEN="false"
     [ -f "$APP_DIR/deploy/docker-compose.bluegreen.yml" ] && USE_BLUE_GREEN="true"
+fi
+
+# Su server: ec2-user nel gruppo docker (docker senza sudo)
+if [ "$LOCAL_DEPLOY" != "1" ] && [ "$LOCAL_DEPLOY" != "true" ]; then
+    usermod -aG docker ec2-user 2>/dev/null || true
 fi
 
 # Comando Docker: su server con ec2-user, in locale diretto
@@ -62,7 +67,7 @@ echo "=========================================="
 
 # Senza blue-green: ferma solo app e worker
 if [ "$USE_BLUE_GREEN" != "true" ]; then
-    if $DOCKER_CMD ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "cepu-lavorazioni-backend(-blue|-green)?|.*backend-blue|.*backend-green"; then
+    if $DOCKER_CMD ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "adj-journey-backend(-blue|-green)?|.*backend-blue|.*backend-green"; then
         echo "Stopping existing application container(s)..."
         $COMPOSE_CMD $COMPOSE_FILES stop backend-blue backend-worker 2>/dev/null || true
         $COMPOSE_CMD $COMPOSE_FILES rm -f backend-blue backend-worker 2>/dev/null || true
@@ -75,7 +80,7 @@ if [ "$USE_BLUE_GREEN" = "true" ]; then
 fi
 
 # Assicura che db e redis siano in esecuzione
-if ! $DOCKER_CMD ps --format "{{.Names}}" 2>/dev/null | grep -qE "cepu-lavorazioni-db|.*-db-"; then
+if ! $DOCKER_CMD ps --format "{{.Names}}" 2>/dev/null | grep -qE "adj-journey-db|.*-db-"; then
     echo "Starting PostgreSQL and Redis..."
     $COMPOSE_CMD $COMPOSE_FILES up -d db redis
     echo "Waiting for PostgreSQL..."
@@ -94,7 +99,7 @@ else
 fi
 $DOCKER_CMD container prune -f 2>/dev/null || true
 if [ "$USE_BLUE_GREEN" != "true" ]; then
-    for img_id in $($DOCKER_CMD images -q cepu-lavorazioni-app:latest 2>/dev/null); do
+    for img_id in $($DOCKER_CMD images -q adj-journey-app:latest 2>/dev/null); do
         $DOCKER_CMD rmi -f "$img_id" 2>/dev/null || true
     done
 fi
@@ -108,7 +113,7 @@ done
 
 # Build immagine
 echo "Building Docker image..."
-$DOCKER_CMD build -t cepu-lavorazioni-app:latest -f deploy/Dockerfile "$APP_DIR"
+$DOCKER_CMD build -t adj-journey-app:latest -f deploy/Dockerfile "$APP_DIR"
 
 # Avvio container
 echo "Starting containers..."
@@ -180,5 +185,5 @@ echo "=========================================="
 if [ "$USE_BLUE_GREEN" = "true" ]; then
     echo "  • Blue-green: traffico su ${DEPLOYED_COLOR:-$CURRENT_COLOR}"
 fi
-echo "  • App su porta 80 (nginx)"
+echo "  • App su porta 3000 (nginx)"
 echo "  • Adminer su porta 18080"

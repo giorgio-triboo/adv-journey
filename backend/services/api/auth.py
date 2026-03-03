@@ -51,9 +51,8 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     Verifica che l'utente sia nella whitelist e crea la sessione.
     """
     try:
-        # Log dei parametri della richiesta per debug
         query_params = dict(request.query_params)
-        logger.info(f"Callback OAuth ricevuto - URL: {request.url}, Query params: {list(query_params.keys())}")
+        logger.info(f"Callback OAuth ricevuto - Query params keys: {list(query_params.keys())}")
         
         # Verifica se ci sono errori nei parametri della richiesta (da Google)
         if 'error' in query_params:
@@ -63,17 +62,16 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             return RedirectResponse(url=f'/?error=Errore OAuth: {error}')
         
         token = await oauth.google.authorize_access_token(request)
-        logger.info(f"Token OAuth ricevuto - chiavi disponibili: {list(token.keys())}")
         
         user_info = token.get('userinfo')
         
         if not user_info:
-            logger.warning(f"Callback OAuth: user_info non disponibile nel token. Token completo: {token}")
+            logger.warning("Callback OAuth: user_info non disponibile nel token")
             return RedirectResponse(url='/?error=Autenticazione fallita')
         
         email = user_info.get('email')
         if not email:
-            logger.warning(f"Callback OAuth: email non disponibile in user_info. User info: {user_info}")
+            logger.warning("Callback OAuth: email non disponibile in user_info")
             return RedirectResponse(url='/?error=Email non disponibile')
         
         logger.info(f"Callback OAuth: verifica utente con email {email}")
@@ -101,11 +99,6 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         
     except Exception as e:
         logger.error(f"Errore durante il callback OAuth: {type(e).__name__}: {str(e)}", exc_info=True)
-        # Log dei dettagli della richiesta per debug
-        try:
-            logger.error(f"Dettagli richiesta - URL: {request.url}, Query: {dict(request.query_params)}")
-        except:
-            pass
         return RedirectResponse(url='/?error=Errore durante autenticazione')
 
 @router.get("/api/auth/adminer-check")

@@ -8,6 +8,8 @@ from ..common import templates, require_super_admin
 
 router = APIRouter(include_in_schema=False)
 
+VALID_ROLES = {"viewer", "admin", "super-admin"}
+
 @router.get("/settings/platform/users")
 async def settings_platform_users(request: Request, db: Session = Depends(get_db)):
     """Gestione Utenti - Solo super-admin"""
@@ -41,6 +43,8 @@ async def add_platform_user(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     email = form.get("email")
     role = form.get("role", "viewer")
+    if role not in VALID_ROLES:
+        role = "viewer"
     if email:
         new_user = User(email=email, is_active=True, role=role)
         db.add(new_user)
@@ -57,13 +61,15 @@ async def update_platform_user_role(request: Request, db: Session = Depends(get_
     form = await request.form()
     user_id = form.get("user_id")
     new_role = form.get("role")
-    
+    if new_role not in VALID_ROLES:
+        return RedirectResponse(url='/settings/platform/users?error=ruolo_non_valido', status_code=303)
+
     target_user = db.query(User).filter(User.id == user_id).first()
     if target_user:
         # Prevent self-role modification
         if target_user.id == current_user.id:
             return RedirectResponse(url='/settings/platform/users', status_code=303)
-            
+
         target_user.role = new_role
         db.commit()
         
