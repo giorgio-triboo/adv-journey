@@ -40,7 +40,7 @@ async def add_platform_user(request: Request, db: Session = Depends(get_db)):
     if redirect:
         return redirect
     
-    form = await request.form()
+    form = getattr(request.state, "_parsed_form", None) or await request.form()
     email = form.get("email")
     role = form.get("role", "viewer")
     if role not in VALID_ROLES:
@@ -58,7 +58,7 @@ async def update_platform_user_role(request: Request, db: Session = Depends(get_
     if redirect:
         return redirect
     
-    form = await request.form()
+    form = getattr(request.state, "_parsed_form", None) or await request.form()
     user_id = form.get("user_id")
     new_role = form.get("role")
     if new_role not in VALID_ROLES:
@@ -82,7 +82,7 @@ async def delete_platform_user(request: Request, db: Session = Depends(get_db)):
     if redirect:
         return redirect
     
-    form = await request.form()
+    form = getattr(request.state, "_parsed_form", None) or await request.form()
     user_id = form.get("user_id")
     if user_id:
         # Prevent self-deletion
