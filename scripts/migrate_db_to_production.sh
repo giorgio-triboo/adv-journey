@@ -45,12 +45,14 @@ echo ""
 # 3. Restore in produzione
 echo "3. Restore in produzione (sostituisce dati esistenti)..."
 echo "   ATTENZIONE: i dati attuali in produzione saranno sostituiti."
-read -p "   Continuare? [y/N] " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[yY]$ ]]; then
-    echo "Operazione annullata."
-    rm -f "$DUMP_FILE"
-    exit 0
+if [[ "$1" != "-y" && "$1" != "--yes" ]]; then
+    read -p "   Continuare? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[yY]$ ]]; then
+        echo "Operazione annullata."
+        rm -f "$DUMP_FILE"
+        exit 0
+    fi
 fi
 
 # Restaura: ferma backend per evitare lock, restaura, riavvia
@@ -59,11 +61,13 @@ ssh "$PROD_HOST" 'cd /home/ec2-user/adj-journey && \
     sudo -u ec2-user docker compose -f deploy/docker-compose.prod.yml --profile green stop backend-blue backend-green backend-worker 2>/dev/null || true && \
     sleep 2 && \
     U=$(grep -E "^POSTGRES_USER=" .env 2>/dev/null | cut -d= -f2- || echo "user"); \
-    P=$(grep -E "^POSTGRES_PASSWORD=" .env 2>/dev/null | cut -d= -f2- || echo "password"); \
+    P=$(grep -E "^POSTGRES_PASSWORD=" .env 2>/dev/null | cut -d= -f2-); \
+    [ -z "$P" ] && P=$(grep DATABASE_URL .env 2>/dev/null | sed -n "s|.*://[^:]*:\([^@]*\)@.*|\1|p"); \
+    [ -z "$P" ] && P=password; \
     D=$(grep -E "^POSTGRES_DB=" .env 2>/dev/null | cut -d= -f2- || echo "cepudb"); \
     export PGPASSWORD="$P"; \
     echo "   Restore in corso..." && \
-    cat /tmp/'"$DUMP_FILE"' | docker exec -i adj-journey-db-1 psql -U "$U" -d "$D" --set ON_ERROR_STOP=on -q && \
+    cat /tmp/'"$DUMP_FILE"' | docker exec -i adj-journey-db-1 psql -h localhost -U "$U" -d "$D" --set ON_ERROR_STOP=on -q && \
     rm -f /tmp/'"$DUMP_FILE"' && \
     echo "   Riavviando backend..." && \
     sudo -u ec2-user docker compose -f deploy/docker-compose.prod.yml --profile green start backend-blue backend-green backend-worker && \
