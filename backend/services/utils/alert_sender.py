@@ -49,8 +49,7 @@ def send_sync_alert_if_needed(
             logger.warning(f"Configurazione alert per {sync_type} senza destinatari")
             return
         
-        # Invia email (passa db per usare configurazione SMTP dal database se disponibile)
-        email_service = EmailService(db=db)
+        email_service = EmailService()
         if not email_service.is_configured():
             logger.warning("SMTP non configurato. Alert non inviato.")
             return

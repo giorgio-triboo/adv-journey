@@ -1,5 +1,6 @@
 """
 Servizio per invio email di alert e notifiche.
+Usa configurazione SMTP da variabili d'ambiente (.env).
 """
 import smtplib
 from email.mime.text import MIMEText
@@ -12,37 +13,10 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 class EmailService:
-    """Servizio per invio email"""
-    
-    def __init__(self, db: Optional[object] = None):
-        """
-        Inizializza EmailService.
-        
-        Args:
-            db: Session database opzionale. Se fornito, carica configurazione SMTP dal database.
-                Altrimenti usa configurazione da settings (.env)
-        """
-        # Prova a caricare configurazione dal database se disponibile
-        if db:
-            try:
-                from models import SMTPConfig
-                from services.utils.crypto import decrypt_token
-                
-                smtp_config = db.query(SMTPConfig).filter(SMTPConfig.is_active == True).first()
-                if smtp_config:
-                    # Usa configurazione dal database
-                    self.smtp_host = decrypt_token(smtp_config.host) if smtp_config.host else None
-                    self.smtp_port = smtp_config.port or 587
-                    self.smtp_user = decrypt_token(smtp_config.user) if smtp_config.user else None
-                    self.smtp_password = decrypt_token(smtp_config.password) if smtp_config.password else None
-                    self.smtp_from = decrypt_token(smtp_config.from_email) if smtp_config.from_email else self.smtp_user
-                    self.use_tls = smtp_config.use_tls if smtp_config.use_tls is not None else True
-                    logger.info("EmailService: usando configurazione SMTP dal database")
-                    return
-            except Exception as e:
-                logger.warning(f"Errore caricamento SMTP config dal database: {e}. Uso configurazione da settings.")
-        
-        # Fallback a configurazione da settings
+    """Servizio per invio email - configurazione da .env"""
+
+    def __init__(self):
+        """Inizializza EmailService con configurazione da settings (.env)"""
         self.smtp_host = settings.SMTP_HOST
         self.smtp_port = settings.SMTP_PORT or 587
         self.smtp_user = settings.SMTP_USER

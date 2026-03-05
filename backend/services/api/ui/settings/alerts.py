@@ -117,7 +117,7 @@ async def test_alert_email(request: Request, db: Session = Depends(get_db)):
             return JSONResponse({"error": "Destinatari richiesti"}, status_code=400)
         
         from services.utils.email import EmailService
-        email_service = EmailService(db=db)
+        email_service = EmailService()
         
         if not email_service.is_configured():
             return JSONResponse({"error": "SMTP non configurato"}, status_code=400)
