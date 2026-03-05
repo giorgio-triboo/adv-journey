@@ -148,6 +148,7 @@ class CronJob(Base):
     day_of_month = Column(String, default='*')  # '*', '1-31'
     month = Column(String, default='*')  # '*', '1-12', 'jan-dec'
     description = Column(String, nullable=True)
+    config = Column(JSON, nullable=True)  # Job-specific config, es. magellano: {"managed_campaign_ids": [1,2,3]}
     created_at = Column(DateTime, default=now_rome)
     updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
 

@@ -124,7 +124,7 @@ async function testAlert(alertType) {
     try {
         const response = await fetch('/api/alerts/test', {
             method: 'POST',
-            headers: getCsrfHeaders(),
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 recipients: recipients
             })

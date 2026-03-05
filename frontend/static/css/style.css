@@ -108,11 +108,18 @@ body.login-body {
     padding-left: 2rem;
     max-height: 0;
     overflow: hidden;
-    transition: max-height 0.3s ease-out;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+        max-height 0.3s ease-out,
+        opacity 0.25s ease-out,
+        transform 0.25s ease-out;
 }
 
 .nav-submenu.open {
     max-height: 1000px;
+    opacity: 1;
+    transform: translateY(0);
 }
 
 .nav-submenu .nav-item {

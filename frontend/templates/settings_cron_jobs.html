@@ -45,7 +45,8 @@
                         'ulixe': 'bg-purple-100 text-purple-700',
                         'meta_marketing': 'bg-cyan-100 text-cyan-700',
                         'meta_conversion_marker': 'bg-pink-100 text-pink-700',
-                        'meta_conversion': 'bg-rose-100 text-rose-700'
+                        'meta_conversion': 'bg-rose-100 text-rose-700',
+                        'meta_campaigns_incremental': 'bg-amber-100 text-amber-700'
                     } %}
                     {% set type_color = type_colors.get(job_type, 'bg-neutral-100 text-neutral-700') %}
                     <tr class="hover:bg-neutral-50 transition-colors {% if not cron_job.enabled %}opacity-60{% endif %}">
@@ -148,7 +149,7 @@
             </div>
 
 <!-- Modale Modifica Cron Job -->
-<div id="editCronModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onclick="closeEditModalOnBackdrop(event)">
+<div id="editCronModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
     <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 transform transition-all" id="editModalContent" onclick="event.stopPropagation()">
         <div class="px-6 py-4 border-b border-neutral-200 flex items-center justify-between">
             <h3 class="text-lg font-semibold text-neutral-900" id="editModalTitle">Modifica Schedulazione</h3>
@@ -245,6 +246,20 @@
                     </div>
                 </div>
 
+                <!-- Campagne Magellano (solo per magellano_sync) -->
+                <div id="magellanoCampaignsSection" class="mb-6 hidden">
+                    <h4 class="text-sm font-semibold text-neutral-700 mb-3 flex items-center">
+                        <svg class="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                        </svg>
+                        Campagne da scaricare
+                    </h4>
+                    <p class="text-xs text-neutral-500 mb-2">Seleziona le campagne da sincronizzare. Se nessuna è selezionata, verranno scaricate tutte le campagne attive.</p>
+                    <div id="magellanoCampaignsList" class="space-y-2 max-h-48 overflow-y-auto border border-neutral-200 rounded-lg p-3 bg-neutral-50">
+                        <!-- Popolato via JS -->
+                    </div>
+                </div>
+
                 <!-- Prossima Esecuzione -->
                 <div class="mb-6 p-3 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border border-indigo-100">
                     <div class="flex items-center justify-between">
@@ -285,10 +300,20 @@ const cronJobsData = {
         day_of_week: "{{ cron_job.day_of_week }}",
         day_of_month: "{{ cron_job.day_of_month }}",
         month: "{{ cron_job.month }}",
-        description: "{{ cron_job.description|default('') }}"
+        description: "{{ cron_job.description|default('') }}",
+        config: {{ (cron_job.config | tojson) if cron_job.config else '{}' | safe }}
     }{% if not loop.last %},{% endif %}
     {% endfor %}
 };
+
+const managedCampaigns = [
+    {% for c in managed_campaigns %}
+    {
+        id: {{ c.id }},
+        label: "{{ (c.magellano_ids or []) | first | e }}"
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+];
 
 function openEditModal(jobId) {
     const job = cronJobsData[jobId];
@@ -302,6 +327,22 @@ function openEditModal(jobId) {
     document.getElementById('editDayOfMonth').value = job.day_of_month;
     document.getElementById('editMonth').value = job.month;
     document.getElementById('editModalTitle').textContent = `Modifica: ${job.job_name.replace(/_/g, ' ')}`;
+
+    // Sezione campagne Magellano (solo per magellano_sync)
+    const campaignsSection = document.getElementById('magellanoCampaignsSection');
+    if (job.job_type === 'magellano') {
+        campaignsSection.classList.remove('hidden');
+        const listEl = document.getElementById('magellanoCampaignsList');
+        const selectedIds = (job.config && job.config.managed_campaign_ids) || [];
+        listEl.innerHTML = managedCampaigns.length ? managedCampaigns.map(c => `
+            <label class="flex items-center gap-2 cursor-pointer hover:bg-neutral-100 rounded px-2 py-1">
+                <input type="checkbox" class="magellano-campaign-cb rounded border-neutral-300" value="${c.id}" ${selectedIds.includes(c.id) ? 'checked' : ''}>
+                <span class="text-sm">${escapeHtml(c.label)}</span>
+            </label>
+        `).join('') : '<p class="text-sm text-neutral-500">Nessuna campagna attiva configurata.</p>';
+    } else {
+        campaignsSection.classList.add('hidden');
+    }
 
     // Calcola prossima esecuzione
     updateNextRunInModal(job.hour, job.minute, job.day_of_week, job.day_of_month, job.month);
@@ -334,12 +375,6 @@ function closeEditModal() {
     setTimeout(() => {
         modal.classList.add('hidden');
     }, 200);
-}
-
-function closeEditModalOnBackdrop(event) {
-    if (event.target.id === 'editCronModal') {
-        closeEditModal();
-    }
 }
 
 function updateNextRunInModal(hour, minute, dayOfWeek, dayOfMonth, month) {
@@ -392,16 +427,33 @@ function updateNextRunInModal(hour, minute, dayOfWeek, dayOfMonth, month) {
     }
 }
 
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function getMagellanoConfigForJob(jobId) {
+    const job = cronJobsData[jobId];
+    if (job && job.job_type !== 'magellano') return job.config || {};
+    const checkboxes = document.querySelectorAll('.magellano-campaign-cb:checked');
+    const ids = Array.from(checkboxes).map(cb => parseInt(cb.value, 10));
+    return { managed_campaign_ids: ids };
+}
+
 async function saveCronJobFromModal(event) {
     event.preventDefault();
     
     const jobId = parseInt(document.getElementById('editJobId').value);
+    const job = cronJobsData[jobId];
     const enabled = document.getElementById(`enabled_${jobId}`).checked;
     const hour = parseInt(document.getElementById('editHour').value) || 0;
     const minute = parseInt(document.getElementById('editMinute').value) || 0;
     const dayOfWeek = document.getElementById('editDayOfWeek').value;
     const dayOfMonth = document.getElementById('editDayOfMonth').value || '*';
     const month = document.getElementById('editMonth').value || '*';
+    
+    const config = job.job_type === 'magellano' ? getMagellanoConfigForJob(jobId) : (job.config || {});
 
     try {
         const response = await fetch('/api/cron-jobs', {
@@ -416,7 +468,8 @@ async function saveCronJobFromModal(event) {
                 minute: minute,
                 day_of_week: dayOfWeek,
                 day_of_month: dayOfMonth,
-                month: month
+                month: month,
+                config: config
             })
         });
 
@@ -432,6 +485,7 @@ async function saveCronJobFromModal(event) {
             cronJobsData[jobId].day_of_month = dayOfMonth;
             cronJobsData[jobId].month = month;
             cronJobsData[jobId].enabled = enabled;
+            cronJobsData[jobId].config = config;
             
             // Aggiorna la tabella
             updateTableRow(jobId);
@@ -477,6 +531,7 @@ function updateTableRow(jobId) {
 async function toggleJob(jobId) {
     const enabled = document.getElementById(`enabled_${jobId}`).checked;
     const job = cronJobsData[jobId];
+    const config = job.config || {};
     
     try {
         const response = await fetch('/api/cron-jobs', {
@@ -491,7 +546,8 @@ async function toggleJob(jobId) {
                 minute: job.minute,
                 day_of_week: job.day_of_week,
                 day_of_month: job.day_of_month,
-                month: job.month
+                month: job.month,
+                config: config
             })
         });
 

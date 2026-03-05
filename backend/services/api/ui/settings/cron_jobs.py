@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from database import get_db
-from models import CronJob
+from models import CronJob, ManagedCampaign
 from datetime import datetime
 import logging
 from ..common import templates, require_super_admin
@@ -118,11 +118,17 @@ async def settings_cron_jobs(request: Request, db: Session = Depends(get_db)):
         # Ricarica tutti i cron jobs dopo il commit
         cron_jobs = db.query(CronJob).order_by(CronJob.job_name).all()
     
+    # Campagne attive per selector magellano_sync
+    managed_campaigns = db.query(ManagedCampaign).filter(
+        ManagedCampaign.is_active == True
+    ).order_by(ManagedCampaign.cliente_name).all()
+    
     return templates.TemplateResponse("settings_cron_jobs.html", {
         "request": request,
         "title": "Gestione Cron Jobs",
         "user": current_user,
         "cron_jobs": cron_jobs,
+        "managed_campaigns": managed_campaigns,
         "active_page": "cron_jobs"
     })
 
@@ -152,6 +158,10 @@ async def save_cron_job(request: Request, db: Session = Depends(get_db)):
         cron_job.day_of_month = data.get("day_of_month", cron_job.day_of_month) or "*"
         cron_job.month = data.get("month", cron_job.month) or "*"
         cron_job.updated_at = datetime.utcnow()
+        
+        # Config job-specifica (es. magellano: managed_campaign_ids)
+        if "config" in data:
+            cron_job.config = data["config"]
         
         db.commit()
         

@@ -12,7 +12,7 @@ EXEMPT_PATHS = {
     "/settings/meta-accounts/oauth/start", "/settings/meta-accounts/oauth/callback",
     "/health",
 }
-EXEMPT_PREFIXES = ("/static/", "/api/auth/")
+EXEMPT_PREFIXES = ("/static/", "/api/auth/", "/adminer")
 
 
 def _is_exempt(path: str) -> bool:

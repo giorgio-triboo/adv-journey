@@ -288,7 +288,7 @@
     </main>
 
     <!-- Custom Modal System -->
-    <div id="customModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onclick="closeCustomModalOnBackdrop(event)">
+    <div id="customModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 transform transition-all" id="modalContent">
             <div class="px-6 py-4 border-b border-neutral-200 flex items-center justify-between">
                 <h3 class="text-lg font-semibold text-neutral-900" id="modalTitle">Titolo</h3>
@@ -342,19 +342,42 @@
             };
         })();
 
+        let submenuAnimationTimeout = null;
         function toggleSubmenu(id) {
             const menu = document.getElementById(id);
-            const wasOpen = menu.classList.contains('open');
+            if (!menu) return;
 
-            // Chiudi tutti i submenu aperti
-            document.querySelectorAll('.nav-submenu').forEach(submenu => {
-                submenu.classList.remove('open');
+            const allSubmenus = document.querySelectorAll('.nav-submenu');
+            const isAlreadyOpen = menu.classList.contains('open');
+
+            // Se clicchi sullo stesso menu aperto, semplicemente lo chiudiamo
+            if (isAlreadyOpen) {
+                menu.classList.remove('open');
+                return;
+            }
+
+            // Chiudi eventuali altri submenu aperti
+            const othersOpen = [];
+            allSubmenus.forEach((submenu) => {
+                if (submenu.id !== id && submenu.classList.contains('open')) {
+                    submenu.classList.remove('open');
+                    othersOpen.push(submenu);
+                }
             });
 
-            // Se il menu cliccato era chiuso, aprilo (solo 1 menu aperto per volta)
-            if (!wasOpen) {
+            // Se non c'era nessun altro aperto, apri subito questo
+            if (othersOpen.length === 0) {
                 menu.classList.add('open');
+                return;
             }
+
+            // Altrimenti aspetta che l'animazione di chiusura finisca
+            if (submenuAnimationTimeout) {
+                clearTimeout(submenuAnimationTimeout);
+            }
+            submenuAnimationTimeout = setTimeout(() => {
+                menu.classList.add('open');
+            }, 300); // deve combaciare con la transition CSS (0.3s)
         }
 
         // Custom Modal System
@@ -435,16 +458,6 @@
             setTimeout(() => {
                 modal.classList.add('hidden');
             }, 200);
-        }
-
-        function closeCustomModalOnBackdrop(event) {
-            if (event.target.id === 'customModal') {
-                if (customModalType === 'alert') {
-                    handleCustomModalConfirm();
-                } else {
-                    handleCustomModalCancel();
-                }
-            }
         }
 
         // Override native alert and confirm

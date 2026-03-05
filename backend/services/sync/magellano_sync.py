@@ -13,9 +13,14 @@ import logging
 
 logger = logging.getLogger('services.sync')
 
-def run(db: Session = None) -> dict:
+def run(db: Session = None, managed_campaign_ids: list = None) -> dict:
     """
     Esegue il job di sincronizzazione Magellano.
+    
+    Args:
+        db: Sessione DB
+        managed_campaign_ids: Lista di ID ManagedCampaign da sincronizzare.
+            Se None o vuota, usa tutte le campagne attive.
     
     Returns: dict con statistiche {"new": int, "updated": int, "errors": int}
     """
@@ -29,7 +34,10 @@ def run(db: Session = None) -> dict:
     
     try:
         from models import ManagedCampaign
-        managed_campaigns = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True).all()
+        query = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True)
+        if managed_campaign_ids:
+            query = query.filter(ManagedCampaign.id.in_(managed_campaign_ids))
+        managed_campaigns = query.all()
         
         # Estrai tutti gli ID Magellano dagli array JSON
         campaign_ids = []

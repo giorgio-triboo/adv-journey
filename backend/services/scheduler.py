@@ -53,9 +53,22 @@ def _run_meta_campaigns_incremental():
     meta_campaigns_incremental_task.delay()
 
 
+def _run_magellano_sync():
+    """Esegue sync Magellano con config da CronJob (quale campagne scaricare)."""
+    db = SessionLocal()
+    try:
+        cron_job = db.query(CronJob).filter(CronJob.job_name == "magellano_sync").first()
+        config = (cron_job.config or {}) if cron_job else {}
+        campaign_ids = config.get("managed_campaign_ids")  # Lista di ManagedCampaign.id
+        magellano_sync_job(db=db, managed_campaign_ids=campaign_ids if campaign_ids else None)
+    finally:
+        db.close()
+
+
 # Mappa job_type -> callable (usata quando lo scheduler sarà riattivato per inviare job a Celery)
 CRON_JOB_HANDLERS = {
     "meta_campaigns_incremental": _run_meta_campaigns_incremental,
+    "magellano": _run_magellano_sync,
 }
 
 
