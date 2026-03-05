@@ -11,8 +11,10 @@ services:
     ports:
       - "3000:80"
     volumes:
-      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./deploy/nginx/upstream.conf:/etc/nginx/conf.d/upstream.conf:ro
+      # NOTE: questo compose file vive già in deploy/, quindi qui usiamo ./nginx/*
+      # Il path effettivo sul server sarà /home/ec2-user/insight-magellano/deploy/nginx/*
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/upstream.conf:/etc/nginx/conf.d/upstream.conf:ro
       - nginx_cache:/var/cache/nginx
     depends_on:
       - backend-blue

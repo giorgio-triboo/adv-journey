@@ -2,6 +2,7 @@
 from datetime import datetime, date, timedelta
 from celery_app import celery_app
 from database import SessionLocal
+from models import SyncLog
 from services.sync.meta_marketing_sync import run_manual_sync
 from services.sync.meta_campaigns_sync import run_bootstrap, run_incremental
 
@@ -13,7 +14,31 @@ def meta_manual_sync_task(account_id: str, start_date_str: str, end_date_str: st
     end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
     db = SessionLocal()
     try:
-        return run_manual_sync(db, account_id, start_date, end_date, metrics)
+        stats = run_manual_sync(db, account_id, start_date, end_date, metrics)
+
+        # Registra la sync manuale Meta marketing nel riepilogo ingestion
+        try:
+            sync_log = SyncLog(
+                status="SUCCESS",
+                details={
+                    "meta_marketing": {
+                        "type": "manual",
+                        "account_id": account_id,
+                        "start_date": start_date_str,
+                        "end_date": end_date_str,
+                        "campaigns_synced": stats.get("campaigns_synced", 0),
+                        "errors": stats.get("errors", 0),
+                    }
+                },
+            )
+            db.add(sync_log)
+            db.commit()
+        except Exception as log_exc:
+            import logging
+            logger = logging.getLogger("tasks.meta")
+            logger.error(f"Errore salvataggio SyncLog per Meta manual sync: {log_exc}", exc_info=True)
+
+        return stats
     finally:
         db.close()
 

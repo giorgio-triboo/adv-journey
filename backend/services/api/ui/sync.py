@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, Depends, UploadFile, File, Form
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Lead, StatusCategory, LeadHistory, MetaAccount, User
+from models import Lead, StatusCategory, LeadHistory, MetaAccount, User, SyncLog
 from services.utils.crypto import hash_email_for_meta, hash_phone_for_meta
 from datetime import datetime, timedelta, date
 from typing import List
@@ -464,6 +464,28 @@ async def magellano_upload(
             f"Magellano upload completed: {imported_count} imported, "
             f"{updated_count} updated, {len(leads_data)} total"
         )
+
+        # Registra nel riepilogo ingestion come sync manuale Magellano
+        try:
+            sync_log = SyncLog(
+                status="SUCCESS",
+                details={
+                    "magellano": {
+                        "type": "manual_upload",
+                        "file_name": file.filename,
+                        "campaign_id": campaign_id_int,
+                        "imported": imported_count,
+                        "updated": updated_count,
+                        "total": len(leads_data),
+                        "errors": 0,
+                    }
+                },
+            )
+            db.add(sync_log)
+            db.commit()
+        except Exception as log_exc:
+            # Non bloccare il flusso utente per errori di logging
+            logger.error(f"Errore salvataggio SyncLog per upload Magellano: {log_exc}", exc_info=True)
         
         return JSONResponse({
             "success": True,
@@ -476,6 +498,26 @@ async def magellano_upload(
     except Exception as e:
         logger.error(f"Errore upload Magellano: {e}")
         db.rollback()
+
+        # Prova a registrare comunque il fallimento nel riepilogo ingestion
+        try:
+            error_details = {
+                "error": str(e),
+                "stats": {
+                    "magellano": {
+                        "type": "manual_upload",
+                        "file_name": getattr(file, "filename", None),
+                        "campaign_id": campaign_id_int,
+                        "errors": 1,
+                    }
+                },
+            }
+            sync_log = SyncLog(status="ERROR", details=error_details)
+            db.add(sync_log)
+            db.commit()
+        except Exception as log_exc:
+            logger.error(f"Errore salvataggio SyncLog per upload Magellano fallito: {log_exc}", exc_info=True)
+
         return JSONResponse({"error": f"Errore durante il processamento: {str(e)}"}, status_code=500)
     
     finally:
@@ -769,6 +811,26 @@ async def api_ulixe_sync(request: Request, db: Session = Depends(get_db)):
                 })
         
         db.commit()
+
+        # Registra la sync manuale Ulixe nel riepilogo ingestion
+        try:
+            sync_log = SyncLog(
+                status="SUCCESS",
+                details={
+                    "ulixe": {
+                        "type": "manual_api",
+                        "user_ids_count": len(user_ids),
+                        "checked": stats.get("checked", 0),
+                        "updated": stats.get("updated", 0),
+                        "errors": stats.get("errors", 0),
+                        "not_found": stats.get("not_found", 0),
+                    }
+                },
+            )
+            db.add(sync_log)
+            db.commit()
+        except Exception as log_exc:
+            logger.error(f"Errore salvataggio SyncLog per sync Ulixe manuale: {log_exc}", exc_info=True)
         
         return JSONResponse({
             "success": True,
@@ -785,6 +847,24 @@ async def api_ulixe_sync(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error in Ulixe sync: {e}", exc_info=True)
         db.rollback()
+
+        # Prova a registrare il fallimento nel riepilogo ingestion
+        try:
+            error_details = {
+                "error": str(e),
+                "stats": {
+                    "ulixe": {
+                        "type": "manual_api",
+                        "errors": 1,
+                    }
+                },
+            }
+            sync_log = SyncLog(status="ERROR", details=error_details)
+            db.add(sync_log)
+            db.commit()
+        except Exception as log_exc:
+            logger.error(f"Errore salvataggio SyncLog per sync Ulixe fallita: {log_exc}", exc_info=True)
+
         return JSONResponse({
             "success": False,
             "error": f"Errore: {str(e)}"
