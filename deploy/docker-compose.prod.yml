@@ -37,6 +37,12 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - APP_BASE_URL=${APP_BASE_URL}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
+      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - TZ=Europe/Rome
     depends_on:
@@ -69,6 +75,12 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - APP_BASE_URL=${APP_BASE_URL}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
+      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - TZ=Europe/Rome
     depends_on:
@@ -89,6 +101,20 @@ services:
     restart: always
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - MAGELLANO_USER=${MAGELLANO_USER:-}
+      - MAGELLANO_PASSWORD=${MAGELLANO_PASSWORD:-}
+      - ULIXE_USER=${ULIXE_USER:-}
+      - ULIXE_PASSWORD=${ULIXE_PASSWORD:-}
+      - ULIXE_WSDL=${ULIXE_WSDL:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
+      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - TZ=Europe/Rome
     depends_on:

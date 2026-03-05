@@ -1,7 +1,7 @@
 """Dashboard e Lavorazioni views"""
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 from sqlalchemy import func, case, and_, or_
 from database import get_db
 from models import Lead, StatusCategory, TrafficPlatform, MsgTrafficMapping, ManagedCampaign, MetaAd, MetaMarketingData
@@ -106,23 +106,26 @@ def _lavorazioni_filters(request, db):
 
 
 def _lavorazioni_common(request, db, filters):
-    """Dati comuni per le viste lavorazioni"""
+    """Dati comuni per le viste lavorazioni - 1 query invece di 5 per stats"""
     base_filters = filters['base_filters']
-
-    def get_base_query():
-        return db.query(Lead).filter(*base_filters)
-
-    total_leads = get_base_query().count()
+    base_q = db.query(Lead).filter(*base_filters)
+    row = base_q.with_entities(
+        func.count(Lead.id).label('total'),
+        func.sum(case((Lead.status_category == StatusCategory.IN_LAVORAZIONE, 1), else_=0)).label('in_lavorazione'),
+        func.sum(case((Lead.status_category == StatusCategory.RIFIUTATO, 1), else_=0)).label('rifiutati'),
+        func.sum(case((Lead.status_category == StatusCategory.CRM, 1), else_=0)).label('crm'),
+        func.sum(case((Lead.status_category == StatusCategory.FINALE, 1), else_=0)).label('finale'),
+    ).first()
     stats = {
-        'total': total_leads,
-        'in_lavorazione': get_base_query().filter(Lead.status_category == StatusCategory.IN_LAVORAZIONE).count(),
-        'rifiutati': get_base_query().filter(Lead.status_category == StatusCategory.RIFIUTATO).count(),
-        'crm': get_base_query().filter(Lead.status_category == StatusCategory.CRM).count(),
-        'finale': get_base_query().filter(Lead.status_category == StatusCategory.FINALE).count()
+        'total': row.total or 0,
+        'in_lavorazione': row.in_lavorazione or 0,
+        'rifiutati': row.rifiutati or 0,
+        'crm': row.crm or 0,
+        'finale': row.finale or 0,
     }
     stats['conversion_rate'] = (stats['finale'] / stats['total'] * 100) if stats['total'] > 0 else 0
 
-    lavorazioni_base_query = get_base_query().filter(
+    lavorazioni_base_query = db.query(Lead).filter(*base_filters).filter(
         Lead.msg_id.isnot(None),
         Lead.msg_id != '',
         Lead.current_status.isnot(None)
@@ -150,14 +153,15 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse(url='/')
 
-    total_leads = db.query(Lead).count()
-    in_processing = db.query(Lead).filter(Lead.status_category == StatusCategory.IN_LAVORAZIONE).count()
-    converted = db.query(Lead).filter(Lead.status_category == StatusCategory.FINALE).count()
-
+    row = db.query(Lead).with_entities(
+        func.count(Lead.id).label('total'),
+        func.sum(case((Lead.status_category == StatusCategory.IN_LAVORAZIONE, 1), else_=0)).label('in_processing'),
+        func.sum(case((Lead.status_category == StatusCategory.FINALE, 1), else_=0)).label('converted'),
+    ).first()
     stats = {
-        "total_leads": total_leads,
-        "in_processing": in_processing,
-        "converted": converted
+        "total_leads": row.total or 0,
+        "in_processing": row.in_processing or 0,
+        "converted": row.converted or 0,
     }
 
     managed_campaigns = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True).all()
@@ -342,8 +346,15 @@ async def lavorazioni_canali(request: Request, db: Session = Depends(get_db)):
         'facebook': 'meta', 'instagram': 'meta', 'messenger': 'meta', 'audience network': 'meta'
     }
 
-    # Lead nel filtro con msg_id
-    leads = common['lavorazioni_base_query'].all()
+    # Solo colonne necessarie per aggregazione (evita caricare 20+ colonne)
+    leads = (
+        common['lavorazioni_base_query']
+        .options(load_only(
+            Lead.msg_id, Lead.magellano_campaign_id, Lead.magellano_status,
+            Lead.status_category, Lead.meta_ad_id, Lead.facebook_piattaforma
+        ))
+        .all()
+    )
 
     # Aggregazione per piattaforma (slug) - colonne come marketing/analysis
     platform_stats = {}
