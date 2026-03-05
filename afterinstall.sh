@@ -44,10 +44,12 @@ fi
 [ -n "$DOCKER_RUN" ] && COMPOSE_CMD="$DOCKER_RUN $DOCKER_COMPOSE_CMD" || COMPOSE_CMD="$DOCKER_COMPOSE_CMD"
 [ -n "$DOCKER_RUN" ] && DOCKER_CMD="$DOCKER_RUN docker" || DOCKER_CMD="docker"
 
-# Compose: base prod + blue-green se attivo
+# Compose: base prod + blue-green se attivo (--profile green per includere backend-green)
 COMPOSE_FILES="--project-directory $APP_DIR -f deploy/docker-compose.prod.yml"
+PROFILE_OPT=""
 if [ "$USE_BLUE_GREEN" = "true" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f deploy/docker-compose.bluegreen.yml"
+    PROFILE_OPT="--profile green"
     echo "✓ Blue-green deploy attivo (zero downtime)"
 fi
 
@@ -69,20 +71,20 @@ echo "=========================================="
 if [ "$USE_BLUE_GREEN" != "true" ]; then
     if $DOCKER_CMD ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "adj-journey-backend(-blue|-green)?|.*backend-blue|.*backend-green"; then
         echo "Stopping existing application container(s)..."
-        $COMPOSE_CMD $COMPOSE_FILES stop backend-blue backend-worker 2>/dev/null || true
-        $COMPOSE_CMD $COMPOSE_FILES rm -f backend-blue backend-worker 2>/dev/null || true
+        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT stop backend-blue backend-worker 2>/dev/null || true
+        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT rm -f backend-blue backend-worker 2>/dev/null || true
     fi
 fi
 
 # Con blue-green: ferma solo worker durante deploy
 if [ "$USE_BLUE_GREEN" = "true" ]; then
-    $COMPOSE_CMD $COMPOSE_FILES stop backend-worker 2>/dev/null || true
+    $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT stop backend-worker 2>/dev/null || true
 fi
 
 # Assicura che db e redis siano in esecuzione
 if ! $DOCKER_CMD ps --format "{{.Names}}" 2>/dev/null | grep -qE "adj-journey-db|.*-db-"; then
     echo "Starting PostgreSQL and Redis..."
-    $COMPOSE_CMD $COMPOSE_FILES up -d db redis
+    $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT up -d db redis
     echo "Waiting for PostgreSQL..."
     sleep 15
 fi
@@ -142,7 +144,7 @@ if [ "$USE_BLUE_GREEN" = "true" ]; then
     GREEN_RUNNING=$($DOCKER_CMD ps -q -f name=backend-green 2>/dev/null | wc -l)
     if [ "$BLUE_RUNNING" -eq 0 ] && [ "$GREEN_RUNNING" -eq 0 ]; then
         echo "Primo deploy blue-green: avvio tutti i container..."
-        $COMPOSE_CMD $COMPOSE_FILES up -d
+        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT up -d
         sleep 10
         TARGET_CONTAINER=$($DOCKER_CMD ps -q -f name=backend-blue | head -1)
         [ -z "$TARGET_CONTAINER" ] && TARGET_CONTAINER=$($DOCKER_CMD ps -q -f name=backend-green | head -1)
@@ -159,7 +161,7 @@ if [ "$USE_BLUE_GREEN" = "true" ]; then
         "$APP_DIR/deploy/scripts/switch-upstream.sh" "$INACTIVE_COLOR" "$APP_DIR"
         TARGET_CONTAINER=$($DOCKER_CMD ps -q -f name=backend-$INACTIVE_COLOR | head -1)
 
-        $COMPOSE_CMD $COMPOSE_FILES up -d --force-recreate "backend-$CURRENT_COLOR" backend-worker 2>/dev/null || true
+        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT up -d --force-recreate "backend-$CURRENT_COLOR" backend-worker 2>/dev/null || true
         sleep 5
         DEPLOYED_COLOR="$INACTIVE_COLOR"
     fi

@@ -33,11 +33,14 @@ async def login(request: Request):
     Il redirect_uri deve essere whitelisted nel Google Cloud Console.
     """
     try:
-        # Costruisci l'URL di callback basato sulla richiesta corrente
-        # Usa l'URL base della richiesta per costruire il redirect_uri
-        base_url = str(request.base_url).rstrip('/')
+        # Costruisci l'URL di callback. In produzione usa APP_BASE_URL per evitare
+        # redirect_uri_mismatch quando il proxy restituisce http:// o host interno.
+        if settings.APP_BASE_URL:
+            base_url = settings.APP_BASE_URL.rstrip('/')
+        else:
+            base_url = str(request.base_url).rstrip('/')
         redirect_uri = f"{base_url}/auth"
-        
+
         logger.info(f"Avvio login OAuth - redirect_uri: {redirect_uri}")
         return await oauth.google.authorize_redirect(request, redirect_uri)
     except Exception as e:
