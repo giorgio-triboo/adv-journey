@@ -14,7 +14,8 @@ def magellano_sync_task(campaigns: list, start_date_str: str, end_date_str: str,
     try:
         from services.api.ui.sync import run_magellano_sync
 
-        # Se è stato creato un IngestionJob associato, segna come RUNNING
+        # Se è stato creato un IngestionJob associato, segna come RUNNING.
+        # Se non esiste, creane uno al volo (es. cron interno).
         job = None
         if job_id:
             job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
@@ -22,6 +23,19 @@ def magellano_sync_task(campaigns: list, start_date_str: str, end_date_str: str,
                 job.status = "RUNNING"
                 job.started_at = datetime.utcnow()
                 db.commit()
+        else:
+            job = IngestionJob(
+                job_type="magellano",
+                status="RUNNING",
+                params={
+                    "source": "unknown",
+                    "campaigns": campaigns,
+                    "start_date": start_date_str,
+                    "end_date": end_date_str,
+                },
+            )
+            db.add(job)
+            db.commit()
 
         try:
             run_magellano_sync(db, campaigns, start_date, end_date)

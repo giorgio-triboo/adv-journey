@@ -333,9 +333,32 @@ async def trigger_full_sync(request: Request):
     user = request.session.get('user')
     if not user:
         return RedirectResponse(url='/')
+
     from tasks.sync_pipeline import run_full_sync_task
-    run_full_sync_task.delay()
-    return RedirectResponse(url='/dashboard?sync_started=true', status_code=303)
+    from database import SessionLocal
+    from models import IngestionJob
+
+    # Crea un job di ingestion per la full pipeline
+    db = SessionLocal()
+    try:
+        job = IngestionJob(
+            job_type="full_pipeline",
+            status="PENDING",
+            params={"source": "full_sync_button"},
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+
+        async_result = run_full_sync_task.delay(job_id=job.id)
+
+        job.celery_task_id = async_result.id
+        job.status = "QUEUED"
+        db.commit()
+    finally:
+        db.close()
+
+    return RedirectResponse(url="/dashboard?sync_started=true", status_code=303)
 
 @router.get("/settings/magellano-sync")
 async def magellano_sync_page(request: Request, db: Session = Depends(get_db)):

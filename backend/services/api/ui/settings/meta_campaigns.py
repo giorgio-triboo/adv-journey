@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import MetaAccount, MetaCampaign, User
+from models import MetaAccount, MetaCampaign, User, IngestionJob
 from services.utils.crypto import decrypt_token
 from database import SessionLocal
 from datetime import datetime
@@ -127,8 +127,35 @@ async def api_meta_campaigns_bootstrap(request: Request, db: Session = Depends(g
         if start > end:
             return JSONResponse({"success": False, "error": "start_date deve essere <= end_date"}, status_code=400)
         from tasks.meta_marketing import meta_campaigns_bootstrap_task
-        t = meta_campaigns_bootstrap_task.delay(start_date, end_date, dry_run=False)
-        return JSONResponse({"success": True, "task_id": t.id, "message": "Bootstrap avviato in background."})
+
+        # Registra un job di ingestion per il bootstrap campagne Meta
+        job = IngestionJob(
+            job_type="meta_campaigns_bootstrap",
+            status="PENDING",
+            params={
+                "source": "meta_campaigns_page",
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+
+        t = meta_campaigns_bootstrap_task.delay(start_date, end_date, dry_run=False, job_id=job.id)
+
+        job.celery_task_id = t.id
+        job.status = "QUEUED"
+        db.commit()
+
+        return JSONResponse(
+            {
+                "success": True,
+                "task_id": t.id,
+                "job_id": job.id,
+                "message": "Bootstrap avviato in background.",
+            }
+        )
     except ValueError as e:
         return JSONResponse({"success": False, "error": f"Date non valide: {e}"}, status_code=400)
     except Exception as e:
@@ -147,8 +174,34 @@ async def api_meta_campaigns_incremental_sync(request: Request, db: Session = De
             data = {}
         target_date = (data.get("target_date") or "").strip()
         from tasks.meta_marketing import meta_campaigns_incremental_task
-        t = meta_campaigns_incremental_task.delay(target_date if target_date else None)
-        return JSONResponse({"success": True, "task_id": t.id, "message": "Sync incrementale avviata in background."})
+
+        # Registra un job di ingestion per la sync incrementale campagne Meta
+        job = IngestionJob(
+            job_type="meta_campaigns_incremental",
+            status="PENDING",
+            params={
+                "source": "meta_campaigns_page",
+                "target_date": target_date or None,
+            },
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+
+        t = meta_campaigns_incremental_task.delay(target_date if target_date else None, job_id=job.id)
+
+        job.celery_task_id = t.id
+        job.status = "QUEUED"
+        db.commit()
+
+        return JSONResponse(
+            {
+                "success": True,
+                "task_id": t.id,
+                "job_id": job.id,
+                "message": "Sync incrementale avviata in background.",
+            }
+        )
     except Exception as e:
         logger.exception("api_meta_campaigns_incremental_sync")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)

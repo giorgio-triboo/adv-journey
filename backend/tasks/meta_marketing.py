@@ -20,7 +20,8 @@ def meta_manual_sync_task(
     end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
     db = SessionLocal()
     try:
-        # Se è stato creato un IngestionJob associato, segna come RUNNING
+        # Se è stato creato un IngestionJob associato, segna come RUNNING.
+        # Se non esiste, creane uno al volo (es. cron interno).
         job = None
         if job_id:
             job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
@@ -28,6 +29,20 @@ def meta_manual_sync_task(
                 job.status = "RUNNING"
                 job.started_at = datetime.utcnow()
                 db.commit()
+        else:
+            job = IngestionJob(
+                job_type="meta_marketing",
+                status="RUNNING",
+                params={
+                    "source": "unknown",
+                    "account_id": account_id,
+                    "start_date": start_date_str,
+                    "end_date": end_date_str,
+                    "metrics": metrics,
+                },
+            )
+            db.add(job)
+            db.commit()
 
         stats = run_manual_sync(db, account_id, start_date, end_date, metrics)
 
@@ -97,41 +112,120 @@ def meta_sync_single_account_task(meta_account_id: int):
 
 
 @celery_app.task(name="tasks.meta.campaigns_bootstrap")
-def meta_campaigns_bootstrap_task(start_date_str: str, end_date_str: str, dry_run: bool = False):
+def meta_campaigns_bootstrap_task(
+    start_date_str: str,
+    end_date_str: str,
+    dry_run: bool = False,
+    job_id: int | None = None,
+):
     """
     Bootstrap meta_campaigns: campagne con almeno 1 impression nel periodo [start_date, end_date].
     Usa services.sync.meta_campaigns_sync.run_bootstrap.
     """
     import logging
+
     logger = logging.getLogger("tasks.meta")
     start_date = date.fromisoformat(start_date_str)
     end_date = date.fromisoformat(end_date_str)
+    db = SessionLocal()
+    job = None
     try:
+        # Se non esiste ancora un IngestionJob, creane uno al volo
+        if job_id:
+            job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
+            if job:
+                job.status = "RUNNING"
+                job.started_at = datetime.utcnow()
+                db.commit()
+        else:
+            job = IngestionJob(
+                job_type="meta_campaigns_bootstrap",
+                status="RUNNING",
+                params={
+                    "start_date": start_date_str,
+                    "end_date": end_date_str,
+                    "dry_run": dry_run,
+                    "source": "unknown",
+                },
+            )
+            db.add(job)
+            db.commit()
+
         stats = run_bootstrap(start_date=start_date, end_date=end_date, db=None, dry_run=dry_run)
         logger.info("meta_campaigns_bootstrap %s..%s: %s", start_date_str, end_date_str, stats)
+
+        if job:
+            job.status = "SUCCESS"
+            job.completed_at = datetime.utcnow()
+            job.message = "Bootstrap campagne Meta completato"
+            db.commit()
+
         return stats
     except Exception as e:
         logger.error("meta_campaigns_bootstrap failed: %s", e, exc_info=True)
+
+        if job:
+            job.status = "ERROR"
+            job.completed_at = datetime.utcnow()
+            job.message = str(e)
+            db.commit()
+
         raise
 
 
 @celery_app.task(name="tasks.meta.campaigns_incremental")
-def meta_campaigns_incremental_task(target_date_str: str | None = None):
+def meta_campaigns_incremental_task(target_date_str: str | None = None, job_id: int | None = None):
     """
     Sync incrementale meta_campaigns: campagne con almeno 1 impression nella data target (default: ieri).
     Usa services.sync.meta_campaigns_sync.run_incremental.
     """
     import logging
+
     logger = logging.getLogger("tasks.meta")
     target = (
         date.fromisoformat(target_date_str)
         if target_date_str
         else (date.today() - timedelta(days=1))
     )
+    db = SessionLocal()
+    job = None
     try:
+        # Se non esiste ancora un IngestionJob, creane uno al volo
+        if job_id:
+            job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
+            if job:
+                job.status = "RUNNING"
+                job.started_at = datetime.utcnow()
+                db.commit()
+        else:
+            job = IngestionJob(
+                job_type="meta_campaigns_incremental",
+                status="RUNNING",
+                params={
+                    "target_date": target.isoformat(),
+                    "source": "unknown",
+                },
+            )
+            db.add(job)
+            db.commit()
+
         stats = run_incremental(target_date=target, db=None)
         logger.info("meta_campaigns_incremental %s: %s", target, stats)
+
+        if job:
+            job.status = "SUCCESS"
+            job.completed_at = datetime.utcnow()
+            job.message = "Sync incrementale campagne Meta completata"
+            db.commit()
+
         return stats
     except Exception as e:
         logger.error("meta_campaigns_incremental failed: %s", e, exc_info=True)
+
+        if job:
+            job.status = "ERROR"
+            job.completed_at = datetime.utcnow()
+            job.message = str(e)
+            db.commit()
+
         raise
