@@ -137,7 +137,7 @@ async def test_smtp_config(request: Request, db: Session = Depends(get_db)):
         msg = MIMEText("Questa è una email di test per verificare la configurazione SMTP.")
         msg['From'] = from_email
         msg['To'] = test_email
-        msg['Subject'] = "Test SMTP - Cepu Lavorazioni"
+        msg['Subject'] = "Test SMTP - Insight Magellano"
         
         with smtplib.SMTP(host, smtp_config.port or 587) as server:
             if smtp_config.use_tls:

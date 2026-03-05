@@ -27,6 +27,11 @@ body {
     min-height: 100vh;
 }
 
+body.login-body {
+    background: #0f0f0f;
+    color: #fff;
+}
+
 /* Sidebar Styling */
 .sidebar {
     width: 280px;
@@ -120,6 +125,45 @@ body {
     margin-left: 280px;
     padding: 2rem;
     min-height: 100vh;
+}
+
+/* Login Page Layout */
+.login-main {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    max-width: none;
+}
+
+/* Login Page - Full viewport with background */
+.login-page-wrapper {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: #0f0f0f url('/static/img/magellano-desktop.webp') center center / cover no-repeat;
+}
+
+.login-page-card {
+    background: #000000;
+    border-radius: 1rem;
+}
+
+.page-footer {
+    padding: 1rem 1.5rem;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.875rem;
+    text-align: center;
+    margin-top: auto;
+}
+
+.page-footer a {
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.page-footer a:hover {
+    color: #fff;
 }
 
 /* Glass Cards */

@@ -264,7 +264,7 @@ class EmailService:
                 </div>
                 <div class="footer">
                     {ingestion_link}
-                    <p>Questo è un messaggio automatico dal sistema Cepu Lavorazioni.</p>
+                    <p>Questo è un messaggio automatico dal sistema Insight Magellano.</p>
                 </div>
             </div>
         </body>

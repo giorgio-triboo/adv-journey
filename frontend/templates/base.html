@@ -6,15 +6,16 @@
     {% if user %}
     <meta name="csrf-token" content="{{ request.state.csrf_token }}">
     {% endif %}
-    <title>{{ title }} - Cepu Lavorazioni</title>
+    <title>{{ title }} - Insight Magellano</title>
     <meta name="description" content="Sistema di gestione lead Cepu - Dashboard moderna e intuitiva">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/static/img/dp-favicon.png">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
-<body>
+<body class="{% if not user %}login-body{% endif %}">
     {% if user %}
     <aside class="sidebar">
         <div class="sidebar-header">
@@ -270,7 +271,7 @@
     </aside>
     {% endif %}
     
-    <main class="{% if user %}main-layout{% else %}max-w-7xl mx-auto py-8 px-4{% endif %}">
+    <main class="{% if user %}main-layout{% else %}login-main{% endif %}">
         {% if user and request.session.get("_impersonate_original_user_id") %}
         <div class="mb-4 mx-4 mt-4 p-3 rounded-lg bg-amber-100 border border-amber-400 text-amber-800 text-sm flex items-center justify-between gap-4 flex-wrap">
             <span class="flex items-center gap-2">

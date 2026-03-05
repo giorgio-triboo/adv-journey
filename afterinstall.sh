@@ -106,12 +106,6 @@ if [ "$USE_BLUE_GREEN" != "true" ]; then
     done
 fi
 $DOCKER_CMD image prune -f 2>/dev/null || true
-$DOCKER_CMD volume ls -q 2>/dev/null | while read vol; do
-    case "$vol" in
-        *postgres_data*|*redis_data*|*nginx_cache*) ;;
-        *) $DOCKER_CMD volume rm "$vol" 2>/dev/null || true ;;
-    esac
-done
 
 # Build immagine
 echo "Building Docker image..."
@@ -176,9 +170,11 @@ fi
 echo "Running Alembic migrations (on $TARGET_CONTAINER)..."
 $DOCKER_CMD exec "$TARGET_CONTAINER" alembic upgrade head 2>/dev/null || true
 
-# Pulizia finale
+# Pulizia finale (dopo aver montato blue/green e tutti i container)
 $DOCKER_CMD container prune -f 2>/dev/null || true
 $DOCKER_CMD image prune -f 2>/dev/null || true
+# Volumi orfani solo dopo che i nuovi container sono up
+$DOCKER_CMD volume prune -f 2>/dev/null || true
 
 echo ""
 echo "=========================================="

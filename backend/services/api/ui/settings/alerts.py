@@ -125,7 +125,7 @@ async def test_alert_email(request: Request, db: Session = Depends(get_db)):
         # Invia email di test
         success = email_service.send_alert(
             recipients=recipients,
-            subject="Test Alert Email - Cepu Lavorazioni",
+            subject="Test Alert Email - Insight Magellano",
             body_html=f"""
             <html>
             <body>
