@@ -38,6 +38,16 @@ Poi `sudo systemctl restart docker`.
 - **Deploy senza downtime**: ricostruisci la standby, migrazioni, switch traffico, ricostruisci ex-attiva.
 - Stato attivo in `deploy/nginx/upstream.conf`.
 
+## Migrare DB locale → produzione
+
+Per spostare i dati dal database locale in produzione (continuità):
+
+```bash
+./scripts/migrate_db_to_production.sh
+```
+
+Requisiti: Docker locale con `db` in esecuzione, SSH a `PROD_HOST` (default: ec2-user@magellano-insight.docker.aws.trd.local). Lo script esegue dump locale, copia sul server, ferma backend, restaura, riavvia.
+
 ## Deploy manuale
 
 ```bash
