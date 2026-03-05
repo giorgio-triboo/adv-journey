@@ -1,10 +1,17 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="login-page-wrapper">
+<style>
+/* Fallback critico: sfondo scuro + img anche se style.css non carica */
+body.login-body { background: #0f0f0f !important; color: #fff; }
+.login-page-wrapper { min-height: 100vh; display: flex; flex-direction: column; background: #0f0f0f url('/static/img/magellano-desktop.webp') center center / cover no-repeat; }
+.login-page-card { background: #000; border-radius: 1rem; }
+.page-footer { color: rgba(255,255,255,0.8); font-size: 0.875rem; }
+</style>
+<div class="login-page-wrapper min-h-screen flex flex-col bg-[#0f0f0f]">
     <div class="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div class="w-full max-w-lg animate-fadeInUp">
-            <div class="login-page-card p-10 sm:p-12">
+            <div class="login-page-card p-10 sm:p-12 bg-black rounded-2xl">
                 <div class="text-center mb-8">
                     <img src="/static/img/dp-logo.svg" alt="Direct Performance" class="h-12 mx-auto mb-6">
                     <h1 class="text-4xl sm:text-5xl font-bold text-white mb-2">Magellano.ai</h1>
@@ -35,8 +42,8 @@
         </div>
     </div>
 
-    <footer class="page-footer">
-        T-Direct S.r.l. | 09290830968 | <a href="https://privacy.trdi.eu/gdpr/privacy/?utm_source=directperformance" target="_blank" rel="noopener noreferrer">Privacy</a>
+    <footer class="page-footer text-white/80 text-sm text-center mt-auto py-4 px-6">
+        T-Direct S.r.l. | 09290830968 | <a href="https://privacy.trdi.eu/gdpr/privacy/?utm_source=directperformance" target="_blank" rel="noopener noreferrer" class="text-white/90 underline underline-offset-2 hover:text-white">Privacy</a>
     </footer>
 </div>
 {% endblock %}

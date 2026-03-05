@@ -33,6 +33,9 @@ async def settings_alerts(request: Request, db: Session = Depends(get_db)):
         {'value': 'meta_marketing', 'label': 'Meta Marketing'},
         {'value': 'meta_conversion', 'label': 'Meta Conversion API'}
     ]
+
+    from services.utils.email import EmailService
+    smtp_configured = EmailService().is_configured()
     
     return templates.TemplateResponse("settings_alerts.html", {
         "request": request,
@@ -40,7 +43,8 @@ async def settings_alerts(request: Request, db: Session = Depends(get_db)):
         "user": user,
         "alert_types": alert_types,
         "configs_by_type": configs_by_type,
-        "active_page": "alerts"
+        "active_page": "alerts",
+        "smtp_configured": smtp_configured
     })
 
 @router.post("/api/alerts")

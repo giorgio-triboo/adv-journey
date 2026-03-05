@@ -344,7 +344,17 @@
 
         function toggleSubmenu(id) {
             const menu = document.getElementById(id);
-            menu.classList.toggle('open');
+            const wasOpen = menu.classList.contains('open');
+
+            // Chiudi tutti i submenu aperti
+            document.querySelectorAll('.nav-submenu').forEach(submenu => {
+                submenu.classList.remove('open');
+            });
+
+            // Se il menu cliccato era chiuso, aprilo (solo 1 menu aperto per volta)
+            if (!wasOpen) {
+                menu.classList.add('open');
+            }
         }
 
         // Custom Modal System

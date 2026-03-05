@@ -5,6 +5,11 @@
     <div class="mb-8">
         <h1 class="text-3xl font-bold gradient-text">Alert Email</h1>
         <p class="text-neutral-500 mt-2">Configura le notifiche email per i job di sincronizzazione.</p>
+        {% if not smtp_configured %}
+        <div class="mt-4 p-4 rounded-lg bg-amber-100 border border-amber-400 text-amber-800 text-sm">
+            <strong>SMTP non configurato.</strong> Imposta SMTP_HOST, SMTP_USER e SMTP_PASSWORD nel file .env sul server per abilitare l'invio email.
+        </div>
+        {% endif %}
     </div>
 
     <!-- Alert Configurations -->
@@ -119,9 +124,7 @@ async function testAlert(alertType) {
     try {
         const response = await fetch('/api/alerts/test', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: getCsrfHeaders(),
             body: JSON.stringify({
                 recipients: recipients
             })
