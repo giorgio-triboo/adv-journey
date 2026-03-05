@@ -1,7 +1,7 @@
 # Produzione: blue-green deployment con nginx reverse proxy
-# adj-journey - porta 3000 (nginx), Adminer 18080
+# insight-magellano - porta 3000 (nginx), Adminer 18080
 # Per pipeline CodeDeploy usa deploy/docker-compose.prod.yml
-name: adj-journey
+name: insight-magellano
 #
 # Deploy iniziale:
 #   docker compose -f docker-compose.prod.yml up -d
@@ -10,7 +10,7 @@ name: adj-journey
 #   1. docker compose -f docker-compose.prod.yml --profile green up -d --build backend-green
 #   2. curl http://localhost:8004/health  # verifica green
 #   3. Modifica nginx/conf.d/default.conf: server backend-green:8000
-#   4. docker exec adj-journey-nginx-1 nginx -s reload
+#   4. docker exec insight-magellano-nginx-1 nginx -s reload
 #   5. docker compose -f docker-compose.prod.yml stop backend-blue
 #
 # Switch green -> blue (per prossimo ciclo): inverti i passi 3–5

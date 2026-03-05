@@ -1,4 +1,4 @@
-# Overlay blue-green per adj-journey
+# Overlay blue-green per insight-magellano
 # Uso: docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.bluegreen.yml --profile green up -d
 # Switch: deploy/scripts/switch-upstream.sh blue|green
 

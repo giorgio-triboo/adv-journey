@@ -1,4 +1,4 @@
-# Deploy adj-journey su server con Docker
+# Deploy insight-magellano su server con Docker
 
 Configurazione per deploy su server (es. EC2 t4g) tramite Docker in modalità **blue-green** (zero downtime). Opzionalmente AWS CodeBuild/CodeDeploy.
 
@@ -51,7 +51,7 @@ Requisiti: Docker locale con `db` in esecuzione, SSH a `PROD_HOST` (default: ec2
 ## Deploy manuale
 
 ```bash
-cd /home/ec2-user/adj-journey
+cd /home/ec2-user/insight-magellano
 # .env già configurato
 BLUE_GREEN=true ./afterinstall.sh
 # oppure senza blue-green:
@@ -61,10 +61,10 @@ BLUE_GREEN=true ./afterinstall.sh
 ## Deploy con AWS CodeDeploy
 
 1. **ApplicationStop**: `scripts/stop.sh` ferma solo il worker (i backend restano up per zero-downtime).
-2. **Copia file**: artefatto in `/home/ec2-user/adj-journey`. `.env` non va nel repo.
+2. **Copia file**: artefatto in `/home/ec2-user/insight-magellano`. `.env` non va nel repo.
 3. **AfterInstall**: `afterinstall.sh` fa build, `up -d`, migrazioni Alembic.
 
-- **appspec.yml**: destinazione `/home/ec2-user/adj-journey`
+- **appspec.yml**: destinazione `/home/ec2-user/insight-magellano`
 - **buildspec.yml**: valida `backend/`, `deploy/`
 - **scripts/stop.sh**: ferma solo worker (backend restano up)
 

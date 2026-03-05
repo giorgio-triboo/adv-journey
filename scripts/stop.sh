@@ -1,11 +1,11 @@
 #!/bin/bash
-# ApplicationStop: ferma solo il worker (adj-journey). Backend restano up per zero-downtime.
+# ApplicationStop: ferma solo il worker (insight-magellano). Backend restano up per zero-downtime.
 
 set -e
 
 # CodeDeploy esegue gli hook dalla directory di deploy (destination in appspec)
 APP_DIR="${APP_DIR:-$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)}"
-APP_DIR="${APP_DIR:-/home/ec2-user/adj-journey}"
+APP_DIR="${APP_DIR:-/home/ec2-user/insight-magellano}"
 cd "$APP_DIR"
 
 if command -v docker-compose &> /dev/null; then
@@ -27,7 +27,7 @@ COMPOSE_OPTS="--project-directory $APP_DIR -f deploy/docker-compose.prod.yml"
 
 # Ferma SOLO il worker. Non toccare backend-blue/backend-green: nginx continua a servire traffico.
 # AfterInstall farà lo switch blue/green e ricreerà il worker con la nuova immagine.
-echo "Stopping adj-journey backend-worker only (backends stay up for zero-downtime)..."
+echo "Stopping insight-magellano backend-worker only (backends stay up for zero-downtime)..."
 $COMPOSE_CMD $COMPOSE_OPTS stop backend-worker 2>/dev/null || true
 
 echo "Stop completed."

@@ -1,5 +1,5 @@
 ---
-# AWS CodeBuild - adj-journey
+# AWS CodeBuild - insight-magellano
 # Valida codice sorgente; build Docker sul server in afterinstall.sh
 
 version: 0.2

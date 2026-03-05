@@ -22,13 +22,13 @@ echo ""
 # 2. Rimuovere le immagini
 echo -e "${YELLOW}2. Rimuovendo le immagini Docker...${NC}"
 docker-compose rm -f || true
-docker rmi $(docker images | grep -E "adj-journey|backend" | awk '{print $3}') 2>/dev/null || true
+docker rmi $(docker images | grep -E "insight-magellano|backend" | awk '{print $3}') 2>/dev/null || true
 echo -e "${GREEN}✓ Immagini rimosse${NC}"
 echo ""
 
 # 3. Rimuovere il volume del database per reset completo
 echo -e "${YELLOW}3. Rimuovendo il volume del database...${NC}"
-docker volume rm adj-journey_postgres_data 2>/dev/null || true
+docker volume rm insight-magellano_postgres_data 2>/dev/null || true
 echo -e "${GREEN}✓ Volume database rimosso${NC}"
 echo ""
 

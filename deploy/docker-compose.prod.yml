@@ -1,6 +1,6 @@
-# adj-journey - produzione
+# insight-magellano - produzione
 # Uso: docker compose -f deploy/docker-compose.prod.yml up -d
-name: adj-journey
+name: insight-magellano
 # Con blue-green: -f deploy/docker-compose.bluegreen.yml
 # Porta principale: 3000 (nginx reverse proxy)
 
@@ -26,7 +26,7 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile
-    image: adj-journey-app:latest
+    image: insight-magellano-app:latest
     restart: always
     expose:
       - "8000"
@@ -64,7 +64,7 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile
-    image: adj-journey-app:latest
+    image: insight-magellano-app:latest
     restart: always
     expose:
       - "8000"
@@ -97,7 +97,7 @@ services:
       start_period: 30s
 
   backend-worker:
-    image: adj-journey-app:latest
+    image: insight-magellano-app:latest
     restart: always
     environment:
       - DATABASE_URL=${DATABASE_URL}

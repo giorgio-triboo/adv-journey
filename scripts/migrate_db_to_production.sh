@@ -56,7 +56,7 @@ if [[ "$1" != "-y" && "$1" != "--yes" ]]; then
 fi
 
 # Restaura: ferma backend per evitare lock, restaura, riavvia
-ssh "$PROD_HOST" 'cd /home/ec2-user/adj-journey && \
+ssh "$PROD_HOST" 'cd /home/ec2-user/insight-magellano && \
     echo "   Fermando backend..." && \
     sudo -u ec2-user docker compose -f deploy/docker-compose.prod.yml --profile green stop backend-blue backend-green backend-worker 2>/dev/null || true && \
     sleep 2 && \
@@ -67,7 +67,7 @@ ssh "$PROD_HOST" 'cd /home/ec2-user/adj-journey && \
     D=$(grep -E "^POSTGRES_DB=" .env 2>/dev/null | cut -d= -f2- || echo "cepudb"); \
     export PGPASSWORD="$P"; \
     echo "   Restore in corso..." && \
-    cat /tmp/'"$DUMP_FILE"' | docker exec -i adj-journey-db-1 psql -h localhost -U "$U" -d "$D" --set ON_ERROR_STOP=on -q && \
+    cat /tmp/'"$DUMP_FILE"' | docker exec -i insight-magellano-db-1 psql -h localhost -U "$U" -d "$D" --set ON_ERROR_STOP=on -q && \
     rm -f /tmp/'"$DUMP_FILE"' && \
     echo "   Riavviando backend..." && \
     sudo -u ec2-user docker compose -f deploy/docker-compose.prod.yml --profile green start backend-blue backend-green backend-worker && \

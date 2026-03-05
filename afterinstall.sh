@@ -1,5 +1,5 @@
 #!/bin/bash
-# AfterInstall: deploy adj-journey (FastAPI + Celery).
+# AfterInstall: deploy insight-magellano (FastAPI + Celery).
 # Build Docker, avvio stack, blue-green opzionale (zero downtime).
 # Esecuzione locale: APP_DIR=$(pwd) LOCAL_DEPLOY=1 ./afterinstall.sh
 
@@ -7,7 +7,7 @@ set -e
 
 echo "Starting afterinstall script..."
 
-APP_DIR="${APP_DIR:-/home/ec2-user/adj-journey}"
+APP_DIR="${APP_DIR:-/home/ec2-user/insight-magellano}"
 LOCAL_DEPLOY="${LOCAL_DEPLOY:-false}"
 cd "$APP_DIR"
 
@@ -69,7 +69,7 @@ echo "=========================================="
 
 # Senza blue-green: ferma solo app e worker
 if [ "$USE_BLUE_GREEN" != "true" ]; then
-    if $DOCKER_CMD ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "adj-journey-backend(-blue|-green)?|.*backend-blue|.*backend-green"; then
+    if $DOCKER_CMD ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "insight-magellano-backend(-blue|-green)?|.*backend-blue|.*backend-green"; then
         echo "Stopping existing application container(s)..."
         $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT stop backend-blue backend-worker 2>/dev/null || true
         $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT rm -f backend-blue backend-worker 2>/dev/null || true
@@ -82,7 +82,7 @@ if [ "$USE_BLUE_GREEN" = "true" ]; then
 fi
 
 # Assicura che db e redis siano in esecuzione
-if ! $DOCKER_CMD ps --format "{{.Names}}" 2>/dev/null | grep -qE "adj-journey-db|.*-db-"; then
+if ! $DOCKER_CMD ps --format "{{.Names}}" 2>/dev/null | grep -qE "insight-magellano-db|.*-db-"; then
     echo "Starting PostgreSQL and Redis..."
     $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT up -d db redis
     echo "Waiting for PostgreSQL..."
@@ -101,7 +101,7 @@ else
 fi
 $DOCKER_CMD container prune -f 2>/dev/null || true
 if [ "$USE_BLUE_GREEN" != "true" ]; then
-    for img_id in $($DOCKER_CMD images -q adj-journey-app:latest 2>/dev/null); do
+    for img_id in $($DOCKER_CMD images -q insight-magellano-app:latest 2>/dev/null); do
         $DOCKER_CMD rmi -f "$img_id" 2>/dev/null || true
     done
 fi
@@ -109,7 +109,7 @@ $DOCKER_CMD image prune -f 2>/dev/null || true
 
 # Build immagine
 echo "Building Docker image..."
-$DOCKER_CMD build -t adj-journey-app:latest -f deploy/Dockerfile "$APP_DIR"
+$DOCKER_CMD build -t insight-magellano-app:latest -f deploy/Dockerfile "$APP_DIR"
 
 # Avvio container
 echo "Starting containers..."

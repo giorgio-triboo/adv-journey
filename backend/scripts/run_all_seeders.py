@@ -4,7 +4,7 @@ Esegue tutti i seeder. Utile per produzione dopo deploy o per ripopolare dati.
 
 Uso:
   python -m scripts.run_all_seeders
-  docker exec adj-journey-backend-blue-1 python -m scripts.run_all_seeders
+  docker exec insight-magellano-backend-blue-1 python -m scripts.run_all_seeders
 """
 import sys
 import os

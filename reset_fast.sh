@@ -22,7 +22,7 @@ echo ""
 
 # 2. Rimuovere il volume del database per reset completo
 echo -e "${YELLOW}2. Rimuovendo il volume del database...${NC}"
-docker volume rm adj-journey_postgres_data 2>/dev/null || true
+docker volume rm insight-magellano_postgres_data 2>/dev/null || true
 echo -e "${GREEN}✓ Volume database rimosso${NC}"
 echo ""
 
