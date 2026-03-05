@@ -4,7 +4,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from database import get_db
-from models import SyncLog, User
+from models import SyncLog, User, IngestionJob
 from datetime import datetime, timedelta
 import logging
 from ..common import templates
@@ -74,10 +74,38 @@ async def ingestion_summary(request: Request, db: Session = Depends(get_db)):
             'details_raw': details
         })
 
-    return templates.TemplateResponse("settings_ingestion_summary.html", {
-        "request": request,
-        "title": "Riepilogo Ingestion",
-        "user": user,
-        "sync_logs": logs_formatted,
-        "active_page": "ingestion_summary"
-    })
+    # Job di ingestion recenti (in particolare PENDING/QUEUED/RUNNING)
+    recent_jobs = (
+        db.query(IngestionJob)
+        .order_by(desc(IngestionJob.created_at))
+        .limit(50)
+        .all()
+    )
+
+    jobs_formatted = []
+    for job in recent_jobs:
+        jobs_formatted.append(
+            {
+                "id": job.id,
+                "created_at": job.created_at,
+                "started_at": job.started_at,
+                "completed_at": job.completed_at,
+                "job_type": job.job_type,
+                "status": job.status,
+                "celery_task_id": job.celery_task_id,
+                "params": job.params or {},
+                "message": job.message,
+            }
+        )
+
+    return templates.TemplateResponse(
+        "settings_ingestion_summary.html",
+        {
+            "request": request,
+            "title": "Riepilogo Ingestion",
+            "user": user,
+            "sync_logs": logs_formatted,
+            "ingestion_jobs": jobs_formatted,
+            "active_page": "ingestion_summary",
+        },
+    )

@@ -2,18 +2,33 @@
 from datetime import datetime, date, timedelta
 from celery_app import celery_app
 from database import SessionLocal
-from models import SyncLog
+from models import SyncLog, IngestionJob
 from services.sync.meta_marketing_sync import run_manual_sync
 from services.sync.meta_campaigns_sync import run_bootstrap, run_incremental
 
 
 @celery_app.task(name="tasks.meta.manual_sync")
-def meta_manual_sync_task(account_id: str, start_date_str: str, end_date_str: str, metrics: list):
+def meta_manual_sync_task(
+    account_id: str,
+    start_date_str: str,
+    end_date_str: str,
+    metrics: list,
+    job_id: int | None = None,
+):
     """Sync manuale dati marketing per un account Meta (date e metriche custom)."""
     start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
     db = SessionLocal()
     try:
+        # Se è stato creato un IngestionJob associato, segna come RUNNING
+        job = None
+        if job_id:
+            job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
+            if job:
+                job.status = "RUNNING"
+                job.started_at = datetime.utcnow()
+                db.commit()
+
         stats = run_manual_sync(db, account_id, start_date, end_date, metrics)
 
         # Registra la sync manuale Meta marketing nel riepilogo ingestion
@@ -32,6 +47,13 @@ def meta_manual_sync_task(account_id: str, start_date_str: str, end_date_str: st
                 },
             )
             db.add(sync_log)
+
+            # Aggiorna eventualmente l'IngestionJob associato
+            if job:
+                job.status = "SUCCESS"
+                job.completed_at = datetime.utcnow()
+                job.message = "Sync Meta marketing completata"
+
             db.commit()
         except Exception as log_exc:
             import logging

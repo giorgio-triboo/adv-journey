@@ -109,6 +109,30 @@ class SyncLog(Base):
     status = Column(String) # SUCCESS, ERROR
     details = Column(JSON)
 
+
+class IngestionJob(Base):
+    __tablename__ = "ingestion_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=now_rome, index=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Tipo di job: magellano, ulixe, meta_marketing, orchestrator, ecc.
+    job_type = Column(String, index=True)
+
+    # Stato corrente del job: PENDING, QUEUED, RUNNING, SUCCESS, ERROR
+    status = Column(String, index=True)
+
+    # ID della task Celery associata (se presente)
+    celery_task_id = Column(String, nullable=True, index=True)
+
+    # Parametri di lancio (date, campagne, ecc.)
+    params = Column(JSON, nullable=True)
+
+    # Messaggio riassuntivo / errore
+    message = Column(String, nullable=True)
+
 class AlertConfig(Base):
     __tablename__ = "alert_configs"
     

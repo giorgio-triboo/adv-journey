@@ -3,7 +3,15 @@ from fastapi import APIRouter, Request, Depends, UploadFile, File, Form
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Lead, StatusCategory, LeadHistory, MetaAccount, User, SyncLog
+from models import (
+    Lead,
+    StatusCategory,
+    LeadHistory,
+    MetaAccount,
+    User,
+    SyncLog,
+    IngestionJob,
+)
 from services.utils.crypto import hash_email_for_meta, hash_phone_for_meta
 from datetime import datetime, timedelta, date
 from typing import List
@@ -180,8 +188,34 @@ async def trigger_sync(request: Request, db: Session = Depends(get_db)):
         end_date = today
 
     from tasks.magellano import magellano_sync_task
-    magellano_sync_task.delay(campaigns, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
-    return RedirectResponse(url='/dashboard', status_code=303)
+
+    # Registra un job di ingestion per tracking
+    job = IngestionJob(
+        job_type="magellano",
+        status="PENDING",
+        params={
+            "source": "frontend_form",
+            "campaigns": campaigns,
+            "start_date": start_date.strftime("%Y-%m-%d"),
+            "end_date": end_date.strftime("%Y-%m-%d"),
+        },
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    async_result = magellano_sync_task.delay(
+        campaigns,
+        start_date.strftime("%Y-%m-%d"),
+        end_date.strftime("%Y-%m-%d"),
+        job_id=job.id,
+    )
+
+    job.celery_task_id = async_result.id
+    job.status = "QUEUED"
+    db.commit()
+
+    return RedirectResponse(url="/dashboard", status_code=303)
 
 @router.post("/api/magellano/sync")
 async def api_magellano_sync(request: Request, db: Session = Depends(get_db)):
@@ -253,16 +287,45 @@ async def api_magellano_sync(request: Request, db: Session = Depends(get_db)):
     
     if start_date > end_date:
         return JSONResponse({"error": "start_date deve essere <= end_date"}, status_code=400)
-    
+
     from tasks.magellano import magellano_sync_task
-    magellano_sync_task.delay(campaigns, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
-    return JSONResponse({
-        "success": True,
-        "message": "Sincronizzazione Magellano avviata in background",
-        "campaigns": campaigns,
-        "start_date": start_date.strftime("%Y-%m-%d"),
-        "end_date": end_date.strftime("%Y-%m-%d")
-    })
+
+    # Registra un job di ingestion per tracking
+    job = IngestionJob(
+        job_type="magellano",
+        status="PENDING",
+        params={
+            "source": "api",
+            "campaigns": campaigns,
+            "start_date": start_date.strftime("%Y-%m-%d"),
+            "end_date": end_date.strftime("%Y-%m-%d"),
+        },
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    async_result = magellano_sync_task.delay(
+        campaigns,
+        start_date.strftime("%Y-%m-%d"),
+        end_date.strftime("%Y-%m-%d"),
+        job_id=job.id,
+    )
+
+    job.celery_task_id = async_result.id
+    job.status = "QUEUED"
+    db.commit()
+
+    return JSONResponse(
+        {
+            "success": True,
+            "message": "Sincronizzazione Magellano avviata in background",
+            "campaigns": campaigns,
+            "start_date": start_date.strftime("%Y-%m-%d"),
+            "end_date": end_date.strftime("%Y-%m-%d"),
+            "job_id": job.id,
+        }
+    )
 
 @router.post("/sync/full")
 async def trigger_full_sync(request: Request):
@@ -632,14 +695,41 @@ async def manual_meta_sync(request: Request, db: Session = Depends(get_db)):
             account_name = f"{len(accounts_to_sync)} account"
         
         from tasks.meta_marketing import meta_manual_sync_task
+
+        jobs_created = []
         for account in accounts_to_sync:
-            meta_manual_sync_task.delay(
+            job = IngestionJob(
+                job_type="meta_marketing",
+                status="PENDING",
+                params={
+                    "source": "frontend_manual",
+                    "account_id": account.account_id,
+                    "account_name": account.name,
+                    "start_date": start_date_str,
+                    "end_date": end_date_str,
+                    "metrics": metrics,
+                },
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+
+            async_result = meta_manual_sync_task.delay(
                 account.account_id,
                 start_date_str,
                 end_date_str,
                 metrics,
+                job_id=job.id,
             )
-        logger.info(f"Manual sync started: {account_name}, period: {start_date} - {end_date}, metrics: {metrics}")
+
+            job.celery_task_id = async_result.id
+            job.status = "QUEUED"
+            db.commit()
+            jobs_created.append(job.id)
+
+        logger.info(
+            f"Manual sync started: {account_name}, period: {start_date} - {end_date}, metrics: {metrics}, jobs={jobs_created}"
+        )
         
         return JSONResponse({
             "success": True,
@@ -647,7 +737,8 @@ async def manual_meta_sync(request: Request, db: Session = Depends(get_db)):
             "account_name": account_name,
             "start_date": start_date_str,
             "end_date": end_date_str,
-            "metrics": metrics
+            "metrics": metrics,
+            "job_ids": jobs_created,
         })
         
     except ValueError as e:
