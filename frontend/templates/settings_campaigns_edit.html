@@ -18,6 +18,11 @@
     </div>
 
     <div class="glass-card p-6">
+        {% if request.query_params.get('error') == 'missing_fields' %}
+        <div class="mb-4 p-4 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-sm">
+            Campi obbligatori mancanti: assicurati di compilare Cliente, ID Magellano e almeno un ID Messaggio.
+        </div>
+        {% endif %}
         <form action="/settings/campaigns/edit/{{ campaign.id }}" method="POST" class="space-y-6" id="campaignForm">
             {% include "csrf_input.html" %}
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -67,20 +72,30 @@
                             <tr>
                                 <th class="px-4 py-2 text-left text-xs font-semibold text-neutral-600">ID</th>
                                 <th class="px-4 py-2 text-left text-xs font-semibold text-neutral-600">Nome</th>
+                                <th class="px-4 py-2 text-left text-xs font-semibold text-neutral-600">Piattaforma</th>
                                 <th class="px-4 py-2 text-right text-xs font-semibold text-neutral-600 w-20">Azioni</th>
                             </tr>
                         </thead>
                         <tbody id="msgTableBody" class="bg-white divide-y divide-neutral-200">
                             {% if campaign.msg_ids %}
                                 {% for msg in campaign.msg_ids %}
+                                {% set msg_id_val = msg.id if msg is mapping else msg %}
                                 <tr class="msg-row">
                                     <td class="px-4 py-2">
-                                        <input type="text" name="msg_ids[]" value="{% if msg is mapping %}{{ msg.id }}{% else %}{{ msg }}{% endif %}" required
+                                        <input type="text" name="msg_ids[]" value="{{ msg_id_val }}" required
                                                class="w-full px-3 py-1.5 text-sm border border-neutral-200 rounded focus:ring-2 focus:ring-indigo-500 outline-none font-mono">
                                     </td>
                                     <td class="px-4 py-2">
-                                        <input type="text" name="msg_names[]" value="{% if msg is mapping %}{{ msg.name }}{% else %}{% endif %}"
+                                        <input type="text" name="msg_names[]" value="{% if msg is mapping %}{{ msg.name }}{% endif %}"
                                                class="w-full px-3 py-1.5 text-sm border border-neutral-200 rounded focus:ring-2 focus:ring-indigo-500 outline-none">
+                                    </td>
+                                    <td class="px-4 py-2">
+                                        <select name="traffic_platform_ids[]" class="w-full px-3 py-1.5 text-sm border border-neutral-200 rounded focus:ring-2 focus:ring-indigo-500 outline-none">
+                                            <option value="">— Non mappato —</option>
+                                            {% for p in platforms %}
+                                            <option value="{{ p.id }}" {% if msg_to_platform.get(msg_id_val) == p.id %}selected{% endif %}>{{ p.name }}</option>
+                                            {% endfor %}
+                                        </select>
                                     </td>
                                     <td class="px-4 py-2 text-right">
                                         <button type="button" onclick="removeMsgRow(this)" class="text-red-600 hover:text-red-800 text-sm">
@@ -99,6 +114,14 @@
                                         <input type="text" name="msg_names[]"
                                                class="w-full px-3 py-1.5 text-sm border border-neutral-200 rounded focus:ring-2 focus:ring-indigo-500 outline-none">
                                     </td>
+                                    <td class="px-4 py-2">
+                                        <select name="traffic_platform_ids[]" class="w-full px-3 py-1.5 text-sm border border-neutral-200 rounded focus:ring-2 focus:ring-indigo-500 outline-none">
+                                            <option value="">— Non mappato —</option>
+                                            {% for p in platforms %}
+                                            <option value="{{ p.id }}">{{ p.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </td>
                                     <td class="px-4 py-2 text-right">
                                         <button type="button" onclick="removeMsgRow(this)" class="text-red-600 hover:text-red-800 text-sm">
                                             Rimuovi
@@ -109,7 +132,7 @@
                         </tbody>
                     </table>
                 </div>
-                <p class="text-xs text-neutral-500 mt-2">Usati per adv + correlazione. Se il nome è vuoto, verrà usato il nome dal mapping automatico.</p>
+                <p class="text-xs text-neutral-500 mt-2">Usati per adv + correlazione. Se il nome è vuoto, verrà usato il nome dal mapping automatico. La piattaforma serve per il riepilogo per canali in Lavorazioni.</p>
             </div>
             
             <div class="md:col-span-2 pt-2">
@@ -137,6 +160,8 @@ function addMsgRow() {
     const tbody = document.getElementById('msgTableBody');
     const newRow = document.createElement('tr');
     newRow.className = 'msg-row';
+    const platformOpts = document.querySelector('select[name="traffic_platform_ids[]"]');
+    const optionsHtml = platformOpts ? Array.from(platformOpts.options).map(o => `<option value="${o.value}">${o.textContent}</option>`).join('') : '<option value="">— Non mappato —</option>';
     newRow.innerHTML = `
         <td class="px-4 py-2">
             <input type="text" name="msg_ids[]" required
@@ -145,6 +170,9 @@ function addMsgRow() {
         <td class="px-4 py-2">
             <input type="text" name="msg_names[]"
                    class="w-full px-3 py-1.5 text-sm border border-neutral-200 rounded focus:ring-2 focus:ring-indigo-500 outline-none">
+        </td>
+        <td class="px-4 py-2">
+            <select name="traffic_platform_ids[]" class="w-full px-3 py-1.5 text-sm border border-neutral-200 rounded focus:ring-2 focus:ring-indigo-500 outline-none">${optionsHtml}</select>
         </td>
         <td class="px-4 py-2 text-right">
             <button type="button" onclick="removeMsgRow(this)" class="text-red-600 hover:text-red-800 text-sm">
@@ -164,27 +192,24 @@ function removeMsgRow(button) {
     }
 }
 
-// Gestione submit form - converti array in stringhe separate da virgola
+// Gestione submit form - aggiungi hidden msg_ids e msg_names (backend li preferisce)
 document.getElementById('campaignForm').addEventListener('submit', function(e) {
-    const msgIds = Array.from(document.querySelectorAll('input[name="msg_ids[]"]')).map(input => input.value.trim()).filter(v => v);
-    const msgNames = Array.from(document.querySelectorAll('input[name="msg_names[]"]')).map(input => input.value.trim());
-    
-    // Crea input hidden con i valori finali
-    const msgIdsInput = document.createElement('input');
-    msgIdsInput.type = 'hidden';
-    msgIdsInput.name = 'msg_ids';
-    msgIdsInput.value = msgIds.join(',');
-    this.appendChild(msgIdsInput);
-    
-    const msgNamesInput = document.createElement('input');
-    msgNamesInput.type = 'hidden';
-    msgNamesInput.name = 'msg_names';
-    msgNamesInput.value = msgNames.join(',');
-    this.appendChild(msgNamesInput);
-    
-    // Rimuovi gli input array per evitare conflitti
-    document.querySelectorAll('input[name="msg_ids[]"]').forEach(input => input.remove());
-    document.querySelectorAll('input[name="msg_names[]"]').forEach(input => input.remove());
+    var existing = this.querySelector('input[name="msg_ids"]');
+    if (existing) existing.remove();
+    var existingNames = this.querySelector('input[name="msg_names"]');
+    if (existingNames) existingNames.remove();
+    var msgIds = Array.from(document.querySelectorAll('input[name="msg_ids[]"]')).map(function(i){ return i.value.trim(); }).filter(Boolean);
+    var msgNames = Array.from(document.querySelectorAll('input[name="msg_names[]"]')).map(function(i){ return i.value.trim(); });
+    var hi = document.createElement('input');
+    hi.type = 'hidden';
+    hi.name = 'msg_ids';
+    hi.value = msgIds.join(',');
+    this.appendChild(hi);
+    var hn = document.createElement('input');
+    hn.type = 'hidden';
+    hn.name = 'msg_names';
+    hn.value = msgNames.join(',');
+    this.appendChild(hn);
 });
 </script>
 {% endblock %}

@@ -133,27 +133,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     # Re-solleva per il comportamento di default
     raise exc
 
-# Session Middleware - gestione sessioni lato server (standard Starlette)
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=settings.SECRET_KEY,
-    https_only=settings.SECURE_COOKIES,
-    same_site="lax",
-)
-# CSRF protection per form POST
-app.add_middleware(CSRFMiddleware)
-# Rate limiting
-from slowapi.middleware import SlowAPIMiddleware
-app.add_middleware(SlowAPIMiddleware)
-# CORS - whitelist origini (vuoto = stessa origine)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[],  # Solo same-origin; aggiungere origini se serve (es. frontend separato)
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-)
-# Security headers
+# Security headers (innermost - ultimo a processare request)
 from starlette.middleware.base import BaseHTTPMiddleware
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -162,11 +142,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        # CSP: consenti CDN Tailwind, Google Fonts, img da https
+        # CSP: consenti CDN Tailwind, Google Fonts, jsDelivr (flatpickr, moment, datetimerange-picker), img da https
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' https://cdn.tailwindcss.com; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; "
+            "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
             "font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data: https:; "
             "connect-src 'self'; "
@@ -175,7 +155,27 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if settings.SECURE_COOKIES:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
+
+# Ordine add_middleware: l'ultimo aggiunto è il più esterno (eseguito per primo sulla request).
+# SessionMiddleware DEVE essere il più esterno perché CSRF accede a request.session.
+# Ordine (request in entrata): Session -> CORS -> SlowAPI -> CSRF -> SecurityHeaders -> App
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(CSRFMiddleware)
+from slowapi.middleware import SlowAPIMiddleware
+app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[],  # Solo same-origin; aggiungere origini se serve (es. frontend separato)
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    https_only=settings.SECURE_COOKIES,
+    same_site="lax",
+)
 
 # Mount Static Files
 # In Docker: frontend è montato in /app/frontend
@@ -208,6 +208,10 @@ def startup_event():
     # Seed campaigns
     from seeders.campaigns_seeder import seed_campaigns
     seed_campaigns()
+
+    # Seed traffic platforms
+    from seeders.traffic_platforms_seeder import seed_traffic_platforms
+    seed_traffic_platforms()
     
     # Seed users
     from seeders.users_seeder import seed_users
@@ -273,6 +277,85 @@ async def refresh_session_middleware(request: Request, call_next):
                 if current_expires - time.time() < 300:
                     request.session['meta_oauth_token_expires'] = time.time() + 600
     return response
+
+# Proxy Adminer: in dev (senza nginx) le richieste /adminer vanno al backend che le inoltra al container adminer
+ADMINER_UPSTREAM = "http://adminer:8080"
+
+@app.api_route("/adminer", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+@app.api_route("/adminer/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+@limiter.exempt
+async def adminer_proxy(request: Request, path: str = ""):
+    """
+    Proxy verso Adminer. Richiede super-admin OAuth (stesso check di nginx auth_request in prod).
+    In sviluppo senza nginx, /adminer funziona tramite questo proxy.
+    """
+    from fastapi.responses import Response as FastAPIResponse
+    from database import SessionLocal
+    from models import User
+
+    # Auth: solo super-admin (come adminer-check)
+    user_session = request.session.get("user")
+    if not user_session or not user_session.get("email"):
+        return RedirectResponse(url="/login?next=/adminer/")
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == user_session["email"]).first()
+        if not user or not user.is_active or user.role != "super-admin":
+            return RedirectResponse(url="/dashboard")
+    finally:
+        db.close()
+
+    # Costruisci path verso adminer: /adminer/foo -> /foo, /adminer -> /
+    upstream_path = f"/{path}" if path else "/"
+    if request.url.query:
+        upstream_path = f"{upstream_path}?{request.url.query}"
+    url = f"{ADMINER_UPSTREAM}{upstream_path}"
+
+    # Forward request
+    import httpx
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")}
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            if request.method == "GET":
+                resp = await client.get(url, headers=headers)
+            elif request.method == "POST":
+                body = await request.body()
+                resp = await client.post(url, content=body, headers=headers)
+            elif request.method == "PUT":
+                body = await request.body()
+                resp = await client.put(url, content=body, headers=headers)
+            elif request.method == "DELETE":
+                resp = await client.delete(url, headers=headers)
+            elif request.method == "PATCH":
+                body = await request.body()
+                resp = await client.patch(url, content=body, headers=headers)
+            elif request.method == "HEAD":
+                resp = await client.head(url, headers=headers)
+            elif request.method == "OPTIONS":
+                resp = await client.request("OPTIONS", url, headers=headers)
+            else:
+                return FastAPIResponse(content="Method Not Allowed", status_code=405)
+
+        # Restituisci risposta proxy. httpx decompressa automaticamente gzip/deflate,
+        # quindi resp.content è già in chiaro: NON inoltrare content-encoding/content-length
+        # (causerebbe ERR_CONTENT_DECODING_FAILED nel browser).
+        response_headers = {}
+        for k, v in resp.headers.items():
+            if k.lower() in ("transfer-encoding", "connection", "content-encoding", "content-length"):
+                continue
+            if k.lower() == "location" and v.startswith("/") and not v.startswith("/adminer"):
+                v = f"/adminer{v}" if v != "/" else "/adminer/"
+            response_headers[k] = v
+        return FastAPIResponse(content=resp.content, status_code=resp.status_code, headers=response_headers)
+    except httpx.ConnectError as e:
+        logger.error(f"Adminer proxy: impossibile connettersi a {ADMINER_UPSTREAM}: {e}")
+        return FastAPIResponse(
+            content="Adminer non disponibile. Verifica che il container adminer sia avviato (docker compose up -d).",
+            status_code=503,
+        )
+    except Exception as e:
+        logger.error(f"Adminer proxy errore: {e}", exc_info=True)
+        raise
 
 @app.get("/")
 async def root(request: Request):

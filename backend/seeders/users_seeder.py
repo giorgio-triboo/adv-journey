@@ -16,13 +16,13 @@ INITIAL_USERS = [
         "role": "super-admin",
         "id_sede": "DIRECT"
     },
-    # Aggiungi qui altri utenti iniziali se necessario
-    # {
-    #     "email": "altro.utente@example.com",
-    #     "is_active": True,
-    #     "role": "viewer",
-    #     "id_sede": None
-    # },
+    # Utente viewer per test - usare impersonazione per vedere la sua vista
+    {
+        "email": "viewer-test@triboo.it",
+        "is_active": True,
+        "role": "viewer",
+        "id_sede": None
+    },
 ]
 
 

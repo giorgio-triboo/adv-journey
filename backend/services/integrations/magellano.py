@@ -14,10 +14,11 @@ from config import settings
 logger = logging.getLogger('services.integrations.magellano')
 
 class MagellanoService:
-    def __init__(self):
+    def __init__(self, headless: bool = True):
         self.base_url = "https://magellano.ai/admin/index.php"
         self.username = settings.MAGELLANO_USER
         self.password = settings.MAGELLANO_PASSWORD
+        self.headless = headless
 
     def generate_password(self, file_date: Optional[date] = None) -> str:
         """Generates dynamic ZIP password: ddmmyyyyT-Direct"""
@@ -137,7 +138,7 @@ class MagellanoService:
             with sync_playwright() as p:
                 for campaign in campaigns:
                     logger.info(f"Processing campaign {campaign}...")
-                    zip_path = self._download_campaign(p, campaign, start_date, end_date, temp_dir)
+                    zip_path = self._download_campaign(p, campaign, start_date, end_date, temp_dir, headless=self.headless)
                     
                     if not zip_path:
                         logger.error(f"Failed to download ZIP for campaign {campaign}")
@@ -184,9 +185,9 @@ class MagellanoService:
             
         return all_leads
 
-    def _download_campaign(self, playwright, campaign_id, start_date, end_date, download_dir) -> Optional[str]:
+    def _download_campaign(self, playwright, campaign_id, start_date, end_date, download_dir, headless: bool = True) -> Optional[str]:
         browser = playwright.chromium.launch(
-            headless=True,
+            headless=headless,
             args=['--no-sandbox', '--disable-dev-shm-usage']
         )
         context = browser.new_context(
@@ -245,11 +246,19 @@ class MagellanoService:
             page.locator('button[data-original-title="Users"] i.fa-users').first.click()
             page.wait_for_load_state('networkidle')
             
-            # Select Dates
-            logger.info(f"Selecting dates: {start_date} - {end_date}")
-            self._select_date(page, 0, start_date.day)
-            page.wait_for_timeout(500)
-            self._select_date(page, 1, end_date.day)
+            # Inserisci date direttamente nei campi (formato DD/MM/YYYY come data-date-format)
+            date_from_str = start_date.strftime('%d/%m/%Y')
+            date_to_str = end_date.strftime('%d/%m/%Y')
+            logger.info(f"Setting dates: {date_from_str} - {date_to_str} (#filters_date_from, #filters_date_to)")
+            page.locator('#filters_date_from').fill(date_from_str)
+            page.locator('#filters_date_to').fill(date_to_str)
+            # Trigger change per Bootstrap datepicker
+            page.evaluate("""
+                const fromEl = document.getElementById('filters_date_from');
+                const toEl = document.getElementById('filters_date_to');
+                if (fromEl) { $(fromEl).trigger('change'); }
+                if (toEl) { $(toEl).trigger('change'); }
+            """)
             page.wait_for_timeout(500)
             
             # IMPORTANTE: Resetta esplicitamente il filtro "Sent" a vuoto per recuperare TUTTE le lead
@@ -303,25 +312,6 @@ class MagellanoService:
             return None
         finally:
             browser.close()
-
-    def _select_date(self, page, index, day):
-        # Open calendar
-        page.locator('.input-group-addon .glyphicon-calendar').nth(index).click()
-        page.wait_for_timeout(1000)
-        # Select day from visible datepicker (avoiding jQuery :visible selector)
-        page.evaluate(f"""
-            const calendars = Array.from(document.querySelectorAll('.datepicker'));
-            const cal = calendars.find(c => getComputedStyle(c).display !== 'none');
-            if (cal) {{
-                const days = cal.querySelectorAll('td.day');
-                for (let d of days) {{
-                    if (d.textContent.trim() === '{day}' && !d.classList.contains('old') && !d.classList.contains('new')) {{
-                        d.click();
-                        break;
-                    }}
-                }}
-            }}
-        """)
 
     def _extract_zip(self, zip_path, extract_to) -> Optional[str]:
         """Estrae ZIP usando password di oggi (per sync automatica)"""

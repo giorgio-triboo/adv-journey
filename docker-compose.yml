@@ -33,6 +33,13 @@ services:
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - TZ=Europe/Rome
     command: celery -A celery_app.celery_app worker --loglevel=INFO
+    # Celery non espone HTTP: usa inspect ping invece del healthcheck uvicorn ereditato
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A celery_app.celery_app inspect ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
 
   redis:
     image: redis:7-alpine

@@ -44,8 +44,16 @@
                                 {{ 'Attivo' if user_item.is_active else 'Inattivo' }}
                             </span>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex items-center justify-end gap-2">
                             {% if user_item.id != user.id %}
+                            <form action="/api/auth/impersonate" method="POST" class="inline">
+                                {% include "csrf_input.html" %}
+                                <input type="hidden" name="user_id" value="{{ user_item.id }}">
+                                <button type="submit" class="text-indigo-600 hover:text-indigo-900 transition-colors" title="Impersona questo utente per vedere l'app come lo vede lui">
+                                    Impersona
+                                </button>
+                            </form>
+                            <span class="text-neutral-300">|</span>
                             <form action="/settings/platform/users/delete" method="POST" class="inline" onsubmit="return handleDeleteConfirm(event, 'Sicuro di voler rimuovere questo utente?')">
                                 {% include "csrf_input.html" %}
                                 <input type="hidden" name="user_id" value="{{ user_item.id }}">

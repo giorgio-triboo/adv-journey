@@ -19,10 +19,10 @@ logger = logging.getLogger('services.api.ui')
 
 router = APIRouter(include_in_schema=False)
 
-def run_magellano_sync(db: Session, campaigns: List[int], start_date: date, end_date: date):
+def run_magellano_sync(db: Session, campaigns: List[int], start_date: date, end_date: date, headless: bool = True):
     logger.info(f"Starting Magellano Sync Task for campaigns {campaigns} ({start_date} to {end_date})...")
     from services.integrations.magellano import MagellanoService
-    service = MagellanoService()
+    service = MagellanoService(headless=headless)
     correlation_service = LeadCorrelationService()
     try:
         leads_data = service.fetch_leads(start_date, end_date, campaigns)

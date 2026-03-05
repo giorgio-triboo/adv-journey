@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Soglie Margine e Scarto</h1>
+        <p class="text-neutral-500 mt-2">
+            Configura le soglie per la colorazione nella vista Marketing. I valori di margine % e % scarto vengono evidenziati in rosso, arancione o verde in base alle soglie impostate.
+        </p>
+    </div>
+
+    <div class="glass-card p-6 max-w-2xl">
+        <div class="mb-6">
+            <h2 class="text-lg font-semibold text-neutral-900 mb-2">Margine %</h2>
+            <p class="text-sm text-neutral-600 mb-4">
+                Il margine è migliore quando è alto. Rosso = fino a soglia rossa, Arancione = tra le due soglie, Verde = sopra soglia verde.
+            </p>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-sm font-medium text-neutral-700">Rosso (fino a) %</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" id="colori_margine_rosso"
+                                   class="w-4 h-4 rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-xs text-neutral-600">colore</span>
+                        </label>
+                    </div>
+                    <input type="number" step="0.01" id="margine_rosso_fino"
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <p class="text-xs text-neutral-500 mt-1">Valori ≤ questa soglia = rosso</p>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-sm font-medium text-neutral-700">Verde (da) %</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" id="colori_margine_verde"
+                                   class="w-4 h-4 rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-xs text-neutral-600">colore</span>
+                        </label>
+                    </div>
+                    <input type="number" step="0.01" id="margine_verde_da"
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <p class="text-xs text-neutral-500 mt-1">Valori ≥ questa soglia = verde</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-6 pt-4 border-t border-neutral-200">
+            <h2 class="text-lg font-semibold text-neutral-900 mb-2">% Scarto (ingresso e uscita)</h2>
+            <p class="text-sm text-neutral-600 mb-4">
+                Lo scarto è migliore quando è basso. Verde = fino a soglia verde, Arancione = tra le due soglie, Rosso = sopra soglia rossa.
+            </p>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-sm font-medium text-neutral-700">Verde (fino a) %</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" id="colori_scarto_verde"
+                                   class="w-4 h-4 rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-xs text-neutral-600">colore</span>
+                        </label>
+                    </div>
+                    <input type="number" step="0.01" id="scarto_verde_fino"
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <p class="text-xs text-neutral-500 mt-1">Valori ≤ questa soglia = verde</p>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-sm font-medium text-neutral-700">Rosso (da) %</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" id="colori_scarto_rosso"
+                                   class="w-4 h-4 rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-xs text-neutral-600">colore</span>
+                        </label>
+                    </div>
+                    <input type="number" step="0.01" id="scarto_rosso_da"
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <p class="text-xs text-neutral-500 mt-1">Valori ≥ questa soglia = rosso</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex gap-3 pt-4">
+            <button type="button" onclick="saveThresholds()"
+                    class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all">
+                Salva
+            </button>
+            <a href="/marketing" class="px-6 py-2 border border-neutral-300 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-50 transition-colors">
+                Torna a Marketing
+            </a>
+        </div>
+    </div>
+
+    <div class="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg max-w-2xl">
+        <p class="text-sm text-amber-800">
+            <strong>Legenda colori:</strong><br>
+            <span class="text-red-600 font-semibold">Rosso</span> = critico &nbsp;|&nbsp;
+            <span class="text-orange-500 font-semibold">Arancione</span> = attenzione &nbsp;|&nbsp;
+            <span class="text-green-600 font-semibold">Verde</span> = ok
+        </p>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+    await loadThresholds();
+});
+
+async function loadThresholds() {
+    try {
+        const response = await fetch('/api/marketing/thresholds');
+        if (!response.ok) throw new Error('Errore caricamento');
+        const config = await response.json();
+
+        document.getElementById('margine_rosso_fino').value = config.margine_rosso_fino ?? 0;
+        document.getElementById('margine_verde_da').value = config.margine_verde_da ?? 15;
+        document.getElementById('scarto_verde_fino').value = config.scarto_verde_fino ?? 5;
+        document.getElementById('scarto_rosso_da').value = config.scarto_rosso_da ?? 20;
+
+        document.getElementById('colori_margine_rosso').checked = config.colori_margine_rosso !== false;
+        document.getElementById('colori_margine_verde').checked = config.colori_margine_verde !== false;
+        document.getElementById('colori_scarto_verde').checked = config.colori_scarto_verde !== false;
+        document.getElementById('colori_scarto_rosso').checked = config.colori_scarto_rosso !== false;
+    } catch (error) {
+        console.error('Errore caricamento soglie:', error);
+        document.getElementById('margine_rosso_fino').value = 0;
+        document.getElementById('margine_verde_da').value = 15;
+        document.getElementById('scarto_verde_fino').value = 5;
+        document.getElementById('scarto_rosso_da').value = 20;
+    }
+}
+
+async function saveThresholds() {
+    const coloriMargineRosso = document.getElementById('colori_margine_rosso').checked;
+    const coloriMargineVerde = document.getElementById('colori_margine_verde').checked;
+    const coloriScartoVerde = document.getElementById('colori_scarto_verde').checked;
+    const coloriScartoRosso = document.getElementById('colori_scarto_rosso').checked;
+    const margineRosso = parseFloat(document.getElementById('margine_rosso_fino').value) || 0;
+    const margineVerde = parseFloat(document.getElementById('margine_verde_da').value) || 15;
+    const scartoVerde = parseFloat(document.getElementById('scarto_verde_fino').value) || 5;
+    const scartoRosso = parseFloat(document.getElementById('scarto_rosso_da').value) || 20;
+
+    if (margineRosso >= margineVerde) {
+        showNotification('error', 'Margine: la soglia verde deve essere maggiore della rossa');
+        return;
+    }
+    if (scartoVerde >= scartoRosso) {
+        showNotification('error', 'Scarto: la soglia rossa deve essere maggiore della verde');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/marketing/thresholds', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                colori_margine_rosso: coloriMargineRosso,
+                colori_margine_verde: coloriMargineVerde,
+                colori_scarto_verde: coloriScartoVerde,
+                colori_scarto_rosso: coloriScartoRosso,
+                margine_rosso_fino: margineRosso,
+                margine_verde_da: margineVerde,
+                scarto_verde_fino: scartoVerde,
+                scarto_rosso_da: scartoRosso
+            })
+        });
+        const data = await response.json();
+        if (response.ok) {
+            showNotification('success', 'Soglie salvate. La vista Marketing userà i nuovi valori.');
+            await loadThresholds();
+        } else {
+            showNotification('error', data.error || 'Errore nel salvataggio');
+        }
+    } catch (error) {
+        showNotification('error', 'Errore di connessione: ' + error.message);
+    }
+}
+
+function showNotification(type, message) {
+    const notification = document.createElement('div');
+    notification.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 ${
+        type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+    }`;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    setTimeout(() => notification.remove(), 3000);
+}
+</script>
+{% endblock %}

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session, joinedload
 from database import get_db, SessionLocal
-from models import User, ManagedCampaign, MetaAccount, MetaDataset, MetaDatasetFetchJob
+from models import User, ManagedCampaign, MetaAccount, MetaDataset, MetaDatasetFetchJob, TrafficPlatform, MsgTrafficMapping
 from ..common import templates, translate_error
 from datetime import datetime
 import logging
@@ -508,10 +508,16 @@ async def create_campaign(request: Request, db: Session = Depends(get_db)):
     if not current_user:
         return RedirectResponse(url='/')
     
+    platforms = db.query(TrafficPlatform).filter(TrafficPlatform.is_active == True).order_by(
+        TrafficPlatform.display_order.asc(),
+        TrafficPlatform.name.asc()
+    ).all()
+    
     return templates.TemplateResponse("settings_campaigns_create.html", {
         "request": request,
         "title": "Nuova Campagna",
         "user": current_user,
+        "platforms": platforms,
         "active_page": "campaigns"
     })
 
@@ -530,12 +536,21 @@ async def edit_campaign(request: Request, campaign_id: int, db: Session = Depend
     
     if not campaign:
         return RedirectResponse(url=f'/settings/campaigns?error={translate_error("not_found")}', status_code=303)
-    
+
+    platforms = db.query(TrafficPlatform).filter(TrafficPlatform.is_active == True).order_by(
+        TrafficPlatform.display_order.asc(),
+        TrafficPlatform.name.asc()
+    ).all()
+    mappings_q = db.query(MsgTrafficMapping).all()
+    msg_to_platform = {m.msg_id: m.traffic_platform_id for m in mappings_q}
+
     return templates.TemplateResponse("settings_campaigns_edit.html", {
         "request": request,
         "title": f"Modifica Campagna {campaign.cliente_name}",
         "user": current_user,
         "campaign": campaign,
+        "platforms": platforms,
+        "msg_to_platform": msg_to_platform,
         "active_page": "campaigns"
     })
 
@@ -543,21 +558,28 @@ async def edit_campaign(request: Request, campaign_id: int, db: Session = Depend
 async def update_campaign(request: Request, campaign_id: int, db: Session = Depends(get_db)):
     """Aggiorna campagna esistente"""
     if not request.session.get('user'): return RedirectResponse(url='/')
-    form = await request.form()
+    form = getattr(request.state, '_parsed_form', None) or await request.form()
     
     campaign = db.query(ManagedCampaign).filter(ManagedCampaign.id == campaign_id).first()
     if not campaign:
         return RedirectResponse(url=f'/settings/campaigns?error={translate_error("not_found")}', status_code=303)
     
-    cliente_name = form.get("cliente_name", "").strip()
-    name = form.get("name", "").strip() or cliente_name
-    magellano_ids_str = form.get("magellano_ids", "").strip()
-    msg_ids_str = form.get("msg_ids", "").strip()
-    msg_names_str = form.get("msg_names", "").strip()  # Nomi separati da virgola (opzionale)
-    pay_level = form.get("pay_level", "").strip() or None
+    cliente_name = str(form.get("cliente_name") or "").strip()
+    name = str(form.get("name") or "").strip() or cliente_name
+    magellano_ids_str = str(form.get("magellano_ids") or "").strip()
+    msg_ids_str = str(form.get("msg_ids") or "").strip()
+    if not msg_ids_str:
+        msg_ids_list = getattr(form, "getlist", lambda k: [])("msg_ids[]") or []
+        msg_ids_str = ",".join(str(v).strip() for v in msg_ids_list if v and str(v).strip())
+    msg_names_str = str(form.get("msg_names") or "").strip()
+    if not msg_names_str:
+        msg_names_list = getattr(form, "getlist", lambda k: [])("msg_names[]") or []
+        msg_names_str = ",".join(str(v).strip() for v in msg_names_list if v)
+    pay_level = (form.get("pay_level") or "").strip() or None
     is_active = form.get("is_active") == "on"
     
     if not cliente_name or not magellano_ids_str or not msg_ids_str:
+        logger.warning(f"Campaign edit missing_fields campaign_id={campaign_id} cliente_name={repr(cliente_name)} magellano_ids={repr(magellano_ids_str)} msg_ids={repr(msg_ids_str)}")
         return RedirectResponse(url=f'/settings/campaigns/edit/{campaign_id}?error=missing_fields', status_code=303)
     
     # Parse arrays
@@ -579,6 +601,22 @@ async def update_campaign(request: Request, campaign_id: int, db: Session = Depe
     # ID Messaggio e ID Ulixe sono la stessa cosa, sincronizziamo automaticamente
     ulixe_ids = msg_ids_raw.copy()
     
+    # Mapping msg_id -> piattaforma traffico (da form traffic_platform_ids[])
+    platform_ids_list = getattr(form, "getlist", lambda k: [])("traffic_platform_ids[]") or []
+    for i, msg_id in enumerate(msg_ids_raw):
+        plat_id = int(platform_ids_list[i]) if i < len(platform_ids_list) and platform_ids_list[i] and str(platform_ids_list[i]).strip() else None
+        existing = db.query(MsgTrafficMapping).filter(MsgTrafficMapping.msg_id == msg_id).first()
+        if plat_id:
+            platform = db.query(TrafficPlatform).filter(TrafficPlatform.id == plat_id).first()
+            if platform:
+                if existing:
+                    existing.traffic_platform_id = platform.id
+                else:
+                    db.add(MsgTrafficMapping(msg_id=msg_id, traffic_platform_id=platform.id))
+        else:
+            if existing:
+                db.delete(existing)
+    
     # Check if cliente_name changed and if it conflicts with another campaign
     if cliente_name != campaign.cliente_name:
         existing = db.query(ManagedCampaign).filter(
@@ -594,22 +632,27 @@ async def update_campaign(request: Request, campaign_id: int, db: Session = Depe
     campaign.msg_ids = msg_ids_objects
     campaign.pay_level = pay_level
     campaign.ulixe_ids = ulixe_ids
-    # meta_dataset_id viene gestito nella vista separata /settings/meta-datasets
     campaign.is_active = is_active
-    
+
     db.commit()
     return RedirectResponse(url='/settings/campaigns?success=updated', status_code=303)
 
 @router.post("/settings/campaigns")
 async def add_campaign(request: Request, db: Session = Depends(get_db)):
     if not request.session.get('user'): return RedirectResponse(url='/')
-    form = await request.form()
+    form = getattr(request.state, '_parsed_form', None) or await request.form()
     
     cliente_name = form.get("cliente_name", "").strip()
     name = form.get("name", "").strip() or cliente_name
     magellano_ids_str = form.get("magellano_ids", "").strip()
     msg_ids_str = form.get("msg_ids", "").strip()
-    msg_names_str = form.get("msg_names", "").strip()  # Nomi separati da virgola (opzionale)
+    if not msg_ids_str:
+        msg_ids_list = form.getlist("msg_ids[]") or []
+        msg_ids_str = ",".join(str(v).strip() for v in msg_ids_list if v and str(v).strip())
+    msg_names_str = form.get("msg_names", "").strip()
+    if not msg_names_str:
+        msg_names_list = form.getlist("msg_names[]") or []
+        msg_names_str = ",".join(str(v).strip() for v in msg_names_list if v)
     pay_level = form.get("pay_level", "").strip() or None
     is_active = form.get("is_active") == "on"
     
@@ -634,6 +677,22 @@ async def add_campaign(request: Request, db: Session = Depends(get_db)):
     
     # ID Messaggio e ID Ulixe sono la stessa cosa, sincronizziamo automaticamente
     ulixe_ids = msg_ids_raw.copy()
+    
+    # Mapping msg_id -> piattaforma traffico (da form traffic_platform_ids[])
+    platform_ids_list = getattr(form, "getlist", lambda k: [])("traffic_platform_ids[]") or []
+    for i, msg_id in enumerate(msg_ids_raw):
+        plat_id = int(platform_ids_list[i]) if i < len(platform_ids_list) and platform_ids_list[i] and str(platform_ids_list[i]).strip() else None
+        existing = db.query(MsgTrafficMapping).filter(MsgTrafficMapping.msg_id == msg_id).first()
+        if plat_id:
+            platform = db.query(TrafficPlatform).filter(TrafficPlatform.id == plat_id).first()
+            if platform:
+                if existing:
+                    existing.traffic_platform_id = platform.id
+                else:
+                    db.add(MsgTrafficMapping(msg_id=msg_id, traffic_platform_id=platform.id))
+        else:
+            if existing:
+                db.delete(existing)
     
     # Check if exists (by cliente_name, which is unique)
     existing = db.query(ManagedCampaign).filter(ManagedCampaign.cliente_name == cliente_name).first()

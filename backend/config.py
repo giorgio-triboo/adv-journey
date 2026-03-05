@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     # App Settings
     APP_NAME: str = "Magellano Lead Automation"
     DEBUG: bool = False
+    # URL base app (per link nelle email, es. https://app.example.com)
+    APP_BASE_URL: Optional[str] = None
     # SECRET_KEY obbligatoria in produzione - non usare default
     SECRET_KEY: str = "SUPER_SECRET_KEY_CHANGE_ME"
     # Cookie Secure flag: True in produzione con HTTPS

@@ -131,65 +131,99 @@
         </div>
     </div>
 
-    <!-- KPI principali (card bianche) -->
+    <!-- KPI Cards - 6 total -->
+    <!-- Prima riga: Ricavo | Speso | Margine | Margine % | Lead Acquistate Meta | CPL medio -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <div class="glass-card p-6 bg-white border border-neutral-200">
-            <p class="text-sm font-medium text-neutral-500 mb-1">Speso</p>
-            <p class="text-3xl font-bold text-neutral-900">
-                € {{ "{:,.2f}".format(totals.total_spend or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
-            </p>
-            <p class="text-xs text-neutral-500 mt-2">
-                Spesa totale nel periodo selezionato.
-            </p>
+        <div class="glass-card p-6 bg-white border border-neutral-200 flex">
+            <div class="flex-1 border-r border-neutral-200 pr-4">
+                <p class="text-xs font-medium text-neutral-500 uppercase">Ricavo</p>
+                <p class="text-2xl font-bold text-neutral-900 mt-1">
+                    € {{ "{:,.2f}".format(totals.total_ricavo or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                </p>
+            </div>
+            <div class="flex-1 pl-4 flex flex-col justify-center">
+                <p class="text-xs font-medium text-neutral-500 uppercase">Speso</p>
+                <p class="text-2xl font-bold text-neutral-900 mt-1">
+                    € {{ "{:,.2f}".format(totals.total_spend or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                </p>
+            </div>
         </div>
-        <div class="glass-card p-6 bg-white border border-neutral-200">
-            <p class="text-sm font-medium text-neutral-500 mb-1">Lead</p>
-            <p class="text-3xl font-bold text-neutral-900">
-                {{ "{:,}".format(totals.total_conversions or 0)|replace(',', '.') }}
-            </p>
-            <p class="text-xs text-neutral-500 mt-2">
-                Numero di lead generati (conversioni) nel periodo.
-            </p>
+        <div class="glass-card p-6 bg-white border border-neutral-200 flex">
+            <div class="flex-1 border-r border-neutral-200 pr-4">
+                <p class="text-xs font-medium text-neutral-500 uppercase">Margine</p>
+                <p class="text-2xl font-bold text-neutral-900 mt-1">
+                    € {{ "{:,.2f}".format(totals.total_margine or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                </p>
+            </div>
+            <div class="flex-1 pl-4 flex flex-col justify-center">
+                <p class="text-xs font-medium text-neutral-500 uppercase">Margine %</p>
+                <p class="text-xl font-bold {% if totals.total_margine_pct is not none %}{% if totals.total_margine_pct <= 0 %}text-red-600{% elif totals.total_margine_pct >= 15 %}text-green-600{% else %}text-orange-500{% endif %}{% else %}text-neutral-700{% endif %} mt-1">
+                    {% if totals.total_margine_pct is not none %}{{ (totals.total_margine_pct)|string|replace('.', ',') }}%{% else %}N/D{% endif %}
+                </p>
+            </div>
         </div>
-        <div class="glass-card p-6 bg-white border border-neutral-200">
-            <p class="text-sm font-medium text-neutral-500 mb-1">CPL</p>
-            <p class="text-3xl font-bold text-neutral-900">
-                € {{ "{:,.2f}".format(totals.global_cpl or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
-            </p>
-            <p class="text-xs text-neutral-500 mt-2">
-                Costo per lead calcolato come Speso / Lead nel periodo selezionato.
-            </p>
+        <div class="glass-card p-6 bg-white border border-neutral-200 flex">
+            <div class="flex-1 border-r border-neutral-200 pr-4">
+                <p class="text-xs font-medium text-neutral-500 uppercase">Lead Acquistate Meta</p>
+                <p class="text-2xl font-bold text-neutral-900 mt-1">
+                    {{ "{:,}".format(totals.total_conversions or 0)|replace(',', '.') }}
+                </p>
+            </div>
+            <div class="flex-1 pl-4 flex flex-col justify-center">
+                <p class="text-xs font-medium text-neutral-500 uppercase">CPL medio</p>
+                <p class="text-xl font-bold text-neutral-900 mt-1">
+                    € {{ "{:,.2f}".format(totals.global_cpl or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                </p>
+            </div>
         </div>
     </div>
 
-    <!-- Metriche Magellano / Ulixe (card bianche) -->
+    <!-- Seconda riga: Lead entrate Magellano - Doppioni | Scartate Firewall - Doppioni Ulixe | INVIATE WS - Approvate Ulixe -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        <div class="glass-card p-6 bg-white border border-neutral-200">
-            <p class="text-sm font-medium text-neutral-500">Entrate in Magellano</p>
-            <p class="text-2xl font-bold text-neutral-900 mt-1">{{ "{:,}".format(totals.total_magellano_entrate or 0)|replace(',', '.') }}</p>
-            <p class="text-xs text-neutral-500 mt-2">Lead entrate in Magellano nel periodo</p>
-        </div>
-        <div class="glass-card p-6 bg-white border border-neutral-200">
-            <p class="text-sm font-medium text-neutral-500 mb-3">Doppioni / Scartate Magellano</p>
-            <div class="grid grid-cols-2 gap-4 divide-x divide-neutral-200">
-                <div>
-                    <p class="text-xs text-neutral-500">Doppioni</p>
-                    <p class="text-xl font-bold text-neutral-900">{{ "{:,}".format(totals.total_magellano_doppioni or 0)|replace(',', '.') }}</p>
-                    <p class="text-xs text-neutral-400">{{ totals.magellano_doppioni_pct or 0 }}% su Lead Meta</p>
-                </div>
-                <div class="pl-4">
-                    <p class="text-xs text-neutral-500">Scartate</p>
-                    <p class="text-xl font-bold text-neutral-900">{{ "{:,}".format(totals.total_magellano_scartate or 0)|replace(',', '.') }}</p>
-                    <p class="text-xs text-neutral-400">{{ totals.magellano_scartate_pct or 0 }}% su Lead</p>
-                </div>
+        <div class="glass-card p-6 bg-white border border-neutral-200 flex">
+            <div class="flex-1 border-r border-neutral-200 pr-4">
+                <p class="text-xs font-medium text-neutral-500 uppercase">Lead entrate Magellano</p>
+                <p class="text-2xl font-bold text-neutral-900 mt-1">
+                    {{ "{:,}".format(totals.total_magellano_entrate or 0)|replace(',', '.') }}
+                </p>
             </div>
-            <p class="text-xs text-neutral-500 mt-2">Doppioni: Meta − lead DB. Scartate: in Magellano non inviate (include firewall, escluse refused WS)</p>
+            <div class="flex-1 pl-4 flex flex-col justify-center">
+                <p class="text-xs font-medium text-neutral-500 uppercase">Doppioni</p>
+                <p class="text-xl font-bold text-neutral-900 mt-1">
+                    {{ "{:,}".format(totals.total_magellano_doppioni or 0)|replace(',', '.') }} <span class="text-sm font-normal text-neutral-500">({{ totals.magellano_doppioni_pct or 0 }}%)</span>
+                </p>
+            </div>
         </div>
-        <div class="glass-card p-6 bg-white border border-neutral-200">
-            <p class="text-sm font-medium text-neutral-500">Scartate Ulixe</p>
-            <p class="text-2xl font-bold text-neutral-900 mt-1">{{ "{:,}".format(totals.total_ulixe_scartate or 0)|replace(',', '.') }}</p>
-            <p class="text-xs text-neutral-400">{{ totals.ulixe_scartate_pct or 0 }}% su Lead</p>
-            <p class="text-xs text-neutral-500 mt-2">Lead rifiutate/scartate da Ulixe</p>
+        <div class="glass-card p-6 bg-white border border-neutral-200 flex">
+            <div class="flex-1 border-r border-neutral-200 pr-4">
+                <p class="text-xs font-medium text-neutral-500 uppercase">Scartate Firewall</p>
+                <p class="text-2xl font-bold text-neutral-900 mt-1">
+                    {{ "{:,}".format(totals.total_magellano_scartate or 0)|replace(',', '.') }} <span class="text-sm font-normal text-neutral-500">({{ totals.magellano_scartate_pct or 0 }}%)</span>
+                </p>
+            </div>
+            <div class="flex-1 pl-4 flex flex-col justify-center">
+                <p class="text-xs font-medium text-neutral-500 uppercase">Doppioni Ulixe</p>
+                <p class="text-xl font-bold text-neutral-900 mt-1">
+                    {{ "{:,}".format(totals.total_ulixe_scartate or 0)|replace(',', '.') }} <span class="text-sm font-normal text-neutral-500">({{ totals.ulixe_scartate_pct or 0 }}%)</span>
+                </p>
+            </div>
+        </div>
+        <div class="glass-card p-6 bg-white border border-neutral-200 flex">
+            <div class="flex-1 border-r border-neutral-200 pr-4">
+                <p class="text-xs font-medium text-neutral-500 uppercase">Inviate WS</p>
+                <p class="text-2xl font-bold text-neutral-900 mt-1">
+                    {{ "{:,}".format(totals.total_magellano_inviate or 0)|replace(',', '.') }}
+                </p>
+            </div>
+            <div class="flex-1 pl-4 flex flex-col justify-center">
+                <p class="text-xs font-medium text-neutral-500 uppercase">Approvate Ulixe</p>
+                <p class="text-xl font-bold text-neutral-900 mt-1">
+                    {{ "{:,}".format(totals.total_ulixe_approvate or 0)|replace(',', '.') }}
+                </p>
+                {% if totals.ulixe_approvate_from_rcrm %}
+                <p class="text-xs text-neutral-400 mt-0.5">(da export RCRM)</p>
+                {% endif %}
+            </div>
         </div>
     </div>
 

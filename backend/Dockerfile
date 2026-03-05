@@ -18,8 +18,9 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers (chromium only to save space/time)
-RUN playwright install --with-deps chromium
+# Install Playwright browsers to /ms-playwright (must match PLAYWRIGHT_BROWSERS_PATH at runtime)
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN mkdir -p /ms-playwright && playwright install --with-deps chromium
 
 # Copy backend code
 COPY backend/ .

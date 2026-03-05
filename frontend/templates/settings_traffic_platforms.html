@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Piattaforme Traffico</h1>
+        <p class="text-neutral-500 mt-2">
+            Configura le piattaforme di traffico (Meta, Google, TikTok, ecc.). 
+            Per associare gli ID Messaggio alle piattaforme, modifica ogni campagna da <a href="/settings/campaigns" class="text-indigo-600 hover:underline">Gestione Campagne</a>.
+        </p>
+    </div>
+
+    <!-- Lista piattaforme -->
+    <div class="glass-card overflow-hidden mb-8">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50 flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Piattaforme</h2>
+            <button type="button" onclick="openAddPlatformModal()"
+                    class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md transition-all">
+                Aggiungi Piattaforma
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-neutral-200">
+                <thead class="bg-neutral-50/50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Ordine</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Nome</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Slug</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Stato</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-neutral-500 uppercase">Azioni</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-200" id="platformsTableBody">
+                    {% for p in platforms %}
+                    <tr data-id="{{ p.id }}">
+                        <td class="px-6 py-4 text-sm text-neutral-700">{{ p.display_order }}</td>
+                        <td class="px-6 py-4 text-sm font-medium text-neutral-900">{{ p.name }}</td>
+                        <td class="px-6 py-4 text-sm font-mono text-neutral-600">{{ p.slug }}</td>
+                        <td class="px-6 py-4">
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium {% if p.is_active %}bg-green-100 text-green-800{% else %}bg-neutral-100 text-neutral-800{% endif %}">
+                                {{ 'Attivo' if p.is_active else 'Disattivo' }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <button type="button" onclick="openEditPlatformModal({{ p.id }}, '{{ p.name|e }}', '{{ p.slug|e }}', {{ p.display_order }}, {{ 'true' if p.is_active else 'false' }})"
+                                    class="text-indigo-600 hover:text-indigo-900 mr-3">Modifica</button>
+                            <button type="button" onclick="deletePlatform({{ p.id }}, '{{ p.name|e }}')"
+                                    class="text-red-600 hover:text-red-900">Elimina</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not platforms %}
+                    <tr>
+                        <td colspan="5" class="px-6 py-12 text-center text-neutral-500 italic">
+                            Nessuna piattaforma. Clicca "Aggiungi Piattaforma" per crearne una.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Aggiungi/Modifica Piattaforma -->
+<div id="platformModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onclick="if(event.target===this)closePlatformModal()">
+    <div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-neutral-900 mb-4" id="platformModalTitle">Aggiungi Piattaforma</h3>
+        <form id="platformForm" onsubmit="return savePlatform(event)">
+            <input type="hidden" id="platformId" value="">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-neutral-700 mb-1">Nome *</label>
+                    <input type="text" id="platformName" required
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                           placeholder="es. Meta, Google Ads">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-neutral-700 mb-1">Slug</label>
+                    <input type="text" id="platformSlug"
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                           placeholder="es. meta, google-ads">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-neutral-700 mb-1">Ordine visualizzazione</label>
+                    <input type="number" id="platformOrder" value="0"
+                           class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div id="platformActiveRow" class="hidden">
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox" id="platformActive" checked>
+                        <span class="text-sm text-neutral-700">Attivo</span>
+                    </label>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button type="submit" class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700">
+                    Salva
+                </button>
+                <button type="button" onclick="closePlatformModal()" class="px-6 py-2 border border-neutral-300 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-50">
+                    Annulla
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openAddPlatformModal() {
+    document.getElementById('platformModalTitle').textContent = 'Aggiungi Piattaforma';
+    document.getElementById('platformId').value = '';
+    document.getElementById('platformName').value = '';
+    document.getElementById('platformSlug').value = '';
+    document.getElementById('platformOrder').value = '0';
+    document.getElementById('platformActiveRow').classList.add('hidden');
+    document.getElementById('platformModal').classList.remove('hidden');
+}
+
+function openEditPlatformModal(id, name, slug, order, isActive) {
+    document.getElementById('platformModalTitle').textContent = 'Modifica Piattaforma';
+    document.getElementById('platformId').value = id;
+    document.getElementById('platformName').value = name;
+    document.getElementById('platformSlug').value = slug;
+    document.getElementById('platformOrder').value = order;
+    document.getElementById('platformActive').checked = isActive;
+    document.getElementById('platformActiveRow').classList.remove('hidden');
+    document.getElementById('platformModal').classList.remove('hidden');
+}
+
+function closePlatformModal() {
+    document.getElementById('platformModal').classList.add('hidden');
+}
+
+function getCsrfHeaders() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    const h = { 'Content-Type': 'application/json' };
+    if (meta && meta.content) h['X-CSRF-Token'] = meta.content;
+    return h;
+}
+
+async function savePlatform(event) {
+    event.preventDefault();
+    const id = document.getElementById('platformId').value;
+    const data = {
+        name: document.getElementById('platformName').value.trim(),
+        slug: document.getElementById('platformSlug').value.trim(),
+        display_order: parseInt(document.getElementById('platformOrder').value) || 0
+    };
+    if (id) {
+        data.is_active = document.getElementById('platformActive').checked;
+    }
+    const url = id ? `/api/traffic-platforms/${id}` : '/api/traffic-platforms';
+    const method = id ? 'PUT' : 'POST';
+    try {
+        const r = await fetch(url, { method, headers: getCsrfHeaders(), body: JSON.stringify(data) });
+        const res = await r.json();
+        if (r.ok) {
+            showNotification('success', 'Piattaforma salvata');
+            closePlatformModal();
+            location.reload();
+        } else {
+            showNotification('error', res.error || 'Errore');
+        }
+    } catch (e) {
+        showNotification('error', e.message);
+    }
+    return false;
+}
+
+async function deletePlatform(id, name) {
+    const ok = await confirm('Eliminare la piattaforma "' + name + '"? Verranno rimossi anche i mapping associati.');
+    if (!ok) return;
+    try {
+        const headers = getCsrfHeaders();
+        const r = await fetch(`/api/traffic-platforms/${id}`, { method: 'DELETE', headers });
+        if (r.ok) {
+            showNotification('success', 'Piattaforma eliminata');
+            location.reload();
+        } else {
+            const res = await r.json();
+            showNotification('error', res.error || 'Errore');
+        }
+    } catch (e) {
+        showNotification('error', e.message);
+    }
+}
+
+function showNotification(type, msg) {
+    const el = document.createElement('div');
+    el.className = 'fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-[100] ' + (type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white');
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+}
+
+document.getElementById('platformName').addEventListener('input', function() {
+    if (!document.getElementById('platformId').value && !document.getElementById('platformSlug').value) {
+        const slug = this.value.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/[\s-]+/g, '-').replace(/^-|-$/g, '');
+        document.getElementById('platformSlug').value = slug;
+    }
+});
+</script>
+{% endblock %}

@@ -79,9 +79,19 @@ class MagellanoAutomation:
             page.click('button[data-original-title="Users"] i.fa-users')
             page.wait_for_load_state('networkidle')
             
-            # Dates
-            self._select_date(page, 0, start_date.day)
-            self._select_date(page, 1, end_date.day)
+            # Inserisci date direttamente nei campi (formato DD/MM/YYYY)
+            date_from_str = start_date.strftime('%d/%m/%Y')
+            date_to_str = end_date.strftime('%d/%m/%Y')
+            logger.info(f"Setting dates: {date_from_str} - {date_to_str}")
+            page.locator('#filters_date_from').fill(date_from_str)
+            page.locator('#filters_date_to').fill(date_to_str)
+            page.evaluate("""
+                const fromEl = document.getElementById('filters_date_from');
+                const toEl = document.getElementById('filters_date_to');
+                if (fromEl) { $(fromEl).trigger('change'); }
+                if (toEl) { $(toEl).trigger('change'); }
+            """)
+            page.wait_for_timeout(500)
             
             # Sent Status
             page.evaluate("$('#filters_sent').val('1').trigger('change');")
@@ -111,23 +121,6 @@ class MagellanoAutomation:
             return None
         finally:
             browser.close()
-
-    def _select_date(self, page, index, day):
-        page.locator('.input-group-addon .glyphicon-calendar').nth(index).click()
-        page.wait_for_timeout(500)
-        page.evaluate(f"""
-            const cals = document.querySelectorAll('.datepicker:visible');
-            const cal = cals[0];
-            if (cal) {{
-                const days = cal.querySelectorAll('td.day');
-                for (let d of days) {{
-                    if (d.textContent.strip() === '{day}' && !d.classList.contains('old') && !d.classList.contains('new')) {{
-                        d.click();
-                        break;
-                    }}
-                }}
-            }}
-        """)
 
     def extract_and_work(self, zip_path, extract_dir):
         """Estrae il file ZIP e processa il contenuto"""

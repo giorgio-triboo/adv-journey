@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="animate-fadeInUp">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold gradient-text">Lavorazioni - Ulixe</h1>
+        <p class="text-neutral-500 mt-2">Lavorazioni aggregate per ID Messaggio.</p>
+    </div>
+
+    {% include "lavorazioni_common.html" %}
+
+    <div class="glass-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50 flex justify-between items-center">
+            <h2 class="text-lg font-semibold">Lavorazioni per ID Messaggio (Aggregato)</h2>
+            <span class="text-xs text-neutral-500">{{ lavorazioni_aggregate|length }} ID messaggio trovati</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-neutral-200">
+                <thead class="bg-neutral-50/50">
+                    <tr>
+                        <th rowspan="2" class="px-4 py-3 text-left text-xs font-semibold text-neutral-900 uppercase border-r border-neutral-200">ID Messaggio</th>
+                        <th rowspan="2" class="px-4 py-3 text-left text-xs font-semibold text-neutral-900 uppercase border-r border-neutral-200">Brand</th>
+                        <th rowspan="2" class="px-4 py-3 text-left text-xs font-semibold text-neutral-900 uppercase border-r border-neutral-200">Campagna</th>
+                        <th colspan="1" class="px-4 py-2 text-center text-xs font-semibold text-neutral-900 uppercase border-r border-neutral-200 bg-indigo-50/50">Dati Meta</th>
+                        <th colspan="3" class="px-4 py-2 text-center text-xs font-semibold text-neutral-900 uppercase border-r border-neutral-200 bg-sky-50/50">Ingresso Magellano</th>
+                        <th colspan="3" class="px-4 py-2 text-center text-xs font-semibold text-neutral-900 uppercase border-r border-neutral-200 bg-amber-50/50">Uscita Magellano</th>
+                        <th rowspan="2" class="px-4 py-3 text-center text-xs font-semibold text-neutral-900 uppercase border-r border-neutral-200 bg-neutral-100">Margine %</th>
+                        <th colspan="3" class="px-4 py-2 text-center text-xs font-semibold text-neutral-900 uppercase border-r border-neutral-200 bg-emerald-50/50">Ulixe</th>
+                        <th rowspan="2" class="px-4 py-3 text-left text-xs font-semibold text-neutral-900 uppercase">Ultimo Check</th>
+                    </tr>
+                    <tr>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-neutral-500 uppercase border-r border-neutral-200 bg-indigo-50/30">Lead</th>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-neutral-500 uppercase border-r border-neutral-200 bg-sky-50/30">Entrate</th>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-neutral-500 uppercase border-r border-neutral-200 bg-sky-50/30">Scartate</th>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-neutral-500 uppercase border-r border-neutral-200 bg-sky-50/30">% Scarto</th>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-neutral-500 uppercase border-r border-neutral-200 bg-amber-50/30">Inviate</th>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-neutral-500 uppercase border-r border-neutral-200 bg-amber-50/30">Rifiutate</th>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-neutral-500 uppercase border-r border-neutral-200 bg-amber-50/30">% Scarto</th>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-neutral-500 uppercase border-r border-neutral-200 bg-emerald-50/30">Lavorazione</th>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-neutral-500 uppercase border-r border-neutral-200 bg-emerald-50/30">Rifiutate</th>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-neutral-500 uppercase border-r border-neutral-200 bg-emerald-50/30">Approvate</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-200">
+                    {% for lavorazione in lavorazioni_aggregate %}
+                    <tr class="hover:bg-neutral-50/50 transition-colors">
+                        <td class="px-4 py-3 border-r border-neutral-200"><span class="text-sm font-mono font-medium text-indigo-600">{{ lavorazione.msg_id }}</span></td>
+                        <td class="px-4 py-3 border-r border-neutral-200"><span class="text-sm text-neutral-700">{{ lavorazione.brand or 'N/A' }}</span></td>
+                        <td class="px-4 py-3 border-r border-neutral-200"><span class="text-sm text-neutral-700">{{ lavorazione.campaign_name or 'N/A' }}</span></td>
+                        <td class="px-4 py-3 text-center border-r border-neutral-200"><span class="text-sm text-neutral-700">{{ lavorazione.lead_acquistate_meta }}</span></td>
+                        <td class="px-4 py-3 text-center border-r border-neutral-200"><span class="text-sm text-neutral-700">{{ lavorazione.entrate_magellano }}</span></td>
+                        <td class="px-4 py-3 text-center border-r border-neutral-200"><span class="text-sm text-neutral-600">{{ lavorazione.doppioni }}</span></td>
+                        <td class="px-4 py-3 text-center border-r border-neutral-200"><span class="text-sm">{{ lavorazione.scarto_pct_ingresso }}%</span></td>
+                        <td class="px-4 py-3 text-center border-r border-neutral-200"><span class="text-sm text-neutral-700">{{ lavorazione.inviate }}</span></td>
+                        <td class="px-4 py-3 text-center border-r border-neutral-200"><span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">{{ lavorazione.scartate_firewall }}</span></td>
+                        <td class="px-4 py-3 text-center border-r border-neutral-200"><span class="text-sm">{{ lavorazione.scarto_pct_uscita }}%</span></td>
+                        <td class="px-4 py-3 text-center border-r border-neutral-200"><span class="text-sm text-neutral-500">N/D</span></td>
+                        <td class="px-4 py-3 text-center border-r border-neutral-200"><span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">{{ lavorazione.in_lavorazione }}</span></td>
+                        <td class="px-4 py-3 text-center border-r border-neutral-200"><span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">{{ lavorazione.doppioni_ulixe }}</span></td>
+                        <td class="px-4 py-3 text-center border-r border-neutral-200"><span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">{{ lavorazione.approvate }}</span></td>
+                        <td class="px-4 py-3"><span class="text-sm text-neutral-700">{% if lavorazione.last_check %}{{ lavorazione.last_check.strftime('%d/%m/%Y %H:%M') }}{% else %}<span class="text-neutral-400">Mai</span>{% endif %}</span></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="15" class="px-6 py-8 text-center text-neutral-500">Nessuna lavorazione trovata con i filtri selezionati.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const rangeInput = document.getElementById('lavorazioniDateRange');
+    const hiddenFrom = document.getElementById('lavorazioniDateFrom');
+    const hiddenTo = document.getElementById('lavorazioniDateTo');
+    if (rangeInput && hiddenFrom && hiddenTo && window.DateRangePicker && window.moment) {
+        const start = hiddenFrom.value ? moment(hiddenFrom.value, 'YYYY-MM-DD') : moment().subtract(29, 'days');
+        const end = hiddenTo.value ? moment(hiddenTo.value, 'YYYY-MM-DD') : moment();
+        new DateRangePicker(rangeInput, {
+            startDate: start, endDate: end, autoApply: true, alwaysShowCalendars: true, opens: 'left', maxSpan: { days: 365 },
+            locale: { format: 'DD/MM/YYYY', separator: ' al ', applyLabel: 'Aggiorna', cancelLabel: 'Annulla', weekLabel: 'Set',
+                daysOfWeek: ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'],
+                monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'], firstDay: 1 },
+            ranges: { 'Oggi': [moment(), moment()], 'Ieri': [moment().subtract(1, 'days'), moment().subtract(1, 'days')], 'Ultimi 7 giorni': [moment().subtract(6, 'days'), moment()], 'Ultimi 14 giorni': [moment().subtract(13, 'days'), moment()], 'Ultimi 28 giorni': [moment().subtract(27, 'days'), moment()], 'Ultimi 30 giorni': [moment().subtract(29, 'days'), moment()], 'Questo mese': [moment().startOf('month'), moment().endOf('month')], 'Mese scorso': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')] }
+        }, function (startDate, endDate) { hiddenFrom.value = startDate.format('YYYY-MM-DD'); hiddenTo.value = endDate.format('YYYY-MM-DD'); });
+    }
+});
+</script>
+{% endblock %}

@@ -3,8 +3,8 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 from database import get_db
-from models import MetaAccount, MetaCampaign, MetaAdSet, MetaAd, MetaMarketingData, Lead, StatusCategory, User, ManagedCampaign
-from sqlalchemy import func, desc, or_, and_
+from models import MetaAccount, MetaCampaign, MetaAdSet, MetaAd, MetaMarketingData, Lead, StatusCategory, User, ManagedCampaign, UlixeRcrmTemp
+from sqlalchemy import func, desc, and_
 from datetime import datetime, timedelta
 from typing import List
 from urllib.parse import urlparse
@@ -17,13 +17,8 @@ logger = logging.getLogger('services.api.ui')
 router = APIRouter(include_in_schema=False)
 
 
-def _get_pay_for_leads(db: Session, leads: list) -> float | None:
-    """
-    Ottiene il prezzo medio per lead dalle ManagedCampaign (pay_level in settings/campaigns).
-    Mappa magellano_campaign_id -> pay_level e restituisce il pay più frequente tra le lead.
-    """
-    if not leads:
-        return None
+def _get_mag_to_pay(db: Session) -> dict:
+    """Mappa magellano_campaign_id -> pay_level da ManagedCampaign attive."""
     managed = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True).all()
     mag_to_pay = {}
     for mc in managed:
@@ -34,34 +29,179 @@ def _get_pay_for_leads(db: Session, leads: list) -> float | None:
                     mag_to_pay[str(mid)] = pay_val
             except (ValueError, TypeError):
                 pass
+    return mag_to_pay
+
+
+def _get_pay_for_leads(db: Session, leads: list) -> float | None:
+    """
+    Ottiene il pay più frequente tra le lead (moda).
+    Usato per pay_level di riferimento; per ricavo effettivo usare _compute_ricavo_for_leads.
+    """
+    if not leads:
+        return None
+    mag_to_pay = _get_mag_to_pay(db)
     pays = []
     for l in leads:
         if l.magellano_campaign_id and str(l.magellano_campaign_id) in mag_to_pay:
             pays.append(mag_to_pay[str(l.magellano_campaign_id)])
     if not pays:
         return None
-    # Usa il pay più frequente (moda) o media
     from collections import Counter
     counts = Counter(pays)
     return counts.most_common(1)[0][0]
 
 
+def _compute_ricavo_for_leads(db: Session, leads: list) -> float:
+    """
+    Ricavo = somma del pay di ogni lead (ogni lead ha magellano_campaign_id -> campagna -> pay).
+    """
+    if not leads:
+        return 0.0
+    mag_to_pay = _get_mag_to_pay(db)
+    total = 0.0
+    for l in leads:
+        if l.magellano_campaign_id and str(l.magellano_campaign_id) in mag_to_pay:
+            total += mag_to_pay[str(l.magellano_campaign_id)]
+    return total
+
+
+def _get_msg_to_pay(db: Session) -> dict:
+    """Mappa msg_id (Ulixe) -> pay_level da ManagedCampaign.msg_ids."""
+    managed = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True).all()
+    msg_to_pay = {}
+    for mc in managed:
+        if not mc.msg_ids or not mc.pay_level:
+            continue
+        try:
+            pay_val = float(str(mc.pay_level).replace(',', '.'))
+        except (ValueError, TypeError):
+            continue
+        for item in mc.msg_ids:
+            if isinstance(item, dict):
+                vid = item.get("id")
+            else:
+                vid = str(item)
+            if vid:
+                msg_to_pay[str(vid)] = pay_val
+    return msg_to_pay
+
+
+def _get_ricavo_from_rcrm_temp(db: Session, date_from, date_to) -> float:
+    """
+    Ricavo da ulixe_rcrm_temp: somma di (rcrm_count × pay per msg_id) per periodi nel range.
+    Usato quando le approvate provengono da RCRM e non dalle lead.
+    """
+    date_from_d = date_from.date() if hasattr(date_from, "date") else date_from
+    date_to_d = date_to.date() if hasattr(date_to, "date") else date_to
+    periods = []
+    y, m = date_from_d.year, date_from_d.month
+    end_y, end_m = date_to_d.year, date_to_d.month
+    while (y, m) <= (end_y, end_m):
+        periods.append(f"{y}-{m:02d}")
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    if not periods:
+        return 0.0
+    msg_to_pay = _get_msg_to_pay(db)
+    if not msg_to_pay:
+        return 0.0
+    rows = db.query(UlixeRcrmTemp.msg_id, UlixeRcrmTemp.rcrm_count).filter(
+        UlixeRcrmTemp.period.in_(periods),
+        UlixeRcrmTemp.msg_id.in_(list(msg_to_pay.keys())),
+    ).all()
+    total = 0.0
+    for msg_id, rcrm_count in rows:
+        pay = msg_to_pay.get(str(msg_id))
+        if pay is not None and rcrm_count:
+            total += rcrm_count * pay
+    return total
+
+
 def _lead_date_filter(date_from_obj, date_to_obj):
-    """Filtra lead per data: usa magellano_subscr_date se presente, altrimenti created_at."""
+    """Filtra lead per data: usa SEMPRE magellano_subscr_date (lead senza data subscr. escluse)."""
     date_from_d = date_from_obj.date() if hasattr(date_from_obj, "date") else date_from_obj
     date_to_d = date_to_obj.date() if hasattr(date_to_obj, "date") else date_to_obj
-    return or_(
-        and_(
-            Lead.magellano_subscr_date.isnot(None),
-            Lead.magellano_subscr_date >= date_from_d,
-            Lead.magellano_subscr_date <= date_to_d,
-        ),
-        and_(
-            Lead.magellano_subscr_date.is_(None),
-            Lead.created_at >= date_from_obj,
-            Lead.created_at <= date_to_obj,
-        ),
+    return and_(
+        Lead.magellano_subscr_date.isnot(None),
+        Lead.magellano_subscr_date >= date_from_d,
+        Lead.magellano_subscr_date <= date_to_d,
     )
+
+
+def _get_valid_msg_ids_from_managed(db: Session) -> set:
+    """Msg_id configurati in ManagedCampaign (solo attive)."""
+    managed = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True).all()
+    valid = set()
+    for mc in managed:
+        if not mc.msg_ids:
+            continue
+        for item in mc.msg_ids:
+            if isinstance(item, dict):
+                vid = item.get("id")
+                if vid:
+                    valid.add(str(vid))
+            else:
+                valid.add(str(item))
+    return {x for x in valid if x}
+
+
+def get_unmapped_ulixe_ids(db: Session) -> list[str]:
+    """
+    Msg_id presenti in ulixe_rcrm_temp ma NON configurati in ManagedCampaign.
+    Usato per avvisare che alcuni ID da export RCRM non sono mappati.
+    """
+    valid = _get_valid_msg_ids_from_managed(db)
+    rcrm_msg_ids = db.query(UlixeRcrmTemp.msg_id).distinct().all()
+    rcrm_set = {str(m[0]) for m in rcrm_msg_ids if m[0]}
+    unmapped = sorted(rcrm_set - valid)
+    return unmapped
+
+
+def _get_ulixe_approvate_from_rcrm_temp(db: Session, date_from, date_to) -> int | None:
+    """
+    Somma RCRM dalla tabella provvisoria ulixe_rcrm_temp per i periodi nel range.
+    Considera SOLO msg_id configurati in ManagedCampaign (esclude ID Ulixe non mappati).
+    Ritorna None se non ci sono dati (usa status_category come fallback).
+    """
+    date_from_d = date_from.date() if hasattr(date_from, "date") else date_from
+    date_to_d = date_to.date() if hasattr(date_to, "date") else date_to
+    periods = []
+    y, m = date_from_d.year, date_from_d.month
+    end_y, end_m = date_to_d.year, date_to_d.month
+    while (y, m) <= (end_y, end_m):
+        periods.append(f"{y}-{m:02d}")
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    if not periods:
+        return None
+    valid_msg_ids = _get_valid_msg_ids_from_managed(db)
+    if not valid_msg_ids:
+        return None
+    from sqlalchemy import func
+    row = db.query(func.sum(UlixeRcrmTemp.rcrm_count)).filter(
+        UlixeRcrmTemp.period.in_(periods),
+        UlixeRcrmTemp.msg_id.in_(valid_msg_ids),
+    ).scalar()
+    # None = nessun record per periodi+msg_id validi -> fallback status_category
+    if row is None:
+        return None
+    return int(row)  # 0 è valido (somma filtrata = 0)
+
+
+@router.get("/api/ui/unmapped-ulixe-ids")
+async def api_unmapped_ulixe_ids(request: Request, db: Session = Depends(get_db)):
+    """
+    Ritorna gli msg_id presenti in ulixe_rcrm_temp ma NON in ManagedCampaign.
+    Usato dalla sidebar per mostrare banner '(!) N id da mappare'.
+    """
+    if not request.session.get("user"):
+        return JSONResponse({"ids": [], "count": 0})
+    ids = get_unmapped_ulixe_ids(db)
+    return JSONResponse({"ids": ids, "count": len(ids)})
 
 
 def _parse_amount(val) -> float:
@@ -399,8 +539,15 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
         total_magellano_entrate = 0
         total_magellano_doppioni = 0
         total_magellano_scartate = 0
+        total_magellano_inviate = 0
+        total_ulixe_approvate = 0
         total_ulixe_scartate = 0
+        rcrm_approvate = None
         leads_count = 0
+        total_ricavo = 0.0
+        total_margine = 0.0
+        total_margine_pct = None
+        pay_campagna = None
 
         if campaign_ids:
             lead_query = db.query(Lead).filter(_lead_date_filter(date_from, date_to))
@@ -410,6 +557,10 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             leads_in_scope = lead_query.all()
             leads_count = len(leads_in_scope)
             total_magellano_entrate = len([l for l in leads_in_scope if l.magellano_campaign_id])
+            total_magellano_inviate = len([l for l in leads_in_scope if l.magellano_status == "magellano_sent"])
+            # Approvate: preferisci RCRM da tabella temp (export Ulixe) se disponibile, altrimenti status_category
+            rcrm_approvate = _get_ulixe_approvate_from_rcrm_temp(db, date_from, date_to)
+            total_ulixe_approvate = rcrm_approvate if rcrm_approvate is not None else len([l for l in leads_in_scope if l.status_category == StatusCategory.FINALE])
             # Doppioni = Meta conta più di noi (conversioni duplicate in Meta)
             total_magellano_doppioni = max(0, total_conversions - leads_count)
             # Scartate = lead in Magellano non inviate al cliente (include firewall; esclude solo refused da WS)
@@ -420,7 +571,36 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             ])
             total_ulixe_scartate = len([l for l in leads_in_scope if l.status_category == StatusCategory.RIFIUTATO])
 
+            # Ricavo = somma del pay di ogni lead approvata (ogni lead → campagna → pay)
+            leads_approvate = [l for l in leads_in_scope if l.status_category == StatusCategory.FINALE]
+            if rcrm_approvate is not None:
+                # Usando RCRM per il conteggio: ricavo da ulixe_rcrm_temp (msg_id × pay)
+                total_ricavo = _get_ricavo_from_rcrm_temp(db, date_from, date_to)
+            else:
+                # Usando leads: somma pay per ogni lead approvata
+                total_ricavo = _compute_ricavo_for_leads(db, leads_approvate)
+            pay_campagna = _get_pay_for_leads(db, leads_in_scope)
+            if total_ricavo > 0:
+                total_margine = total_ricavo - total_spend
+                total_margine_pct = round((total_margine / total_ricavo * 100), 2)
+
+        totals["pay_level"] = round(pay_campagna, 2) if pay_campagna is not None else None
         totals["total_magellano_entrate"] = total_magellano_entrate
+        totals["total_magellano_inviate"] = total_magellano_inviate
+        # Se nessuna campagna in scope, usa comunque RCRM per riferimento
+        if not campaign_ids:
+            rcrm_approvate = _get_ulixe_approvate_from_rcrm_temp(db, date_from, date_to)
+            if rcrm_approvate is not None:
+                total_ulixe_approvate = rcrm_approvate
+                total_ricavo = _get_ricavo_from_rcrm_temp(db, date_from, date_to)
+                if total_ricavo > 0:
+                    total_margine = total_ricavo - total_spend
+                    total_margine_pct = round((total_margine / total_ricavo * 100), 2)
+        totals["total_ulixe_approvate"] = total_ulixe_approvate
+        totals["ulixe_approvate_from_rcrm"] = rcrm_approvate is not None
+        totals["total_ricavo"] = round(total_ricavo, 2)
+        totals["total_margine"] = round(total_margine, 2)
+        totals["total_margine_pct"] = total_margine_pct
         totals["total_magellano_doppioni"] = total_magellano_doppioni
         totals["total_magellano_scartate"] = total_magellano_scartate
         totals["total_ulixe_scartate"] = total_ulixe_scartate
@@ -715,17 +895,21 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                 cpl_uscita = (total_spend_meta / magellano_inviate) if magellano_inviate > 0 else 0
                 # Percentuale scarto uscita: rifiutate / magellano_inviate * 100
                 magellano_scarto_pct_uscita = (magellano_rifiutate / magellano_inviate * 100) if magellano_inviate > 0 else 0
+                # % scarto totale: acquisto Meta -> uscita Magellano (lead perse lungo tutto il funnel)
+                scarto_totale_pct = ((total_leads - magellano_inviate) / total_leads * 100) if total_leads > 0 else 0
                 
                 # Ulixe: stati principali
                 ulixe_lavorazione = len([l for l in leads if l.status_category == StatusCategory.IN_LAVORAZIONE])
                 ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
-                ulixe_chiusure = len([l for l in leads if l.status_category == StatusCategory.FINALE])
-                
-                # Margine: lead inviate × pay (CPL campagna da settings/campaigns)
+                ulixe_approvate = len([l for l in leads if l.status_category == StatusCategory.FINALE])
+                leads_approvate = [l for l in leads if l.status_category == StatusCategory.FINALE]
+
+                # Ricavo e margine: somma pay per ogni lead approvata (ogni lead → campagna → pay)
+                revenue = _compute_ricavo_for_leads(db, leads_approvate)
                 pay_campagna = _get_pay_for_leads(db, leads)
-                revenue = (magellano_inviate * pay_campagna) if pay_campagna and magellano_inviate else 0
-                margine_singola = (pay_campagna - cpl_uscita) if pay_campagna and magellano_inviate else None
-                margine_lordo = (revenue - total_spend_meta) if pay_campagna and magellano_inviate else None
+                cpl_approvate = (total_spend_meta / ulixe_approvate) if ulixe_approvate > 0 else 0
+                margine_singola = (pay_campagna - cpl_approvate) if pay_campagna and ulixe_approvate else None
+                margine_lordo = (revenue - total_spend_meta) if revenue > 0 else None
                 margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
                 
                 # Nascondi campagne a 0 per il periodo (meno rumore)
@@ -758,11 +942,13 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                     # Ulixe
                     "ulixe_lavorazione": ulixe_lavorazione,
                     "ulixe_rifiutate": ulixe_rifiutate,
-                    "ulixe_chiusure": ulixe_chiusure,
-                    # Margine
+                    "ulixe_approvate": ulixe_approvate,
+                    # Ricavo e margine (da approvate)
+                    "revenue": round(revenue, 2),
                     "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
                     "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
-                    "margine_pct": round(margine_pct, 2) if margine_pct is not None else None
+                    "margine_pct": round(margine_pct, 2) if margine_pct is not None else None,
+                    "scarto_totale_pct": round(scarto_totale_pct, 2),
                 })
                 
                 # Aggiorna totali per le 4 fasi
@@ -779,7 +965,7 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
         total_magellano_entrate = sum(c.get('magellano_entrate', 0) for c in result)
         total_magellano_inviate = sum(c.get('magellano_inviate', 0) for c in result)
         total_ulixe_lavorazione = sum(c.get('ulixe_lavorazione', 0) for c in result)
-        total_ulixe_chiusure = sum(c.get('ulixe_chiusure', 0) for c in result)
+        total_ulixe_approvate = sum(c.get('ulixe_approvate', 0) for c in result)
         
         # Calcola CPL medio
         average_cpl = (total_cpl_sum / campaigns_with_cpl) if campaigns_with_cpl > 0 else 0
@@ -793,7 +979,7 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                 "total_magellano_entrate": total_magellano_entrate,
                 "total_magellano_inviate": total_magellano_inviate,
                 "total_ulixe_lavorazione": total_ulixe_lavorazione,
-                "total_ulixe_chiusure": total_ulixe_chiusure
+                "total_ulixe_approvate": total_ulixe_approvate
             }
         })
     except Exception as e:
@@ -808,7 +994,7 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                 "total_magellano_entrate": 0,
                 "total_magellano_inviate": 0,
                 "total_ulixe_lavorazione": 0,
-                "total_ulixe_chiusure": 0
+                "total_ulixe_approvate": 0
             }
         }, status_code=500)
 
@@ -973,23 +1159,27 @@ async def api_marketing_campaign_adsets(campaign_id: int, request: Request, db: 
         cpl_uscita = (total_spend_meta / magellano_inviate) if magellano_inviate > 0 else 0
         # Percentuale scarto uscita: rifiutate / magellano_inviate * 100
         magellano_scarto_pct_uscita = (magellano_rifiutate / magellano_inviate * 100) if magellano_inviate > 0 else 0
+        # % scarto totale: acquisto Meta -> uscita Magellano
+        scarto_totale_pct = ((total_leads - magellano_inviate) / total_leads * 100) if total_leads > 0 else 0
         
         # Ulixe: stati principali
         ulixe_lavorazione = len([l for l in leads if l.status_category == StatusCategory.IN_LAVORAZIONE])
         ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
-        ulixe_chiusure = len([l for l in leads if l.status_category == StatusCategory.FINALE])
-        
-        # Margine: lead inviate × pay (CPL campagna da settings/campaigns)
+        ulixe_approvate = len([l for l in leads if l.status_category == StatusCategory.FINALE])
+        leads_approvate = [l for l in leads if l.status_category == StatusCategory.FINALE]
+
+        # Ricavo e margine: somma pay per ogni lead approvata (ogni lead → campagna → pay)
+        revenue = _compute_ricavo_for_leads(db, leads_approvate)
         pay_campagna = _get_pay_for_leads(db, leads)
-        revenue = (magellano_inviate * pay_campagna) if pay_campagna and magellano_inviate else 0
-        margine_singola = (pay_campagna - cpl_uscita) if pay_campagna and magellano_inviate else None
-        margine_lordo = (revenue - total_spend_meta) if pay_campagna and magellano_inviate else None
+        cpl_approvate = (total_spend_meta / ulixe_approvate) if ulixe_approvate > 0 else 0
+        margine_singola = (pay_campagna - cpl_approvate) if pay_campagna and ulixe_approvate else None
+        margine_lordo = (revenue - total_spend_meta) if revenue > 0 else None
         margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
-        
+
         # Nascondi adset a 0 per il periodo
         if total_leads == 0 and total_spend_meta == 0:
             continue
-        
+
         result.append({
             "id": adset.id,
             "adset_id": adset.adset_id,
@@ -1013,11 +1203,13 @@ async def api_marketing_campaign_adsets(campaign_id: int, request: Request, db: 
             # Ulixe
             "ulixe_lavorazione": ulixe_lavorazione,
             "ulixe_rifiutate": ulixe_rifiutate,
-            "ulixe_chiusure": ulixe_chiusure,
-            # Margine
+            "ulixe_approvate": ulixe_approvate,
+            # Ricavo e margine (da approvate)
+            "revenue": round(revenue, 2),
             "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
             "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
-            "margine_pct": round(margine_pct, 2) if margine_pct is not None else None
+            "margine_pct": round(margine_pct, 2) if margine_pct is not None else None,
+            "scarto_totale_pct": round(scarto_totale_pct, 2),
         })
     
     return JSONResponse(result)
@@ -1091,25 +1283,28 @@ async def api_marketing_adset_ads(adset_id: int, request: Request, db: Session =
         magellano_inviate = len([l for l in leads if l.magellano_status == 'magellano_sent'])
         magellano_rifiutate = len([l for l in leads if l.magellano_status in ['magellano_firewall', 'magellano_refused']])
         cpl_uscita = (total_spend_meta / magellano_inviate) if magellano_inviate > 0 else 0
-        # Percentuale scarto uscita: rifiutate / magellano_inviate * 100
         magellano_scarto_pct_uscita = (magellano_rifiutate / magellano_inviate * 100) if magellano_inviate > 0 else 0
+        # % scarto totale: acquisto Meta -> uscita Magellano
+        scarto_totale_pct = ((total_leads - magellano_inviate) / total_leads * 100) if total_leads > 0 else 0
         
         # Ulixe: stati principali
         ulixe_lavorazione = len([l for l in leads if l.status_category == StatusCategory.IN_LAVORAZIONE])
         ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
-        ulixe_chiusure = len([l for l in leads if l.status_category == StatusCategory.FINALE])
-        
-        # Margine: lead inviate × pay (CPL campagna da settings/campaigns)
+        ulixe_approvate = len([l for l in leads if l.status_category == StatusCategory.FINALE])
+        leads_approvate = [l for l in leads if l.status_category == StatusCategory.FINALE]
+
+        # Ricavo e margine: somma pay per ogni lead approvata (ogni lead → campagna → pay)
+        revenue = _compute_ricavo_for_leads(db, leads_approvate)
         pay_campagna = _get_pay_for_leads(db, leads)
-        revenue = (magellano_inviate * pay_campagna) if pay_campagna and magellano_inviate else 0
-        margine_singola = (pay_campagna - cpl_uscita) if pay_campagna and magellano_inviate else None
-        margine_lordo = (revenue - total_spend_meta) if pay_campagna and magellano_inviate else None
+        cpl_approvate = (total_spend_meta / ulixe_approvate) if ulixe_approvate > 0 else 0
+        margine_singola = (pay_campagna - cpl_approvate) if pay_campagna and ulixe_approvate else None
+        margine_lordo = (revenue - total_spend_meta) if revenue > 0 else None
         margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
-        
+
         # Nascondi creatività a 0 per il periodo
         if total_leads == 0 and total_spend_meta == 0:
             continue
-        
+
         result.append({
             "id": ad.id,
             "ad_id": ad.ad_id,
@@ -1135,11 +1330,13 @@ async def api_marketing_adset_ads(adset_id: int, request: Request, db: Session =
             # Ulixe
             "ulixe_lavorazione": ulixe_lavorazione,
             "ulixe_rifiutate": ulixe_rifiutate,
-            "ulixe_chiusure": ulixe_chiusure,
-            # Margine
+            "ulixe_approvate": ulixe_approvate,
+            # Ricavo e margine (da approvate)
+            "revenue": round(revenue, 2),
             "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
             "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
-            "margine_pct": round(margine_pct, 2) if margine_pct is not None else None
+            "margine_pct": round(margine_pct, 2) if margine_pct is not None else None,
+            "scarto_totale_pct": round(scarto_totale_pct, 2),
         })
     
     return JSONResponse(result)
@@ -1252,19 +1449,23 @@ async def api_marketing_adsets(request: Request, db: Session = Depends(get_db)):
             magellano_rifiutate = len([l for l in leads if l.magellano_status in ['magellano_firewall', 'magellano_refused']])
             cpl_uscita = (total_spend_meta / magellano_inviate) if magellano_inviate > 0 else 0
             magellano_scarto_pct_uscita = (magellano_rifiutate / magellano_inviate * 100) if magellano_inviate > 0 else 0
+            # % scarto totale: acquisto Meta -> uscita Magellano
+            scarto_totale_pct = ((total_leads - magellano_inviate) / total_leads * 100) if total_leads > 0 else 0
             
             # Ulixe
             ulixe_lavorazione = len([l for l in leads if l.status_category == StatusCategory.IN_LAVORAZIONE])
             ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
-            ulixe_chiusure = len([l for l in leads if l.status_category == StatusCategory.FINALE])
-            
-            # Margine: lead inviate × pay (CPL campagna da settings/campaigns)
+            ulixe_approvate = len([l for l in leads if l.status_category == StatusCategory.FINALE])
+            leads_approvate = [l for l in leads if l.status_category == StatusCategory.FINALE]
+
+            # Ricavo e margine: somma pay per ogni lead approvata (ogni lead → campagna → pay)
+            revenue = _compute_ricavo_for_leads(db, leads_approvate)
             pay_campagna = _get_pay_for_leads(db, leads)
-            revenue = (magellano_inviate * pay_campagna) if pay_campagna and magellano_inviate else 0
-            margine_singola = (pay_campagna - cpl_uscita) if pay_campagna and magellano_inviate else None
-            margine_lordo = (revenue - total_spend_meta) if pay_campagna and magellano_inviate else None
+            cpl_approvate = (total_spend_meta / ulixe_approvate) if ulixe_approvate > 0 else 0
+            margine_singola = (pay_campagna - cpl_approvate) if pay_campagna and ulixe_approvate else None
+            margine_lordo = (revenue - total_spend_meta) if revenue > 0 else None
             margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
-            
+
             # Nascondi adset a 0 per il periodo
             if total_leads == 0 and total_spend_meta == 0:
                 continue
@@ -1296,11 +1497,13 @@ async def api_marketing_adsets(request: Request, db: Session = Depends(get_db)):
                 # Ulixe
                 "ulixe_lavorazione": ulixe_lavorazione,
                 "ulixe_rifiutate": ulixe_rifiutate,
-                "ulixe_chiusure": ulixe_chiusure,
-                # Margine
+                "ulixe_approvate": ulixe_approvate,
+                # Ricavo e margine (da approvate)
+                "revenue": round(revenue, 2),
                 "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
                 "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
-                "margine_pct": round(margine_pct, 2) if margine_pct is not None else None
+                "margine_pct": round(margine_pct, 2) if margine_pct is not None else None,
+                "scarto_totale_pct": round(scarto_totale_pct, 2),
             })
     
     return JSONResponse(result)
@@ -1422,23 +1625,27 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
                 magellano_rifiutate = len([l for l in leads if l.magellano_status in ['magellano_firewall', 'magellano_refused']])
                 cpl_uscita = (total_spend_meta / magellano_inviate) if magellano_inviate > 0 else 0
                 magellano_scarto_pct_uscita = (magellano_rifiutate / magellano_inviate * 100) if magellano_inviate > 0 else 0
+                # % scarto totale: acquisto Meta -> uscita Magellano
+                scarto_totale_pct = ((total_leads - magellano_inviate) / total_leads * 100) if total_leads > 0 else 0
                 
                 # Ulixe
                 ulixe_lavorazione = len([l for l in leads if l.status_category == StatusCategory.IN_LAVORAZIONE])
                 ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
-                ulixe_chiusure = len([l for l in leads if l.status_category == StatusCategory.FINALE])
-                
-                # Margine: lead inviate × pay (CPL campagna da settings/campaigns)
+                ulixe_approvate = len([l for l in leads if l.status_category == StatusCategory.FINALE])
+                leads_approvate = [l for l in leads if l.status_category == StatusCategory.FINALE]
+
+                # Ricavo e margine: somma pay per ogni lead approvata (ogni lead → campagna → pay)
+                revenue = _compute_ricavo_for_leads(db, leads_approvate)
                 pay_campagna = _get_pay_for_leads(db, leads)
-                revenue = (magellano_inviate * pay_campagna) if pay_campagna and magellano_inviate else 0
-                margine_singola = (pay_campagna - cpl_uscita) if pay_campagna and magellano_inviate else None
-                margine_lordo = (revenue - total_spend_meta) if pay_campagna and magellano_inviate else None
+                cpl_approvate = (total_spend_meta / ulixe_approvate) if ulixe_approvate > 0 else 0
+                margine_singola = (pay_campagna - cpl_approvate) if pay_campagna and ulixe_approvate else None
+                margine_lordo = (revenue - total_spend_meta) if revenue > 0 else None
                 margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
-                
+
                 # Nascondi creatività a 0 per il periodo
                 if total_leads == 0 and total_spend_meta == 0:
                     continue
-                
+
                 result.append({
                     "id": ad.id,
                     "ad_id": ad.ad_id,
@@ -1470,11 +1677,13 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
                     # Ulixe
                     "ulixe_lavorazione": ulixe_lavorazione,
                     "ulixe_rifiutate": ulixe_rifiutate,
-                    "ulixe_chiusure": ulixe_chiusure,
-                    # Margine
+                    "ulixe_approvate": ulixe_approvate,
+                    # Ricavo e margine (da approvate)
+                    "revenue": round(revenue, 2),
                     "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
                     "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
-                    "margine_pct": round(margine_pct, 2) if margine_pct is not None else None
+                    "margine_pct": round(margine_pct, 2) if margine_pct is not None else None,
+                    "scarto_totale_pct": round(scarto_totale_pct, 2),
                 })
     
     return JSONResponse(result)

@@ -45,6 +45,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             if "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
                 try:
                     form = await request.form()
+                    request.state._parsed_form = form  # Riusa downstream: evita stream consumato
                     token_from_request = form.get("csrf_token")
                 except Exception:
                     pass

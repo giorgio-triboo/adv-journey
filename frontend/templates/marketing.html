@@ -109,8 +109,8 @@
                 </svg>
             </div>
             <div>
-                <p class="text-sm font-medium text-neutral-500">Chiusure Ulixe</p>
-                <p class="text-2xl font-bold text-neutral-900" id="totalUlixeChiusure">0</p>
+                <p class="text-sm font-medium text-neutral-500">Approvate Ulixe</p>
+                <p class="text-2xl font-bold text-neutral-900" id="totalUlixeApprovate">0</p>
             </div>
         </div>
     </div>
@@ -188,15 +188,58 @@ document.addEventListener('DOMContentLoaded', function() {
         hiddenTo.value = today.toISOString().split('T')[0];
     }
     
-    // Load accounts and campaigns on page load
-    loadAccounts();
-    loadAllCampaigns();
+    // Load thresholds, accounts and campaigns on page load
+    loadThresholds().then(() => {
+        loadAccounts();
+        loadAllCampaigns();
+    });
 });
 
 let campaignsData = [];
 let accountsData = [];
 let adsetsData = {}; // campaignId -> adsets array
 let adsData = {}; // adsetId -> ads array
+let thresholdsConfig = {
+    margine_rosso_fino: 0,
+    margine_verde_da: 15,
+    scarto_verde_fino: 5,
+    scarto_rosso_da: 20,
+    colori_margine_rosso: true,
+    colori_margine_verde: true,
+    colori_scarto_verde: true,
+    colori_scarto_rosso: true
+};
+
+async function loadThresholds() {
+    try {
+        const r = await fetch('/api/marketing/thresholds');
+        if (r.ok) {
+            thresholdsConfig = await r.json();
+        }
+    } catch (e) {
+        console.warn('Impossibile caricare soglie marketing:', e);
+    }
+}
+
+function getMargineColorClass(val) {
+    if (val == null || val === undefined || isNaN(val)) return '';
+    const v = parseFloat(val);
+    const bothActive = thresholdsConfig.colori_margine_rosso && thresholdsConfig.colori_margine_verde;
+    if (v <= thresholdsConfig.margine_rosso_fino && thresholdsConfig.colori_margine_rosso) return 'text-red-600 font-semibold';
+    if (v >= thresholdsConfig.margine_verde_da && thresholdsConfig.colori_margine_verde) return 'text-green-600 font-semibold';
+    if (bothActive) return 'text-orange-500 font-semibold';  // arancione solo se verde + rosso entrambi attivi
+    return 'font-semibold text-neutral-900';
+}
+
+function getScartoColorClass(val) {
+    if (val == null || val === undefined || isNaN(val)) return '';
+    const v = parseFloat(val);
+    const bothActive = thresholdsConfig.colori_scarto_verde && thresholdsConfig.colori_scarto_rosso;
+    if (v <= thresholdsConfig.scarto_verde_fino && thresholdsConfig.colori_scarto_verde) return 'text-green-600 font-semibold';
+    if (v >= thresholdsConfig.scarto_rosso_da && thresholdsConfig.colori_scarto_rosso) return 'text-red-600 font-semibold';
+    if (bothActive) return 'text-orange-500 font-semibold';  // arancione solo se verde + rosso entrambi attivi
+    return 'font-semibold text-neutral-900';
+}
 
 async function loadAccounts() {
     try {
@@ -276,7 +319,7 @@ async function loadAllCampaigns() {
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
                 total_ulixe_lavorazione: 0, 
-                total_ulixe_chiusure: 0 
+                total_ulixe_approvate: 0 
             });
             return;
         }
@@ -291,7 +334,7 @@ async function loadAllCampaigns() {
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
                 total_ulixe_lavorazione: 0, 
-                total_ulixe_chiusure: 0 
+                total_ulixe_approvate: 0 
             });
             return;
         }
@@ -308,7 +351,7 @@ async function loadAllCampaigns() {
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
                 total_ulixe_lavorazione: 0, 
-                total_ulixe_chiusure: 0 
+                total_ulixe_approvate: 0 
             });
             return;
         }
@@ -335,7 +378,7 @@ async function loadAllCampaigns() {
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
                 total_ulixe_lavorazione: 0, 
-                total_ulixe_chiusure: 0 
+                total_ulixe_approvate: 0 
             });
             return;
         }
@@ -382,7 +425,7 @@ async function loadAllCampaigns() {
             total_magellano_entrate: 0, 
             total_magellano_inviate: 0, 
             total_ulixe_lavorazione: 0, 
-            total_ulixe_chiusure: 0 
+            total_ulixe_approvate: 0 
         });
     }
 }
@@ -464,7 +507,7 @@ function createCampaignRow(campaign) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-neutral-900">${campaign.magellano_scarto_pct_ingresso !== undefined && campaign.magellano_scarto_pct_ingresso !== null ? campaign.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="${getScartoColorClass(campaign.magellano_scarto_pct_ingresso) || 'font-semibold text-neutral-900'}">${campaign.magellano_scarto_pct_ingresso !== undefined && campaign.magellano_scarto_pct_ingresso !== null ? campaign.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
@@ -488,16 +531,20 @@ function createCampaignRow(campaign) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-neutral-900">${campaign.magellano_scarto_pct_uscita !== undefined && campaign.magellano_scarto_pct_uscita !== null ? campaign.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="${getScartoColorClass(campaign.magellano_scarto_pct_uscita) || 'font-semibold text-neutral-900'}">${campaign.magellano_scarto_pct_uscita !== undefined && campaign.magellano_scarto_pct_uscita !== null ? campaign.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <!-- Margine % -->
-                <div class="flex items-center gap-4">
+                <!-- Margine % + Scarto tot. -->
+                <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine %</div>
-                        <div class="font-semibold text-neutral-900">${campaign.margine_pct != null ? campaign.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine</div>
+                        <div class="${getMargineColorClass(campaign.margine_pct) || 'font-semibold text-neutral-900'}">${campaign.margine_pct != null ? campaign.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Scarto totale</div>
+                        <div class="${getScartoColorClass(campaign.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${campaign.scarto_totale_pct != null ? campaign.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                 </div>
                 <!-- Ulixe -->
@@ -514,8 +561,8 @@ function createCampaignRow(campaign) {
                                 <div class="font-semibold text-neutral-900">${campaign.ulixe_rifiutate || 0}</div>
                             </div>
                             <div>
-                                <div class="text-neutral-400 text-xs">Chiusure</div>
-                                <div class="font-semibold text-neutral-900">${campaign.ulixe_chiusure || 0}</div>
+                                <div class="text-neutral-400 text-xs">Approvate</div>
+                                <div class="font-semibold text-neutral-900">${campaign.ulixe_approvate || 0}</div>
                             </div>
                         </div>
                     </div>
@@ -668,7 +715,7 @@ function createAdsetRow(campaignId, adset) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-neutral-900">${adset.magellano_scarto_pct_ingresso !== undefined && adset.magellano_scarto_pct_ingresso !== null ? adset.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="${getScartoColorClass(adset.magellano_scarto_pct_ingresso) || 'font-semibold text-neutral-900'}">${adset.magellano_scarto_pct_ingresso !== undefined && adset.magellano_scarto_pct_ingresso !== null ? adset.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
@@ -692,16 +739,20 @@ function createAdsetRow(campaignId, adset) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-neutral-900">${adset.magellano_scarto_pct_uscita !== undefined && adset.magellano_scarto_pct_uscita !== null ? adset.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="${getScartoColorClass(adset.magellano_scarto_pct_uscita) || 'font-semibold text-neutral-900'}">${adset.magellano_scarto_pct_uscita !== undefined && adset.magellano_scarto_pct_uscita !== null ? adset.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <!-- Margine % -->
-                <div class="flex items-center gap-4">
+                <!-- Margine % + Scarto tot. -->
+                <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine %</div>
-                        <div class="font-semibold text-neutral-900">${adset.margine_pct != null ? adset.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine</div>
+                        <div class="${getMargineColorClass(adset.margine_pct) || 'font-semibold text-neutral-900'}">${adset.margine_pct != null ? adset.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Scarto totale</div>
+                        <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                 </div>
                 <!-- Ulixe -->
@@ -718,8 +769,8 @@ function createAdsetRow(campaignId, adset) {
                                 <div class="font-semibold text-neutral-900">${adset.ulixe_rifiutate || 0}</div>
                             </div>
                             <div>
-                                <div class="text-neutral-400 text-xs">Chiusure</div>
-                                <div class="font-semibold text-neutral-900">${adset.ulixe_chiusure || 0}</div>
+                                <div class="text-neutral-400 text-xs">Approvate</div>
+                                <div class="font-semibold text-neutral-900">${adset.ulixe_approvate || 0}</div>
                             </div>
                         </div>
                     </div>
@@ -869,7 +920,7 @@ function createAdRow(ad) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-neutral-900">${ad.magellano_scarto_pct_ingresso !== undefined && ad.magellano_scarto_pct_ingresso !== null ? ad.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="${getScartoColorClass(ad.magellano_scarto_pct_ingresso) || 'font-semibold text-neutral-900'}">${ad.magellano_scarto_pct_ingresso !== undefined && ad.magellano_scarto_pct_ingresso !== null ? ad.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
@@ -893,16 +944,20 @@ function createAdRow(ad) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-neutral-900">${ad.magellano_scarto_pct_uscita !== undefined && ad.magellano_scarto_pct_uscita !== null ? ad.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="${getScartoColorClass(ad.magellano_scarto_pct_uscita) || 'font-semibold text-neutral-900'}">${ad.magellano_scarto_pct_uscita !== undefined && ad.magellano_scarto_pct_uscita !== null ? ad.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <!-- Margine % -->
-                <div class="flex items-center gap-4">
+                <!-- Margine % + Scarto tot. -->
+                <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine %</div>
-                        <div class="font-semibold text-neutral-900">${ad.margine_pct != null ? ad.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine</div>
+                        <div class="${getMargineColorClass(ad.margine_pct) || 'font-semibold text-neutral-900'}">${ad.margine_pct != null ? ad.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Scarto totale</div>
+                        <div class="${getScartoColorClass(ad.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${ad.scarto_totale_pct != null ? ad.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                 </div>
                 <!-- Ulixe -->
@@ -919,8 +974,8 @@ function createAdRow(ad) {
                                 <div class="font-semibold text-neutral-900">${ad.ulixe_rifiutate || 0}</div>
                             </div>
                             <div>
-                                <div class="text-neutral-400 text-xs">Chiusure</div>
-                                <div class="font-semibold text-neutral-900">${ad.ulixe_chiusure || 0}</div>
+                                <div class="text-neutral-400 text-xs">Approvate</div>
+                                <div class="font-semibold text-neutral-900">${ad.ulixe_approvate || 0}</div>
                             </div>
                         </div>
                     </div>
@@ -942,28 +997,28 @@ function updateSummaryCards(totals) {
     document.getElementById('totalMagellanoEntrate').textContent = totals.total_magellano_entrate || 0;
     document.getElementById('totalMagellanoInviate').textContent = totals.total_magellano_inviate || 0;
     document.getElementById('totalUlixeLavorazione').textContent = totals.total_ulixe_lavorazione || 0;
-    document.getElementById('totalUlixeChiusure').textContent = totals.total_ulixe_chiusure || 0;
+    document.getElementById('totalUlixeApprovate').textContent = totals.total_ulixe_approvate || 0;
 }
 
 function calculateAndUpdateSummaryCards() {
     let totalMagellanoEntrate = 0;
     let totalMagellanoInviate = 0;
     let totalUlixeLavorazione = 0;
-    let totalUlixeChiusure = 0;
+    let totalUlixeApprovate = 0;
     
     // Calcola totali delle 4 fasi da tutte le campagne visibili
     campaignsData.forEach(campaign => {
         totalMagellanoEntrate += campaign.magellano_entrate || 0;
         totalMagellanoInviate += campaign.magellano_inviate || 0;
         totalUlixeLavorazione += campaign.ulixe_lavorazione || 0;
-        totalUlixeChiusure += campaign.ulixe_chiusure || 0;
+        totalUlixeApprovate += campaign.ulixe_approvate || 0;
     });
     
     updateSummaryCards({
         total_magellano_entrate: totalMagellanoEntrate,
         total_magellano_inviate: totalMagellanoInviate,
         total_ulixe_lavorazione: totalUlixeLavorazione,
-        total_ulixe_chiusure: totalUlixeChiusure
+        total_ulixe_approvate: totalUlixeApprovate
     });
 }
 
@@ -998,7 +1053,7 @@ async function loadAdsetsDirectly(dateFrom, dateTo, accountId, status, campaignN
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
                 total_ulixe_lavorazione: 0, 
-                total_ulixe_chiusure: 0 
+                total_ulixe_approvate: 0 
             });
             return;
         }
@@ -1041,7 +1096,7 @@ async function loadAdsetsDirectly(dateFrom, dateTo, accountId, status, campaignN
             total_magellano_entrate: adsets.reduce((sum, a) => sum + (a.magellano_entrate || 0), 0),
             total_magellano_inviate: adsets.reduce((sum, a) => sum + (a.magellano_inviate || 0), 0),
             total_ulixe_lavorazione: adsets.reduce((sum, a) => sum + (a.ulixe_lavorazione || 0), 0),
-            total_ulixe_chiusure: adsets.reduce((sum, a) => sum + (a.ulixe_chiusure || 0), 0)
+            total_ulixe_approvate: adsets.reduce((sum, a) => sum + (a.ulixe_approvate || 0), 0)
         };
         updateSummaryCards(totals);
     } catch (error) {
@@ -1051,7 +1106,7 @@ async function loadAdsetsDirectly(dateFrom, dateTo, accountId, status, campaignN
             total_magellano_entrate: 0, 
             total_magellano_inviate: 0, 
             total_ulixe_lavorazione: 0, 
-            total_ulixe_chiusure: 0 
+            total_ulixe_approvate: 0 
         });
     }
 }
@@ -1090,7 +1145,7 @@ async function loadAdsDirectly(dateFrom, dateTo, accountId, status, campaignName
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
                 total_ulixe_lavorazione: 0, 
-                total_ulixe_chiusure: 0 
+                total_ulixe_approvate: 0 
             });
             return;
         }
@@ -1134,7 +1189,7 @@ async function loadAdsDirectly(dateFrom, dateTo, accountId, status, campaignName
             total_magellano_entrate: ads.reduce((sum, a) => sum + (a.magellano_entrate || 0), 0),
             total_magellano_inviate: ads.reduce((sum, a) => sum + (a.magellano_inviate || 0), 0),
             total_ulixe_lavorazione: ads.reduce((sum, a) => sum + (a.ulixe_lavorazione || 0), 0),
-            total_ulixe_chiusure: ads.reduce((sum, a) => sum + (a.ulixe_chiusure || 0), 0)
+            total_ulixe_approvate: ads.reduce((sum, a) => sum + (a.ulixe_approvate || 0), 0)
         };
         updateSummaryCards(totals);
     } catch (error) {
@@ -1144,7 +1199,7 @@ async function loadAdsDirectly(dateFrom, dateTo, accountId, status, campaignName
             total_magellano_entrate: 0, 
             total_magellano_inviate: 0, 
             total_ulixe_lavorazione: 0, 
-            total_ulixe_chiusure: 0 
+            total_ulixe_approvate: 0 
         });
     }
 }
@@ -1220,7 +1275,7 @@ function createAdsetRowDirectly(adset) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-neutral-900">${adset.magellano_scarto_pct_ingresso !== undefined && adset.magellano_scarto_pct_ingresso !== null ? adset.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="${getScartoColorClass(adset.magellano_scarto_pct_ingresso) || 'font-semibold text-neutral-900'}">${adset.magellano_scarto_pct_ingresso !== undefined && adset.magellano_scarto_pct_ingresso !== null ? adset.magellano_scarto_pct_ingresso.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
@@ -1244,16 +1299,20 @@ function createAdsetRowDirectly(adset) {
                             </div>
                             <div>
                                 <div class="text-neutral-400 text-xs">% Scarto</div>
-                                <div class="font-semibold text-neutral-900">${adset.magellano_scarto_pct_uscita !== undefined && adset.magellano_scarto_pct_uscita !== null ? adset.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                                <div class="${getScartoColorClass(adset.magellano_scarto_pct_uscita) || 'font-semibold text-neutral-900'}">${adset.magellano_scarto_pct_uscita !== undefined && adset.magellano_scarto_pct_uscita !== null ? adset.magellano_scarto_pct_uscita.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <!-- Margine % -->
-                <div class="flex items-center gap-4">
+                <!-- Margine % + Scarto tot. -->
+                <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine %</div>
-                        <div class="font-semibold text-neutral-900">${adset.margine_pct != null ? adset.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine</div>
+                        <div class="${getMargineColorClass(adset.margine_pct) || 'font-semibold text-neutral-900'}">${adset.margine_pct != null ? adset.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Scarto totale</div>
+                        <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                 </div>
                 <!-- Ulixe -->
@@ -1270,8 +1329,8 @@ function createAdsetRowDirectly(adset) {
                                 <div class="font-semibold text-neutral-900">${adset.ulixe_rifiutate || 0}</div>
                             </div>
                             <div>
-                                <div class="text-neutral-400 text-xs">Chiusure</div>
-                                <div class="font-semibold text-neutral-900">${adset.ulixe_chiusure || 0}</div>
+                                <div class="text-neutral-400 text-xs">Approvate</div>
+                                <div class="font-semibold text-neutral-900">${adset.ulixe_approvate || 0}</div>
                             </div>
                         </div>
                     </div>

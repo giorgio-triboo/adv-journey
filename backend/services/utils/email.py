@@ -219,6 +219,21 @@ class EmailService:
                             <span class="stat-value">{value}</span>
                         </div>
                 """
+            elif isinstance(value, dict):
+                for sub_key, sub_val in value.items():
+                    html += f"""
+                        <div class="stat-row">
+                            <span class="stat-label">{key} - {sub_key.replace('_', ' ').title()}:</span>
+                            <span class="stat-value">{sub_val}</span>
+                        </div>
+                """
+            elif value is not None and value != "":
+                html += f"""
+                        <div class="stat-row">
+                            <span class="stat-label">{key.replace('_', ' ').title()}:</span>
+                            <span class="stat-value">{value}</span>
+                        </div>
+                """
         
         html += """
                     </div>
@@ -233,9 +248,22 @@ class EmailService:
                     </div>
             """
         
+        # Link al riepilogo ingestion (solo su errore)
+        ingestion_link = ""
+        if not success and settings.APP_BASE_URL:
+            ingestion_url = settings.APP_BASE_URL.rstrip("/") + "/settings/alerts/ingestion"
+            ingestion_link = f"""
+                    <p style="margin-top: 15px;">
+                        <a href="{ingestion_url}" style="display: inline-block; padding: 10px 20px; background: #4f46e5; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
+                            Vai al Riepilogo Ingestion
+                        </a>
+                    </p>
+            """
+        
         html += f"""
                 </div>
                 <div class="footer">
+                    {ingestion_link}
                     <p>Questo è un messaggio automatico dal sistema Cepu Lavorazioni.</p>
                 </div>
             </div>

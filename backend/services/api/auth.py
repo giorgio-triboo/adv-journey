@@ -129,3 +129,73 @@ async def logout(request: Request):
     logger.info("Logout: sessione pulita")
     
     return RedirectResponse(url='/')
+
+
+@router.post('/api/auth/impersonate')
+async def impersonate(request: Request, db: Session = Depends(get_db)):
+    """
+    Impersona un utente (solo super-admin).
+    Permette di vedere l'app come la vedrebbe l'utente target.
+    """
+    from services.api.dependencies import get_real_user, is_impersonating
+    real_user = get_real_user(request, db)
+    if not real_user or real_user.role != "super-admin":
+        return RedirectResponse(url='/dashboard?error=Impersonazione consentita solo a super-admin', status_code=303)
+    if is_impersonating(request):
+        return RedirectResponse(url='/dashboard?error=Esci prima dalla impersonazione attuale', status_code=303)
+    form = await request.form()
+    user_id_str = form.get("user_id") or request.query_params.get("user_id")
+    if not user_id_str:
+        return RedirectResponse(url='/settings/platform/users?error=user_id mancante', status_code=303)
+    try:
+        target_user_id = int(user_id_str)
+    except ValueError:
+        return RedirectResponse(url='/settings/platform/users?error=user_id non valido', status_code=303)
+    target_user = db.query(User).filter(User.id == target_user_id).first()
+    if not target_user or not target_user.is_active:
+        return RedirectResponse(url='/settings/platform/users?error=Utente non trovato', status_code=303)
+    if target_user.id == real_user.id:
+        return RedirectResponse(url='/settings/platform/users?error=Non puoi impersonare te stesso', status_code=303)
+    # Salva utente originale per restore
+    request.session["_impersonate_original_user_id"] = real_user.id
+    request.session["_impersonate_original_email"] = real_user.email
+    # Sostituisci sessione con dati utente target
+    session_user = {
+        "email": target_user.email,
+        "name": target_user.email.split("@")[0],
+        "role": target_user.role,
+    }
+    request.session["user"] = session_user
+    request.session["user_id"] = target_user.id
+    logger.info(f"Impersonazione: {real_user.email} ora impersona {target_user.email}")
+    return RedirectResponse(url='/dashboard', status_code=303)
+
+
+@router.get('/api/auth/stop-impersonate')
+@router.post('/api/auth/stop-impersonate')
+async def stop_impersonate(request: Request, db: Session = Depends(get_db)):
+    """
+    Termina la impersonazione e ripristina la sessione dell'utente originale.
+    """
+    from services.api.dependencies import is_impersonating
+    if not is_impersonating(request):
+        return RedirectResponse(url='/dashboard', status_code=303)
+    original_id = request.session.pop("_impersonate_original_user_id", None)
+    original_email = request.session.pop("_impersonate_original_email", None)
+    if not original_id or not original_email:
+        request.session.clear()
+        return RedirectResponse(url='/', status_code=303)
+    original_user = db.query(User).filter(User.id == original_id).first()
+    if not original_user or not original_user.is_active:
+        request.session.clear()
+        return RedirectResponse(url='/', status_code=303)
+    # Ripristina sessione originale
+    session_user = {
+        "email": original_user.email,
+        "name": original_user.email.split("@")[0],
+        "role": original_user.role,
+    }
+    request.session["user"] = session_user
+    request.session["user_id"] = original_user.id
+    logger.info(f"Impersonazione terminata: ripristinato {original_user.email}")
+    return RedirectResponse(url='/settings/platform/users', status_code=303)
