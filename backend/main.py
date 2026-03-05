@@ -212,10 +212,20 @@ def startup_event():
     # Seed traffic platforms
     from seeders.traffic_platforms_seeder import seed_traffic_platforms
     seed_traffic_platforms()
-    
+
+    # Seed msg_id -> traffic platform mapping (dipende da traffic_platforms)
+    from seeders.msg_traffic_mapping_seeder import seed_msg_traffic_mapping
+    seed_msg_traffic_mapping()
+
     # Seed users
     from seeders.users_seeder import seed_users
     seed_users()
+
+    # Seed marketing thresholds e alert config
+    from seeders.marketing_threshold_config_seeder import seed_marketing_threshold_config
+    from seeders.alert_config_seeder import seed_alert_configs
+    seed_marketing_threshold_config()
+    seed_alert_configs()
     
     # Start scheduler - DISABILITATO COMPLETAMENTE
     # from services.scheduler import start_scheduler

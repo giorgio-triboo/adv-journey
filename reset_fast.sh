@@ -64,13 +64,21 @@ docker-compose exec -T backend alembic upgrade head
 echo -e "${GREEN}✓ Migration completate${NC}"
 echo ""
 
-# 6. Eseguire i seeder (campaigns, users)
-echo -e "${YELLOW}6. Eseguendo i seeder (campaigns, users)...${NC}"
+# 6. Eseguire i seeder (campaigns, traffic_platforms, msg_mapping, users, thresholds, alerts)
+echo -e "${YELLOW}6. Eseguendo i seeder...${NC}"
 docker-compose exec -T backend python3 -c "
 from seeders.campaigns_seeder import seed_campaigns
-seed_campaigns()
+from seeders.traffic_platforms_seeder import seed_traffic_platforms
+from seeders.msg_traffic_mapping_seeder import seed_msg_traffic_mapping
 from seeders.users_seeder import seed_users
+from seeders.marketing_threshold_config_seeder import seed_marketing_threshold_config
+from seeders.alert_config_seeder import seed_alert_configs
+seed_campaigns()
+seed_traffic_platforms()
+seed_msg_traffic_mapping()
 seed_users()
+seed_marketing_threshold_config()
+seed_alert_configs()
 "
 echo -e "${GREEN}✓ Seeder completati${NC}"
 echo ""
@@ -93,7 +101,7 @@ echo "  - Database completamente resettato (tutti i dati sono stati eliminati)"
 echo "  - Immagini Docker NON ricostruite (risparmio di tempo)"
 echo "  - Sessioni utente e cache OAuth Meta sono state pulite"
 echo "  - Tutte le migration sono state eseguite da zero"
-echo "  - Seeder (campaigns, users) eseguiti"
+echo "  - Seeder (campaigns, platforms, msg_mapping, users, thresholds, alerts) eseguiti"
 echo ""
 echo "🚀 Il sistema è pronto per essere testato!"
 echo "   Accesso: http://localhost:8003"
