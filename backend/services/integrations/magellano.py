@@ -394,10 +394,12 @@ class MagellanoService:
         try:
             # Supporta sia Excel che CSV
             lower_path = str(xls_path).lower()
+            # Legge SEMPRE come stringhe per evitare notazione scientifica sugli ID Meta
+            read_kwargs = {"dtype": str}
             if lower_path.endswith(".csv"):
-                df = pd.read_csv(xls_path)
+                df = pd.read_csv(xls_path, **read_kwargs)
             else:
-                df = pd.read_excel(xls_path)
+                df = pd.read_excel(xls_path, **read_kwargs)
             leads = []
             
             # Mappa colonne normalizzate (lowercase, stripped) per essere robusti a maiuscole/spazi
