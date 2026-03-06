@@ -2,7 +2,7 @@
 from datetime import datetime
 from celery_app import celery_app
 from database import SessionLocal
-from models import SyncLog, IngestionJob
+from models import SyncLog, IngestionJob, now_rome
 
 
 @celery_app.task(name="tasks.magellano.sync")
@@ -21,7 +21,7 @@ def magellano_sync_task(campaigns: list, start_date_str: str, end_date_str: str,
             job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
             if job:
                 job.status = "RUNNING"
-                job.started_at = datetime.utcnow()
+                job.started_at = now_rome()
                 db.commit()
         else:
             job = IngestionJob(
@@ -38,7 +38,9 @@ def magellano_sync_task(campaigns: list, start_date_str: str, end_date_str: str,
             db.commit()
 
         try:
-            run_magellano_sync(db, campaigns, start_date, end_date)
+            # Passa sempre l'ID del job a run_magellano_sync per generare
+            # nomi file export univoci per job (evita collisioni con export manuali).
+            run_magellano_sync(db, campaigns, start_date, end_date, job_id=job.id if job else None)
 
             # Registra la sync Magellano avviata dal frontend nel riepilogo ingestion
             sync_log = SyncLog(
@@ -58,7 +60,7 @@ def magellano_sync_task(campaigns: list, start_date_str: str, end_date_str: str,
             # Aggiorna eventualmente l'IngestionJob associato
             if job:
                 job.status = "SUCCESS"
-                job.completed_at = datetime.utcnow()
+                job.completed_at = now_rome()
                 job.message = "Sync Magellano completata"
 
             db.commit()
@@ -69,7 +71,7 @@ def magellano_sync_task(campaigns: list, start_date_str: str, end_date_str: str,
             # Aggiorna eventualmente l'IngestionJob associato in errore
             if job:
                 job.status = "ERROR"
-                job.completed_at = datetime.utcnow()
+                job.completed_at = now_rome()
                 job.message = str(e)
                 db.add(job)
                 db.commit()

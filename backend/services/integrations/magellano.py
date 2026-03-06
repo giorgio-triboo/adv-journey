@@ -126,7 +126,7 @@ class MagellanoService:
             logger.error(f"ZIP extraction failed: {e}")
             return None
 
-    def fetch_leads(self, start_date: date, end_date: date, campaigns: List[int]) -> List[Dict]:
+    def fetch_leads(self, start_date: date, end_date: date, campaigns: List[int], job_id: int | None = None) -> List[Dict]:
         """
         Orchestrates the download and parsing of leads from Magellano.
         IMPORTANT: All downloaded files (ZIP, XLS) are automatically deleted after ingestion.
@@ -138,7 +138,15 @@ class MagellanoService:
             with sync_playwright() as p:
                 for campaign in campaigns:
                     logger.info(f"Processing campaign {campaign}...")
-                    zip_path = self._download_campaign(p, campaign, start_date, end_date, temp_dir, headless=self.headless)
+                    zip_path = self._download_campaign(
+                        p,
+                        campaign,
+                        start_date,
+                        end_date,
+                        temp_dir,
+                        headless=self.headless,
+                        job_id=job_id,
+                    )
                     
                     if not zip_path:
                         logger.error(f"Failed to download ZIP for campaign {campaign}")
@@ -185,7 +193,16 @@ class MagellanoService:
             
         return all_leads
 
-    def _download_campaign(self, playwright, campaign_id, start_date, end_date, download_dir, headless: bool = True) -> Optional[str]:
+    def _download_campaign(
+        self,
+        playwright,
+        campaign_id: int,
+        start_date: date,
+        end_date: date,
+        download_dir: str,
+        headless: bool = True,
+        job_id: int | None = None,
+    ) -> Optional[str]:
         browser = playwright.chromium.launch(
             headless=headless,
             args=['--no-sandbox', '--disable-dev-shm-usage']
@@ -197,9 +214,15 @@ class MagellanoService:
         )
         page = context.new_page()
         
-        # Nome file custom per export
+        # Nome file custom per export, univoco per job:
+        # export-<ID_CAMPAGNA>-<DATA_INIZIO>-<DATA_FINE>_<JOB_ID>
         start_date_str = start_date.strftime('%d%m%Y')
-        export_filename = f"export-{campaign_id}-{start_date_str}"
+        end_date_str = end_date.strftime('%d%m%Y')
+        if job_id is not None:
+            export_filename = f"export-{campaign_id}-{start_date_str}-{end_date_str}_{job_id}"
+        else:
+            # Fallback (esecuzioni manuali / script locali) senza job_id
+            export_filename = f"export-{campaign_id}-{start_date_str}-{end_date_str}"
         export_filename_xls = f"{export_filename}.xls"
         
         # Gestione dialog per nome file

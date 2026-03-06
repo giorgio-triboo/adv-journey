@@ -2,7 +2,7 @@
 from datetime import datetime, date, timedelta
 from celery_app import celery_app
 from database import SessionLocal
-from models import SyncLog, IngestionJob
+from models import SyncLog, IngestionJob, now_rome
 from services.sync.meta_marketing_sync import run_manual_sync
 from services.sync.meta_campaigns_sync import run_bootstrap, run_incremental
 
@@ -27,7 +27,7 @@ def meta_manual_sync_task(
             job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
             if job:
                 job.status = "RUNNING"
-                job.started_at = datetime.utcnow()
+                job.started_at = now_rome()
                 db.commit()
         else:
             job = IngestionJob(
@@ -66,7 +66,7 @@ def meta_manual_sync_task(
             # Aggiorna eventualmente l'IngestionJob associato
             if job:
                 job.status = "SUCCESS"
-                job.completed_at = datetime.utcnow()
+                job.completed_at = now_rome()
                 job.message = "Sync Meta marketing completata"
 
             db.commit()
@@ -135,7 +135,7 @@ def meta_campaigns_bootstrap_task(
             job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
             if job:
                 job.status = "RUNNING"
-                job.started_at = datetime.utcnow()
+                job.started_at = now_rome()
                 db.commit()
         else:
             job = IngestionJob(
@@ -156,7 +156,7 @@ def meta_campaigns_bootstrap_task(
 
         if job:
             job.status = "SUCCESS"
-            job.completed_at = datetime.utcnow()
+            job.completed_at = now_rome()
             job.message = "Bootstrap campagne Meta completato"
             db.commit()
 
@@ -166,7 +166,7 @@ def meta_campaigns_bootstrap_task(
 
         if job:
             job.status = "ERROR"
-            job.completed_at = datetime.utcnow()
+            job.completed_at = now_rome()
             job.message = str(e)
             db.commit()
 
@@ -195,7 +195,7 @@ def meta_campaigns_incremental_task(target_date_str: str | None = None, job_id: 
             job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
             if job:
                 job.status = "RUNNING"
-                job.started_at = datetime.utcnow()
+                job.started_at = now_rome()
                 db.commit()
         else:
             job = IngestionJob(
@@ -214,7 +214,7 @@ def meta_campaigns_incremental_task(target_date_str: str | None = None, job_id: 
 
         if job:
             job.status = "SUCCESS"
-            job.completed_at = datetime.utcnow()
+            job.completed_at = now_rome()
             job.message = "Sync incrementale campagne Meta completata"
             db.commit()
 
@@ -224,7 +224,7 @@ def meta_campaigns_incremental_task(target_date_str: str | None = None, job_id: 
 
         if job:
             job.status = "ERROR"
-            job.completed_at = datetime.utcnow()
+            job.completed_at = now_rome()
             job.message = str(e)
             db.commit()
 

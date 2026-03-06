@@ -2,7 +2,7 @@
 from datetime import datetime
 from celery_app import celery_app
 from database import SessionLocal
-from models import IngestionJob
+from models import IngestionJob, now_rome
 from services.sync_orchestrator import SyncOrchestrator
 
 
@@ -17,7 +17,7 @@ def run_full_sync_task(job_id: int | None = None):
             job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
             if job:
                 job.status = "RUNNING"
-                job.started_at = datetime.utcnow()
+                job.started_at = now_rome()
                 db.commit()
         else:
             job = IngestionJob(
@@ -33,7 +33,7 @@ def run_full_sync_task(job_id: int | None = None):
 
         if job:
             job.status = "SUCCESS"
-            job.completed_at = datetime.utcnow()
+            job.completed_at = now_rome()
             job.message = "Full pipeline completata"
             db.commit()
 
@@ -41,7 +41,7 @@ def run_full_sync_task(job_id: int | None = None):
     except Exception as e:
         if job:
             job.status = "ERROR"
-            job.completed_at = datetime.utcnow()
+            job.completed_at = now_rome()
             job.message = str(e)
             db.commit()
         raise
