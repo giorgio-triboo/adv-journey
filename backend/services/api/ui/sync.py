@@ -424,15 +424,21 @@ async def magellano_sync_page(request: Request, db: Session = Depends(get_db)):
 @router.post("/api/magellano/upload")
 async def magellano_upload(
     request: Request,
-    file: UploadFile | None = File(None),
-    file_date: str | None = Form(None),
-    campaign_id: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
-    """Endpoint per upload e processamento file Magellano"""
+    """Endpoint per upload e processamento file Magellano."""
     user = request.session.get('user')
     if not user:
         return JSONResponse({"error": "Non autorizzato"}, status_code=401)
+
+    # Recupera form già parsato dal middleware CSRF (se presente) oppure parsalo qui
+    form = getattr(request.state, "_parsed_form", None)
+    if form is None:
+        form = await request.form()
+
+    file = form.get("file")
+    file_date = form.get("file_date")
+    campaign_id = form.get("campaign_id")
 
     # Validazione parametri form/file per evitare 422 FastAPI e dare errori espliciti
     if file is None or not getattr(file, "filename", None):
