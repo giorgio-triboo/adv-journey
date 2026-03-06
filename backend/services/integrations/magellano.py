@@ -388,7 +388,12 @@ class MagellanoService:
 
     def _process_excel(self, xls_path, campaign_id) -> List[Dict]:
         try:
-            df = pd.read_excel(xls_path)
+            # Supporta sia Excel che CSV
+            lower_path = str(xls_path).lower()
+            if lower_path.endswith(".csv"):
+                df = pd.read_csv(xls_path)
+            else:
+                df = pd.read_excel(xls_path)
             leads = []
             
             # Mappa colonne normalizzate (lowercase, stripped) per essere robusti a maiuscole/spazi

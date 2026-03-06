@@ -419,20 +419,23 @@ async def magellano_sync_page(request: Request, db: Session = Depends(get_db)):
 @router.post("/api/magellano/upload")
 async def magellano_upload(
     request: Request,
-    file: UploadFile = File(...),
-    file_date: str = Form(...),
-    campaign_id: str = Form(None),
-    db: Session = Depends(get_db)
+    file: UploadFile | None = File(None),
+    file_date: str | None = Form(None),
+    campaign_id: str | None = Form(None),
+    db: Session = Depends(get_db),
 ):
     """Endpoint per upload e processamento file Magellano"""
     user = request.session.get('user')
     if not user:
         return JSONResponse({"error": "Non autorizzato"}, status_code=401)
-    
-    # Validazione file
-    if not file.filename:
+
+    # Validazione parametri form/file per evitare 422 FastAPI e dare errori espliciti
+    if file is None or not getattr(file, "filename", None):
         return JSONResponse({"error": "Nessun file selezionato"}, status_code=400)
-    
+
+    if not file_date:
+        return JSONResponse({"error": "Data file mancante"}, status_code=400)
+
     allowed_extensions = ['.zip', '.xls', '.xlsx', '.csv']
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in allowed_extensions:
