@@ -132,6 +132,8 @@ class MagellanoService:
         IMPORTANT: All downloaded files (ZIP, XLS) are automatically deleted after ingestion.
         """
         all_leads = []
+        # Traccia le campagne per cui non è stato possibile scaricare o processare l'export
+        self.failed_campaigns = []
         temp_dir = tempfile.mkdtemp()
         
         try:
@@ -150,6 +152,7 @@ class MagellanoService:
                     
                     if not zip_path:
                         logger.error(f"Failed to download ZIP for campaign {campaign}")
+                        self.failed_campaigns.append(str(campaign))
                         continue
 
                     xls_path = self._extract_zip(zip_path, temp_dir)
@@ -162,6 +165,7 @@ class MagellanoService:
                                 logger.info(f"Deleted failed ZIP file: {zip_path}")
                         except Exception as e:
                             logger.warning(f"Could not delete ZIP file {zip_path}: {e}")
+                        self.failed_campaigns.append(str(campaign))
                         continue
                     
                     # Processa Excel

@@ -50,6 +50,7 @@ def run_magellano_sync(
         "total_new": 0,
         "total_updated": 0,
         "total_errors": 0,
+        "failed_campaigns": [],
         "per_campaign": {},
     }
 
@@ -64,6 +65,10 @@ def run_magellano_sync(
     try:
         leads_data = service.fetch_leads(start_date, end_date, campaigns, job_id=job_id)
         logger.info(f"Fetched {len(leads_data)} leads from Magellano.")
+
+        failed_campaigns = getattr(service, "failed_campaigns", []) or []
+        stats["failed_campaigns"] = [str(c) for c in failed_campaigns]
+        stats["total_errors"] = len(stats["failed_campaigns"])
 
         new_leads = []
 
