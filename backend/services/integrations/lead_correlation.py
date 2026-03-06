@@ -12,70 +12,108 @@ class LeadCorrelationService:
     """
     Servizio per correlare automaticamente lead con dati Meta Marketing.
     
-    Strategia di matching:
-    - facebook_campaign_name → MetaCampaign.name
-    - facebook_ad_set → MetaAdSet.name
-    - facebook_ad_name → MetaAd.name
-    - facebook_id → MetaAd.ad_id (se disponibile)
+    Nuova strategia (robusta ai rename):
+    1. Se disponibili, usa gli ID Meta già presenti sulla lead:
+       - lead.meta_campaign_id  → MetaCampaign.campaign_id
+       - lead.meta_adset_id     → MetaAdSet.adset_id
+       - lead.meta_ad_id        → MetaAd.ad_id
+    2. Solo in assenza di ID, fallback ai nomi Magellano:
+       - facebook_campaign_name → MetaCampaign.name
+       - facebook_ad_set        → MetaAdSet.name
+       - facebook_ad_name       → MetaAd.name
     """
     
     def correlate_lead_with_meta(self, lead: Lead, db: Session) -> bool:
         """
-        Correla una lead con i dati Meta Marketing usando i campi Facebook da Magellano.
+        Correla una lead con i dati Meta Marketing.
         
-        Returns: True se è stata trovata una correlazione, False altrimenti
+        Returns: True se è stata trovata una correlazione (via ID o nome), False altrimenti.
         """
-        if not lead.facebook_campaign_name and not lead.facebook_ad_name:
+        # Se non abbiamo né ID Meta né nomi Facebook utili, non possiamo fare nulla
+        if not (
+            lead.meta_campaign_id
+            or lead.meta_adset_id
+            or lead.meta_ad_id
+            or lead.facebook_campaign_name
+            or lead.facebook_ad_name
+        ):
             return False
         
         correlated = False
         
-        # 1. Match Campaign
-        if lead.facebook_campaign_name:
-            meta_campaign = db.query(MetaCampaign).filter(
-                MetaCampaign.name.ilike(f"%{lead.facebook_campaign_name}%")
-            ).first()
-            
+        # 1. Match Campaign (preferisci ID se già presente)
+        meta_campaign = None
+        if lead.meta_campaign_id:
+            meta_campaign = (
+                db.query(MetaCampaign)
+                .filter(MetaCampaign.campaign_id == lead.meta_campaign_id)
+                .first()
+            )
+            if meta_campaign:
+                correlated = True
+        elif lead.facebook_campaign_name:
+            meta_campaign = (
+                db.query(MetaCampaign)
+                .filter(MetaCampaign.name.ilike(f"%{lead.facebook_campaign_name}%"))
+                .first()
+            )
             if meta_campaign:
                 lead.meta_campaign_id = meta_campaign.campaign_id
                 correlated = True
-                logger.debug(f"Lead {lead.id}: Matched campaign '{lead.facebook_campaign_name}' → {meta_campaign.campaign_id}")
+                logger.debug(
+                    f"Lead {lead.id}: Matched campaign '{lead.facebook_campaign_name}' → {meta_campaign.campaign_id}"
+                )
         
-        # 2. Match AdSet (se abbiamo campaign_id)
-        if lead.meta_campaign_id and lead.facebook_ad_set:
-            meta_campaign = db.query(MetaCampaign).filter(
-                MetaCampaign.campaign_id == lead.meta_campaign_id
-            ).first()
-            
-            if meta_campaign:
-                meta_adset = db.query(MetaAdSet).filter(
-                    MetaAdSet.campaign_id == meta_campaign.id,
-                    MetaAdSet.name.ilike(f"%{lead.facebook_ad_set}%")
-                ).first()
-                
-                if meta_adset:
-                    lead.meta_adset_id = meta_adset.adset_id
-                    correlated = True
-                    logger.debug(f"Lead {lead.id}: Matched adset '{lead.facebook_ad_set}' → {meta_adset.adset_id}")
-        
-        # 3. Match Ad (usa solo facebook_ad_name, facebook_id è l'ID utente)
-        meta_ad = None
+        # 2. Match AdSet (preferisci ID, altrimenti nome all'interno della campagna)
+        meta_adset = None
         if lead.meta_adset_id:
-            meta_adset = db.query(MetaAdSet).filter(
-                MetaAdSet.adset_id == lead.meta_adset_id
-            ).first()
-            
-            if meta_adset and lead.facebook_ad_name:
-                # Match usando solo il nome dell'ad (facebook_id è l'ID utente, non l'ID ad)
-                meta_ad = db.query(MetaAd).filter(
+            meta_adset = (
+                db.query(MetaAdSet)
+                .filter(MetaAdSet.adset_id == lead.meta_adset_id)
+                .first()
+            )
+            if meta_adset:
+                correlated = True
+        elif meta_campaign and lead.facebook_ad_set:
+            meta_adset = (
+                db.query(MetaAdSet)
+                .filter(
+                    MetaAdSet.campaign_id == meta_campaign.id,
+                    MetaAdSet.name.ilike(f"%{lead.facebook_ad_set}%"),
+                )
+                .first()
+            )
+            if meta_adset:
+                lead.meta_adset_id = meta_adset.adset_id
+                correlated = True
+                logger.debug(
+                    f"Lead {lead.id}: Matched adset '{lead.facebook_ad_set}' → {meta_adset.adset_id}"
+                )
+        
+        # 3. Match Ad (preferisci ID, altrimenti nome all'interno dell'adset)
+        if lead.meta_ad_id:
+            meta_ad = (
+                db.query(MetaAd)
+                .filter(MetaAd.ad_id == lead.meta_ad_id)
+                .first()
+            )
+            if meta_ad:
+                correlated = True
+        elif meta_adset and lead.facebook_ad_name:
+            meta_ad = (
+                db.query(MetaAd)
+                .filter(
                     MetaAd.adset_id == meta_adset.id,
-                    MetaAd.name.ilike(f"%{lead.facebook_ad_name}%")
-                ).first()
-                
-                if meta_ad:
-                    lead.meta_ad_id = meta_ad.ad_id
-                    correlated = True
-                    logger.debug(f"Lead {lead.id}: Matched ad '{lead.facebook_ad_name}' → {meta_ad.ad_id}")
+                    MetaAd.name.ilike(f"%{lead.facebook_ad_name}%"),
+                )
+                .first()
+            )
+            if meta_ad:
+                lead.meta_ad_id = meta_ad.ad_id
+                correlated = True
+                logger.debug(
+                    f"Lead {lead.id}: Matched ad '{lead.facebook_ad_name}' → {meta_ad.ad_id}"
+                )
         
         return correlated
     

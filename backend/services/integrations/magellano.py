@@ -430,6 +430,13 @@ class MagellanoService:
                     f"Colonne disponibili: {list(df.columns)}"
                 )
             
+            # Colonne con ID Meta (se presenti): facebook_*_id
+            campaign_id_col = normalized_columns.get("facebook_campaign_name_id")
+            adset_id_col = normalized_columns.get("facebook_ad_set_id") or normalized_columns.get(
+                "facebook_adset_id"
+            )
+            ad_id_col = normalized_columns.get("facebook_ad_name_id")
+            
             for _, row in df.iterrows():
                 # Map based on identified columns from inspection
                 email = str(row.get('Email', '')).strip()
@@ -481,6 +488,23 @@ class MagellanoService:
                 payout_status = status_raw.lower() if status_raw else None
                 is_paid = (magellano_status == 'magellano_sent')
                 
+                # Estrai eventuali ID Meta se le colonne esistono
+                meta_campaign_id = None
+                meta_adset_id = None
+                meta_ad_id = None
+                if campaign_id_col:
+                    raw = row.get(campaign_id_col, None)
+                    if raw is not None and not pd.isna(raw):
+                        meta_campaign_id = str(raw).strip()
+                if adset_id_col:
+                    raw = row.get(adset_id_col, None)
+                    if raw is not None and not pd.isna(raw):
+                        meta_adset_id = str(raw).strip()
+                if ad_id_col:
+                    raw = row.get(ad_id_col, None)
+                    if raw is not None and not pd.isna(raw):
+                        meta_ad_id = str(raw).strip()
+                
                 leads.append({
                     'magellano_id': ext_user_id,  # ID da Magellano (senza prefisso)
                     'external_user_id': f"MAG-{ext_user_id}",  # ID interno con prefisso (usato per Ulixe)
@@ -509,6 +533,10 @@ class MagellanoService:
                     'facebook_campaign_name': str(row.get('facebook_campaign_name', '')).strip() if not pd.isna(row.get('facebook_campaign_name', '')) else None,
                     'facebook_id': str(row.get('facebook_id', '')).strip() if not pd.isna(row.get('facebook_id', '')) else None,  # ID utente Facebook
                     'facebook_piattaforma': str(row.get('facebook_piattaforma', '')).strip() if not pd.isna(row.get('facebook_piattaforma', '')) else None,
+                    # ID Meta (se esportati da Magellano)
+                    'meta_campaign_id': meta_campaign_id,
+                    'meta_adset_id': meta_adset_id,
+                    'meta_ad_id': meta_ad_id,
                     # Data di iscrizione Magellano
                     'magellano_subscr_date': magellano_subscr_date,
                     # NON impostare status_category di default - verrà determinato in base a magellano_status

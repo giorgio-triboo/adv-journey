@@ -40,7 +40,13 @@ def magellano_sync_task(campaigns: list, start_date_str: str, end_date_str: str,
         try:
             # Passa sempre l'ID del job a run_magellano_sync per generare
             # nomi file export univoci per job (evita collisioni con export manuali).
-            run_magellano_sync(db, campaigns, start_date, end_date, job_id=job.id if job else None)
+            stats = run_magellano_sync(
+                db,
+                campaigns,
+                start_date,
+                end_date,
+                job_id=job.id if job else None,
+            )
 
             # Registra la sync Magellano avviata dal frontend nel riepilogo ingestion
             sync_log = SyncLog(
@@ -59,9 +65,19 @@ def magellano_sync_task(campaigns: list, start_date_str: str, end_date_str: str,
 
             # Aggiorna eventualmente l'IngestionJob associato
             if job:
+                params = job.params or {}
+                if stats is not None:
+                    params["stats"] = stats
+                job.params = params
                 job.status = "SUCCESS"
                 job.completed_at = now_rome()
-                job.message = "Sync Magellano completata"
+                if stats and "total_new" in stats and "total_updated" in stats:
+                    job.message = (
+                        f"Sync Magellano completata "
+                        f"({stats['total_new']} nuove, {stats['total_updated']} aggiornate)"
+                    )
+                else:
+                    job.message = "Sync Magellano completata"
 
             db.commit()
         except Exception as e:

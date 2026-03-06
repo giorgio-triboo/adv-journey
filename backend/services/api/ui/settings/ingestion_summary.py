@@ -2,9 +2,9 @@
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from database import get_db
-from models import SyncLog, User, IngestionJob
+from models import SyncLog, User, IngestionJob, Lead
 from datetime import datetime, timedelta
 import logging
 from ..common import templates
@@ -84,6 +84,36 @@ async def ingestion_summary(request: Request, db: Session = Depends(get_db)):
 
     jobs_formatted = []
     for job in recent_jobs:
+        # Statistiche aggiuntive per UI (es. campagne Meta aggiornate, lead per campagna Magellano)
+        stats = None
+
+        # Meta marketing / bootstrap: stats salvate nei params del job (se presenti)
+        if job.params and isinstance(job.params, dict) and job.job_type in (
+            "meta_marketing",
+            "meta_campaigns_bootstrap",
+        ):
+            stats = (job.params or {}).get("stats")
+
+        # Magellano: calcola numero di lead per campagna nel periodo indicato
+        if job.job_type == "magellano":
+            params = job.params or {}
+            campaigns = params.get("campaigns") or []
+            start_date = params.get("start_date")
+            end_date = params.get("end_date")
+            if campaigns and start_date and end_date:
+                try:
+                    q = (
+                        db.query(Lead.magellano_campaign_id, func.count(Lead.id))
+                        .filter(Lead.magellano_campaign_id.in_([str(c) for c in campaigns]))
+                        .filter(Lead.magellano_subscr_date >= start_date)
+                        .filter(Lead.magellano_subscr_date <= end_date)
+                        .group_by(Lead.magellano_campaign_id)
+                    )
+                    per_campaign = {str(row[0]): row[1] for row in q.all()}
+                    stats = {"per_campaign_leads": per_campaign}
+                except Exception as e:
+                    logger.warning(f"Errore calcolo stats Magellano per job {job.id}: {e}")
+
         jobs_formatted.append(
             {
                 "id": job.id,
@@ -95,6 +125,7 @@ async def ingestion_summary(request: Request, db: Session = Depends(get_db)):
                 "celery_task_id": job.celery_task_id,
                 "params": job.params or {},
                 "message": job.message,
+                "stats": stats,
             }
         )
 

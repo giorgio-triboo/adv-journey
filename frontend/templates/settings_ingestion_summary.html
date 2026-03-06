@@ -90,6 +90,28 @@
                                     {% endif %}
                                 </div>
                             {% endif %}
+                            {% if job.stats %}
+                                <div class="mt-2 space-y-0.5">
+                                    {% if job.job_type == 'meta_campaigns_bootstrap' %}
+                                        <div>
+                                            <span class="font-semibold">Campagne aggiornate:</span>
+                                            {{ job.stats.campaigns_updated or 0 }}
+                                        </div>
+                                    {% elif job.job_type == 'meta_marketing' %}
+                                        <div>
+                                            <span class="font-semibold">Campagne sync:</span>
+                                            {{ job.stats.campaigns_synced or 0 }}
+                                        </div>
+                                    {% elif job.job_type == 'magellano' and job.stats.per_campaign_leads %}
+                                        <div class="font-semibold">Lead per campagna:</div>
+                                        <ul class="list-disc list-inside">
+                                            {% for cid, count in job.stats.per_campaign_leads.items() %}
+                                            <li>Campagna {{ cid }}: {{ count }} lead</li>
+                                            {% endfor %}
+                                        </ul>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}

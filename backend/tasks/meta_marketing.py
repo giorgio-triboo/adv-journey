@@ -65,9 +65,15 @@ def meta_manual_sync_task(
 
             # Aggiorna eventualmente l'IngestionJob associato
             if job:
+                params = job.params or {}
+                params["stats"] = {
+                    "campaigns_synced": stats.get("campaigns_synced", 0),
+                    "errors": stats.get("errors", 0),
+                }
+                job.params = params
                 job.status = "SUCCESS"
                 job.completed_at = now_rome()
-                job.message = "Sync Meta marketing completata"
+                job.message = f"Sync Meta marketing completata ({params['stats']['campaigns_synced']} campagne)"
 
             db.commit()
         except Exception as log_exc:
@@ -155,9 +161,15 @@ def meta_campaigns_bootstrap_task(
         logger.info("meta_campaigns_bootstrap %s..%s: %s", start_date_str, end_date_str, stats)
 
         if job:
+            params = job.params or {}
+            params["stats"] = stats
+            job.params = params
             job.status = "SUCCESS"
             job.completed_at = now_rome()
-            job.message = "Bootstrap campagne Meta completato"
+            job.message = (
+                "Bootstrap campagne Meta completato "
+                f"({stats.get('campaigns_updated', 0)} campagne aggiornate)"
+            )
             db.commit()
 
         return stats

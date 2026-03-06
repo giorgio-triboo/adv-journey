@@ -27,6 +27,7 @@ logger = logging.getLogger('services.api.ui')
 
 router = APIRouter(include_in_schema=False)
 
+
 def run_magellano_sync(
     db: Session,
     campaigns: List[int],
@@ -34,102 +35,129 @@ def run_magellano_sync(
     end_date: date,
     headless: bool = True,
     job_id: int | None = None,
-):
+) -> dict:
+    """
+    Esegue la sync Magellano per le campagne/date indicate e restituisce
+    statistiche aggregate, inclusa la ripartizione per campagna.
+    """
     logger.info(f"Starting Magellano Sync Task for campaigns {campaigns} ({start_date} to {end_date})...")
     from services.integrations.magellano import MagellanoService
+
     service = MagellanoService(headless=headless)
     correlation_service = LeadCorrelationService()
+
+    stats = {
+        "total_new": 0,
+        "total_updated": 0,
+        "total_errors": 0,
+        "per_campaign": {},
+    }
+
+    def _get_campaign_key(data, existing=None) -> str:
+        cid = (
+            data.get("magellano_campaign_id")
+            or data.get("campaign_id")
+            or (existing.magellano_campaign_id if existing is not None else None)
+        )
+        return str(cid) if cid is not None else "unknown"
+
     try:
         leads_data = service.fetch_leads(start_date, end_date, campaigns, job_id=job_id)
         logger.info(f"Fetched {len(leads_data)} leads from Magellano.")
-        
+
         new_leads = []
-        
+
         for data in leads_data:
-            # Check if exists
-            magellano_id = data.get('magellano_id')
+            magellano_id = data.get("magellano_id")
             existing = db.query(Lead).filter(Lead.magellano_id == magellano_id).first()
-            
-            # Recupera dati Magellano
-            magellano_status_raw = data.get('magellano_status_raw') or data.get('status_raw')
-            magellano_status = data.get('magellano_status')
-            magellano_status_category = data.get('magellano_status_category')
-            
-            # Calcola current_status e status_category (priorità: Ulixe > Magellano)
-            # Per nuove lead, usa sempre Magellano (Ulixe non ha ancora sincronizzato)
+
+            magellano_status_raw = data.get("magellano_status_raw") or data.get("status_raw")
+            magellano_status = data.get("magellano_status")
+            magellano_status_category = data.get("magellano_status_category")
+
             current_status = magellano_status_raw if magellano_status_raw else magellano_status
             status_category = magellano_status_category if magellano_status_category else StatusCategory.UNKNOWN
-            
+
+            camp_key = _get_campaign_key(data, existing)
+            if camp_key not in stats["per_campaign"]:
+                stats["per_campaign"][camp_key] = {"new": 0, "updated": 0}
+
             if not existing:
                 new_lead = Lead(
                     magellano_id=magellano_id,
-                    external_user_id=data.get('external_user_id'),
-                    email=hash_email_for_meta(data.get('email', '')),
-                    phone=hash_phone_for_meta(data.get('phone', '')),
-                    brand=data.get('brand'),
-                    msg_id=data.get('msg_id'),
-                    form_id=data.get('form_id'),
-                    source=data.get('source'),
-                    campaign_name=data.get('campaign_name'),
-                    magellano_campaign_id=data.get('magellano_campaign_id'),
-                    magellano_subscr_date=data.get('magellano_subscr_date'),
-                    # Stato Magellano: originale, normalizzato e categoria
+                    external_user_id=data.get("external_user_id"),
+                    email=hash_email_for_meta(data.get("email", "")),
+                    phone=hash_phone_for_meta(data.get("phone", "")),
+                    brand=data.get("brand"),
+                    msg_id=data.get("msg_id"),
+                    form_id=data.get("form_id"),
+                    source=data.get("source"),
+                    campaign_name=data.get("campaign_name"),
+                    magellano_campaign_id=data.get("magellano_campaign_id"),
+                    magellano_subscr_date=data.get("magellano_subscr_date"),
                     magellano_status_raw=magellano_status_raw,
                     magellano_status=magellano_status,
                     magellano_status_category=magellano_status_category,
-                    payout_status=data.get('payout_status'),
-                    is_paid=data.get('is_paid', False),
-                    # Facebook/Meta fields from Magellano
-                    facebook_ad_name=data.get('facebook_ad_name'),
-                    facebook_ad_set=data.get('facebook_ad_set'),
-                    facebook_campaign_name=data.get('facebook_campaign_name'),
-                    facebook_id=data.get('facebook_id'),
-                    facebook_piattaforma=data.get('facebook_piattaforma'),
-                    # Stato corrente (calcolato: preferisce Ulixe se disponibile, altrimenti Magellano)
+                    payout_status=data.get("payout_status"),
+                    is_paid=data.get("is_paid", False),
+                    facebook_ad_name=data.get("facebook_ad_name"),
+                    facebook_ad_set=data.get("facebook_ad_set"),
+                    facebook_campaign_name=data.get("facebook_campaign_name"),
+                    facebook_id=data.get("facebook_id"),
+                    facebook_piattaforma=data.get("facebook_piattaforma"),
+                    # ID Meta se presenti nell'export
+                    meta_campaign_id=data.get("meta_campaign_id"),
+                    meta_adset_id=data.get("meta_adset_id"),
+                    meta_ad_id=data.get("meta_ad_id"),
                     current_status=current_status,
-                    status_category=status_category
+                    status_category=status_category,
                 )
                 db.add(new_lead)
                 new_leads.append(new_lead)
+
+                stats["total_new"] += 1
+                stats["per_campaign"][camp_key]["new"] += 1
             else:
-                # Aggiorna lead esistente con nuovo stato Magellano
                 if magellano_status_raw:
                     existing.magellano_status_raw = magellano_status_raw
                 if magellano_status:
                     existing.magellano_status = magellano_status
                 if magellano_status_category:
                     existing.magellano_status_category = magellano_status_category
-                
-                # Calcola current_status e status_category (priorità: Ulixe > Magellano)
-                # Se Ulixe ha già sincronizzato, mantieni quello, altrimenti usa Magellano
+
                 if existing.ulixe_status:
-                    # Ulixe ha priorità - non sovrascrivere
-                    pass  # Mantieni current_status e status_category di Ulixe
+                    pass
                 else:
-                    # Usa Magellano (Ulixe non ha ancora sincronizzato)
                     existing.current_status = current_status
                     existing.status_category = status_category
-                
-                # Aggiorna sempre payout_status e is_paid (anche se None)
-                if 'payout_status' in data:
-                    existing.payout_status = data.get('payout_status')
-                if 'is_paid' in data:
-                    existing.is_paid = data.get('is_paid', False)
-                # Aggiorna anche altri campi se disponibili
-                if data.get('campaign_name'):
-                    existing.campaign_name = data.get('campaign_name')
-                if data.get('facebook_ad_name'):
-                    existing.facebook_ad_name = data.get('facebook_ad_name')
-                if data.get('facebook_ad_set'):
-                    existing.facebook_ad_set = data.get('facebook_ad_set')
-                if data.get('facebook_campaign_name'):
-                    existing.facebook_campaign_name = data.get('facebook_campaign_name')
-                if data.get('facebook_id'):
-                    existing.facebook_id = data.get('facebook_id')
-        
+
+                if "payout_status" in data:
+                    existing.payout_status = data.get("payout_status")
+                if "is_paid" in data:
+                    existing.is_paid = data.get("is_paid", False)
+                if data.get("campaign_name"):
+                    existing.campaign_name = data.get("campaign_name")
+                if data.get("facebook_ad_name"):
+                    existing.facebook_ad_name = data.get("facebook_ad_name")
+                if data.get("facebook_ad_set"):
+                    existing.facebook_ad_set = data.get("facebook_ad_set")
+                if data.get("facebook_campaign_name"):
+                    existing.facebook_campaign_name = data.get("facebook_campaign_name")
+                if data.get("facebook_id"):
+                    existing.facebook_id = data.get("facebook_id")
+                # Aggiorna ID Meta se presenti (gli ID sono la fonte autorevole)
+                if data.get("meta_campaign_id"):
+                    existing.meta_campaign_id = data.get("meta_campaign_id")
+                if data.get("meta_adset_id"):
+                    existing.meta_adset_id = data.get("meta_adset_id")
+                if data.get("meta_ad_id"):
+                    existing.meta_ad_id = data.get("meta_ad_id")
+
+                stats["total_updated"] += 1
+                stats["per_campaign"][camp_key]["updated"] += 1
+
         db.commit()
-        
-        # Correlazione automatica delle nuove lead con Meta Marketing
+
         if new_leads:
             correlation_stats = correlation_service.correlate_batch(new_leads, db)
             logger.info(
@@ -137,14 +165,17 @@ def run_magellano_sync(
                 f"{correlation_stats['correlated']} correlated, "
                 f"{correlation_stats['not_found']} not found"
             )
-        
-        logger.info("Magellano Sync Task Completed Successfully.")
-        
+
+        logger.info(
+            "Magellano Sync Task Completed Successfully. "
+            f"New: {stats['total_new']}, updated: {stats['total_updated']}"
+        )
+        return stats
     except Exception as e:
+        stats["total_errors"] += 1
         logger.error(f"Magellano Sync Task Failed: {e}")
         db.rollback()
-    finally:
-        db.close()
+        raise
 
 @router.post("/sync")
 async def trigger_sync(request: Request, db: Session = Depends(get_db)):
