@@ -48,16 +48,22 @@ def magellano_sync_task(campaigns: list, start_date_str: str, end_date_str: str,
                 job_id=job.id if job else None,
             )
 
+            failed_campaigns = (stats or {}).get("failed_campaigns") or []
+            total_errors = int((stats or {}).get("total_errors") or 0)
+            has_errors = bool(failed_campaigns or total_errors)
+            status_str = "ERROR" if has_errors else "SUCCESS"
+
             # Registra la sync Magellano avviata dal frontend nel riepilogo ingestion
             sync_log = SyncLog(
-                status="SUCCESS",
+                status=status_str,
                 details={
                     "magellano": {
                         "type": "frontend_auto",
                         "campaigns": campaigns,
                         "start_date": start_date_str,
                         "end_date": end_date_str,
-                        "errors": 0,
+                        "errors": total_errors,
+                        "failed_campaigns": failed_campaigns,
                     }
                 },
             )
@@ -69,15 +75,24 @@ def magellano_sync_task(campaigns: list, start_date_str: str, end_date_str: str,
                 if stats is not None:
                     params["stats"] = stats
                 job.params = params
-                job.status = "SUCCESS"
+                job.status = status_str
                 job.completed_at = now_rome()
-                if stats and "total_new" in stats and "total_updated" in stats:
-                    job.message = (
-                        f"Sync Magellano completata "
-                        f"({stats['total_new']} nuove, {stats['total_updated']} aggiornate)"
-                    )
+                if has_errors:
+                    if failed_campaigns:
+                        job.message = (
+                            "Sync Magellano completata con errori "
+                            f"(campagne fallite: {', '.join(failed_campaigns)})"
+                        )
+                    else:
+                        job.message = "Sync Magellano completata con errori"
                 else:
-                    job.message = "Sync Magellano completata"
+                    if stats and "total_new" in stats and "total_updated" in stats:
+                        job.message = (
+                            f"Sync Magellano completata "
+                            f"({stats['total_new']} nuove, {stats['total_updated']} aggiornate)"
+                        )
+                    else:
+                        job.message = "Sync Magellano completata"
 
             db.commit()
         except Exception as e:
