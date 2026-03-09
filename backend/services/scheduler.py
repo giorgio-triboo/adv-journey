@@ -15,36 +15,35 @@ logger = logging.getLogger('services.scheduler')
 scheduler = BackgroundScheduler()
 
 def nightly_sync_job():
-    """
-    DISABILITATO: Job schedulato disabilitato - non esegue più sincronizzazioni automatiche.
-    """
-    logger.warning("nightly_sync_job chiamato ma DISABILITATO - nessuna sync verrà eseguita")
-    return
+    """Esegue l'orchestrator completo di sincronizzazione notturna."""
+    logger.info("Esecuzione nightly_sync_job (orchestrator completo)...")
+    orchestrator = SyncOrchestrator()
+    orchestrator.run_all()
 
 def magellano_sync_scheduled():
-    """DISABILITATO: Job schedulato per sincronizzazione Magellano disabilitato."""
-    logger.warning("magellano_sync_scheduled chiamato ma DISABILITATO - nessuna sync verrà eseguita")
-    return
+    """Job schedulato per sincronizzazione Magellano (usa config da CronJob)."""
+    logger.info("Esecuzione magellano_sync_scheduled...")
+    _run_magellano_sync()
 
 def ulixe_sync_scheduled():
-    """DISABILITATO: Job schedulato per sincronizzazione Ulixe disabilitato."""
-    logger.warning("ulixe_sync_scheduled chiamato ma DISABILITATO - nessuna sync verrà eseguita")
-    return
+    """Job schedulato per sincronizzazione Ulixe."""
+    logger.info("Esecuzione ulixe_sync_scheduled...")
+    ulixe_sync_job()
 
 def meta_marketing_sync_scheduled():
-    """DISABILITATO: Job schedulato per sincronizzazione Meta Marketing disabilitato."""
-    logger.warning("meta_marketing_sync_scheduled chiamato ma DISABILITATO - nessuna sync verrà eseguita")
-    return
+    """Job schedulato per sincronizzazione Meta Marketing."""
+    logger.info("Esecuzione meta_marketing_sync_scheduled...")
+    meta_marketing_sync_job()
 
 def meta_conversion_marker_scheduled():
-    """DISABILITATO: Job schedulato per marcatura lead Meta Conversion disabilitato."""
-    logger.warning("meta_conversion_marker_scheduled chiamato ma DISABILITATO - nessuna sync verrà eseguita")
-    return
+    """Job schedulato per marcatura lead Meta Conversion."""
+    logger.info("Esecuzione meta_conversion_marker_scheduled...")
+    meta_conversion_marker_job()
 
 def meta_conversion_sync_scheduled():
-    """DISABILITATO: Job schedulato per invio eventi Meta Conversion API disabilitato."""
-    logger.warning("meta_conversion_sync_scheduled chiamato ma DISABILITATO - nessuna sync verrà eseguita")
-    return
+    """Job schedulato per invio eventi Meta Conversion API."""
+    logger.info("Esecuzione meta_conversion_sync_scheduled...")
+    meta_conversion_sync_job()
 
 
 def _run_meta_campaigns_incremental():
@@ -65,10 +64,15 @@ def _run_magellano_sync():
         db.close()
 
 
-# Mappa job_type -> callable (usata quando lo scheduler sarà riattivato per inviare job a Celery)
+# Mappa job_type -> callable
 CRON_JOB_HANDLERS = {
+    "orchestrator": nightly_sync_job,
+    "magellano": magellano_sync_scheduled,
+    "ulixe": ulixe_sync_scheduled,
+    "meta_marketing": meta_marketing_sync_scheduled,
+    "meta_conversion_marker": meta_conversion_marker_scheduled,
+    "meta_conversion": meta_conversion_sync_scheduled,
     "meta_campaigns_incremental": _run_meta_campaigns_incremental,
-    "magellano": _run_magellano_sync,
 }
 
 
@@ -116,12 +120,73 @@ def _build_cron_trigger(cron_job: CronJob) -> CronTrigger:
 
 def start_scheduler():
     """
-    DISABILITATO: Tutte le sincronizzazioni automatiche sono state disabilitate.
-    Questa funzione non avvia più nessuno scheduler o job automatico.
+    Avvia APScheduler e registra tutti i CronJob abilitati presenti a database.
+    Usa la tabella cron_jobs per determinare quali job eseguire e con quale schedule.
     """
-    logger.warning("=" * 80)
-    logger.warning("SCHEDULER DISABILITATO - Nessuna sincronizzazione automatica verrà eseguita")
-    logger.warning("=" * 80)
-    logger.warning("start_scheduler() chiamato ma disabilitato. Nessun job verrà avviato.")
-    # NON avviare lo scheduler - tutte le sync sono disabilitate
-    return
+    logger.info("=" * 80)
+    logger.info("Inizializzazione scheduler sincronizzazioni automatiche...")
+
+    db = SessionLocal()
+    try:
+        cron_jobs = db.query(CronJob).filter(CronJob.enabled == True).all()  # type: ignore[comparison-overlap]
+
+        if not cron_jobs:
+            logger.warning("Nessun CronJob abilitato trovato. Scheduler non registrerà alcun job.")
+            return
+
+        # Pulisci eventuali job già registrati per evitare duplicazioni su riavvii
+        if scheduler.get_jobs():
+            logger.info("Rimozione dei job schedulati esistenti prima di registrare i nuovi...")
+            scheduler.remove_all_jobs()
+
+        for cron_job in cron_jobs:
+            handler = CRON_JOB_HANDLERS.get(cron_job.job_type)
+            if not handler:
+                logger.warning(
+                    "Nessun handler registrato per job_type='%s' (job_name='%s'). Job ignorato.",
+                    cron_job.job_type,
+                    cron_job.job_name,
+                )
+                continue
+
+            trigger = _build_cron_trigger(cron_job)
+
+            try:
+                scheduler.add_job(
+                    handler,
+                    trigger=trigger,
+                    id=cron_job.job_name,
+                    name=cron_job.description or cron_job.job_name,
+                    replace_existing=True,
+                )
+                logger.info(
+                    "Registrato cron job '%s' (type=%s) alle %02d:%02d (dow=%s dom=%s month=%s)",
+                    cron_job.job_name,
+                    cron_job.job_type,
+                    cron_job.hour,
+                    cron_job.minute,
+                    cron_job.day_of_week,
+                    cron_job.day_of_month,
+                    cron_job.month,
+                )
+            except Exception as e:
+                logger.error(
+                    "Errore registrando il cron job '%s': %s",
+                    cron_job.job_name,
+                    e,
+                    exc_info=True,
+                )
+
+        if not scheduler.running:
+            scheduler.start()
+            logger.info("Scheduler avviato con %d job attivi.", len(scheduler.get_jobs()))
+        else:
+            logger.info("Scheduler già in esecuzione; job aggiornati.")
+
+        logger.info("=" * 80)
+        logger.info("Scheduler pronto. Le sincronizzazioni automatiche sono ATTIVE in base ai CronJob abilitati.")
+        logger.info("=" * 80)
+    except Exception as e:
+        logger.error("Errore durante l'avvio dello scheduler: %s", e, exc_info=True)
+    finally:
+        db.close()

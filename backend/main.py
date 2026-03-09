@@ -227,13 +227,17 @@ def startup_event():
     seed_marketing_threshold_config()
     seed_alert_configs()
     
-    # Start scheduler - DISABILITATO COMPLETAMENTE
-    # from services.scheduler import start_scheduler
-    # start_scheduler()
-    logger.warning("=" * 80)
-    logger.warning("SCHEDULER DISABILITATO - Nessuna sincronizzazione automatica verrà eseguita")
-    logger.warning("Tutte le sync automatiche sono state disabilitate per sicurezza")
-    logger.warning("=" * 80)
+    # Start scheduler - utilizza configurazione da tabella cron_jobs
+    try:
+        from services.scheduler import start_scheduler
+        start_scheduler()
+    except Exception as e:
+        logger.error(
+            "Errore durante l'avvio dello scheduler di sincronizzazione: %s. "
+            "Le sync automatiche potrebbero non essere attive.",
+            e,
+            exc_info=True,
+        )
 
 @app.middleware("http")
 async def error_logging_middleware(request: Request, call_next):
