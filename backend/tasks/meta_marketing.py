@@ -202,12 +202,16 @@ def meta_campaigns_incremental_task(target_date_str: str | None = None, job_id: 
     db = SessionLocal()
     job = None
     try:
-        # Se non esiste ancora un IngestionJob, creane uno al volo
+        # Se non esiste ancora un IngestionJob, creane uno al volo.
+        # Quando job_id è passato (es. da scheduler), preserva params esistenti (incluso "source").
         if job_id:
             job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
             if job:
                 job.status = "RUNNING"
                 job.started_at = now_rome()
+                params = job.params or {}
+                params.setdefault("target_date", target.isoformat())
+                job.params = params
                 db.commit()
         else:
             job = IngestionJob(

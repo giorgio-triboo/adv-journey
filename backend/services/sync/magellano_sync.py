@@ -65,10 +65,27 @@ def run(db: Session = None, managed_campaign_ids: list = None) -> dict:
         
         correlation_service = LeadCorrelationService()
         new_leads = []
+
+        # Pre-carica tutti i magellano_id già presenti nel DB per evitare inserimenti duplicati
+        existing_ids = {
+            str(row[0])
+            for row in db.query(Lead.magellano_id).all()
+            if row[0] is not None
+        }
         
         for data in leads_data:
-            magellano_id = data.get('magellano_id')
-            existing = db.query(Lead).filter(Lead.magellano_id == magellano_id).first()
+            raw_magellano_id = data.get('magellano_id')
+            if raw_magellano_id is None:
+                # Nessun ID valido: salta in sicurezza
+                logger.warning("Magellano Sync: trovato record senza magellano_id, skip.")
+                continue
+
+            magellano_id = str(raw_magellano_id)
+            if magellano_id in existing_ids:
+                # Esiste già (o è stato creato in questa stessa run): tratta come update
+                existing = db.query(Lead).filter(Lead.magellano_id == magellano_id).first()
+            else:
+                existing = None
             
             if not existing:
                 # Recupera dati Magellano
@@ -112,6 +129,7 @@ def run(db: Session = None, managed_campaign_ids: list = None) -> dict:
                 db.add(new_lead)
                 new_leads.append(new_lead)
                 stats["new"] += 1
+                existing_ids.add(magellano_id)
             else:
                 # Update existing lead - aggiorna anche lo stato Magellano
                 magellano_status_raw = data.get('magellano_status_raw') or data.get('status_raw')

@@ -7,7 +7,8 @@ from services.sync.meta_marketing_sync import run as meta_marketing_sync_job
 from services.sync.meta_conversion_marker import run as meta_conversion_marker_job
 from services.sync.meta_conversion_sync import run as meta_conversion_sync_job
 from database import SessionLocal
-from models import CronJob
+from models import CronJob, IngestionJob, now_rome
+import os
 import logging
 
 logger = logging.getLogger('services.scheduler')
@@ -17,13 +18,67 @@ scheduler = BackgroundScheduler()
 def nightly_sync_job():
     """Esegue l'orchestrator completo di sincronizzazione notturna."""
     logger.info("Esecuzione nightly_sync_job (orchestrator completo)...")
-    orchestrator = SyncOrchestrator()
-    orchestrator.run_all()
+    db = SessionLocal()
+    job = None
+    try:
+        job = IngestionJob(
+            job_type="orchestrator",
+            status="RUNNING",
+            params={"source": "scheduler"},
+            started_at=now_rome(),
+        )
+        db.add(job)
+        db.commit()
+
+        orchestrator = SyncOrchestrator()
+        orchestrator.run_all()
+
+        job.status = "SUCCESS"
+        job.completed_at = now_rome()
+        job.message = "Nightly orchestrator completed"
+        db.commit()
+    except Exception as e:
+        logger.error("Errore in nightly_sync_job: %s", e, exc_info=True)
+        if job:
+            job.status = "ERROR"
+            job.completed_at = now_rome()
+            job.message = str(e)
+            db.commit()
+        raise
+    finally:
+        db.close()
 
 def magellano_sync_scheduled():
     """Job schedulato per sincronizzazione Magellano (usa config da CronJob)."""
     logger.info("Esecuzione magellano_sync_scheduled...")
-    _run_magellano_sync()
+    db = SessionLocal()
+    job = None
+    try:
+        job = IngestionJob(
+            job_type="magellano",
+            status="RUNNING",
+            params={"source": "scheduler"},
+            started_at=now_rome(),
+        )
+        db.add(job)
+        db.commit()
+
+        _run_magellano_sync()
+
+        job.status = "SUCCESS"
+        job.completed_at = now_rome()
+        job.message = "Magellano sync completed"
+        db.commit()
+    except Exception as e:
+        logger.error("Errore in magellano_sync_scheduled: %s", e, exc_info=True)
+        if job:
+            job.status = "ERROR"
+            job.completed_at = now_rome()
+            job.message = str(e)
+            db.commit()
+        raise
+    finally:
+        db.close()
 
 def ulixe_sync_scheduled():
     """Job schedulato per sincronizzazione Ulixe."""
@@ -33,7 +88,34 @@ def ulixe_sync_scheduled():
 def meta_marketing_sync_scheduled():
     """Job schedulato per sincronizzazione Meta Marketing."""
     logger.info("Esecuzione meta_marketing_sync_scheduled...")
-    meta_marketing_sync_job()
+    db = SessionLocal()
+    job = None
+    try:
+        job = IngestionJob(
+            job_type="meta_marketing",
+            status="RUNNING",
+            params={"source": "scheduler"},
+            started_at=now_rome(),
+        )
+        db.add(job)
+        db.commit()
+
+        meta_marketing_sync_job()
+
+        job.status = "SUCCESS"
+        job.completed_at = now_rome()
+        job.message = "Meta marketing sync completed"
+        db.commit()
+    except Exception as e:
+        logger.error("Errore in meta_marketing_sync_scheduled: %s", e, exc_info=True)
+        if job:
+            job.status = "ERROR"
+            job.completed_at = now_rome()
+            job.message = str(e)
+            db.commit()
+        raise
+    finally:
+        db.close()
 
 def meta_conversion_marker_scheduled():
     """Job schedulato per marcatura lead Meta Conversion."""
@@ -49,7 +131,31 @@ def meta_conversion_sync_scheduled():
 def _run_meta_campaigns_incremental():
     """Esegue sync incrementale meta_campaigns (ieri) via Celery."""
     from tasks.meta_marketing import meta_campaigns_incremental_task
-    meta_campaigns_incremental_task.delay()
+
+    db = SessionLocal()
+    job = None
+    try:
+        # Crea esplicitamente un IngestionJob con source="scheduler" così da distinguerlo da run manuali.
+        job = IngestionJob(
+            job_type="meta_campaigns_incremental",
+            status="PENDING",
+            params={"source": "scheduler"},
+        )
+        db.add(job)
+        db.commit()
+
+        meta_campaigns_incremental_task.delay(job_id=job.id)
+        logger.info("meta_campaigns_incremental schedulato via Celery con job_id=%s (source=scheduler)", job.id)
+    except Exception as e:
+        logger.error("Errore nel pianificare meta_campaigns_incremental: %s", e, exc_info=True)
+        if job:
+            job.status = "ERROR"
+            job.completed_at = now_rome()
+            job.message = f"Scheduling failed: {e}"
+            db.commit()
+        raise
+    finally:
+        db.close()
 
 
 def _run_magellano_sync():
@@ -124,7 +230,7 @@ def start_scheduler():
     Usa la tabella cron_jobs per determinare quali job eseguire e con quale schedule.
     """
     logger.info("=" * 80)
-    logger.info("Inizializzazione scheduler sincronizzazioni automatiche...")
+    logger.info("Inizializzazione scheduler sincronizzazioni automatiche (pid=%s)...", os.getpid())
 
     db = SessionLocal()
     try:
