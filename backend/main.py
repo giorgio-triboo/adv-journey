@@ -226,18 +226,6 @@ def startup_event():
     from seeders.alert_config_seeder import seed_alert_configs
     seed_marketing_threshold_config()
     seed_alert_configs()
-    
-    # Start scheduler - utilizza configurazione da tabella cron_jobs
-    try:
-        from services.scheduler import start_scheduler
-        start_scheduler()
-    except Exception as e:
-        logger.error(
-            "Errore durante l'avvio dello scheduler di sincronizzazione: %s. "
-            "Le sync automatiche potrebbero non essere attive.",
-            e,
-            exc_info=True,
-        )
 
 @app.middleware("http")
 async def error_logging_middleware(request: Request, call_next):

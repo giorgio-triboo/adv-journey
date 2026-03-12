@@ -67,18 +67,18 @@ echo "=========================================="
 echo "DEPLOYMENT"
 echo "=========================================="
 
-# Senza blue-green: ferma solo app e worker
+# Senza blue-green: ferma app, worker e scheduler
 if [ "$USE_BLUE_GREEN" != "true" ]; then
     if $DOCKER_CMD ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "insight-magellano-backend(-blue|-green)?|.*backend-blue|.*backend-green"; then
         echo "Stopping existing application container(s)..."
-        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT stop backend-blue backend-worker 2>/dev/null || true
-        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT rm -f backend-blue backend-worker 2>/dev/null || true
+        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT stop backend-blue backend-worker scheduler 2>/dev/null || true
+        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT rm -f backend-blue backend-worker scheduler 2>/dev/null || true
     fi
 fi
 
-# Con blue-green: ferma solo worker durante deploy
+# Con blue-green: ferma solo worker e scheduler durante deploy
 if [ "$USE_BLUE_GREEN" = "true" ]; then
-    $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT stop backend-worker 2>/dev/null || true
+    $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT stop backend-worker scheduler 2>/dev/null || true
 fi
 
 # Assicura che db e redis siano in esecuzione
@@ -160,13 +160,13 @@ if [ "$USE_BLUE_GREEN" = "true" ]; then
         $COMPOSE_CMD $COMPOSE_FILES stop "backend-$CURRENT_COLOR" 2>/dev/null || true
         $COMPOSE_CMD $COMPOSE_FILES rm -f "backend-$CURRENT_COLOR" 2>/dev/null || true
 
-        # Assicurati che il worker sia in esecuzione (unico, non blue/green)
-        $COMPOSE_CMD $COMPOSE_FILES up -d --force-recreate backend-worker 2>/dev/null || true
+        # Assicurati che worker e scheduler siano in esecuzione (unici, non blue/green)
+        $COMPOSE_CMD $COMPOSE_FILES up -d --force-recreate backend-worker scheduler 2>/dev/null || true
         sleep 5
         DEPLOYED_COLOR="$INACTIVE_COLOR"
     fi
 else
-    $COMPOSE_CMD $COMPOSE_FILES up -d --force-recreate backend-blue backend-worker
+    $COMPOSE_CMD $COMPOSE_FILES up -d --force-recreate backend-blue backend-worker scheduler
     TARGET_CONTAINER=$($DOCKER_CMD ps -q -f name=backend-blue | head -1)
     echo "Attesa avvio container..."
     sleep 10

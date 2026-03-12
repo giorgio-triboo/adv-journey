@@ -127,6 +127,34 @@ services:
     # --concurrency=1: Playwright in sequenza (minor uso RAM su t4g.small)
     command: celery -A celery_app.celery_app worker --loglevel=INFO --concurrency=1
 
+  scheduler:
+    image: insight-magellano-app:latest
+    restart: always
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - MAGELLANO_USER=${MAGELLANO_USER:-}
+      - MAGELLANO_PASSWORD=${MAGELLANO_PASSWORD:-}
+      - ULIXE_USER=${ULIXE_USER:-}
+      - ULIXE_PASSWORD=${ULIXE_PASSWORD:-}
+      - ULIXE_WSDL=${ULIXE_WSDL:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
+      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      - TZ=Europe/Rome
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: python -m services.scheduler_runner
+
   redis:
     image: redis:7-alpine
     restart: always
