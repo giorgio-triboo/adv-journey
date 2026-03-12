@@ -306,14 +306,25 @@ const cronJobsData = {
     {% endfor %}
 };
 
-const managedCampaigns = [
+// Lista piatta di ID campagna Magellano configurabili (183, 188, 190, 199, 423, ...)
+const magellanoCampaigns = (function () {
+    const campaigns = [];
     {% for c in managed_campaigns %}
-    {
-        id: {{ c.id }},
-        label: "{{ (c.magellano_ids or []) | first | e }}"
-    }{% if not loop.last %},{% endif %}
+        {% for mag_id in (c.magellano_ids or []) %}
+    campaigns.push({
+        id: {{ mag_id|int }},
+        label: "{{ mag_id|e }}"
+    });
+        {% endfor %}
     {% endfor %}
-];
+    // Deduplica per sicurezza
+    const seen = new Set();
+    return campaigns.filter(c => {
+        if (seen.has(c.id)) return false;
+        seen.add(c.id);
+        return true;
+    }).sort((a, b) => a.id - b.id);
+})();
 
 function openEditModal(jobId) {
     const job = cronJobsData[jobId];
@@ -333,8 +344,12 @@ function openEditModal(jobId) {
     if (job.job_type === 'magellano') {
         campaignsSection.classList.remove('hidden');
         const listEl = document.getElementById('magellanoCampaignsList');
-        const selectedIds = (job.config && job.config.managed_campaign_ids) || [];
-        listEl.innerHTML = managedCampaigns.length ? managedCampaigns.map(c => `
+        // Supporta sia nuova chiave (magellano_campaign_ids) che quella legacy (managed_campaign_ids)
+        const selectedIds = (
+            (job.config && (job.config.magellano_campaign_ids || job.config.managed_campaign_ids))
+            || []
+        ).map(Number);
+        listEl.innerHTML = magellanoCampaigns.length ? magellanoCampaigns.map(c => `
             <label class="flex items-center gap-2 cursor-pointer hover:bg-neutral-100 rounded px-2 py-1">
                 <input type="checkbox" class="magellano-campaign-cb rounded border-neutral-300" value="${c.id}" ${selectedIds.includes(c.id) ? 'checked' : ''}>
                 <span class="text-sm">${escapeHtml(c.label)}</span>
@@ -437,8 +452,11 @@ function getMagellanoConfigForJob(jobId) {
     const job = cronJobsData[jobId];
     if (job && job.job_type !== 'magellano') return job.config || {};
     const checkboxes = document.querySelectorAll('.magellano-campaign-cb:checked');
-    const ids = Array.from(checkboxes).map(cb => parseInt(cb.value, 10));
-    return { managed_campaign_ids: ids };
+    const ids = Array.from(checkboxes)
+        .map(cb => parseInt(cb.value, 10))
+        .filter(id => !Number.isNaN(id));
+    // Salviamo direttamente gli ID campagna Magellano
+    return { magellano_campaign_ids: ids };
 }
 
 async function saveCronJobFromModal(event) {

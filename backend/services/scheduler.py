@@ -83,7 +83,34 @@ def magellano_sync_scheduled():
 def ulixe_sync_scheduled():
     """Job schedulato per sincronizzazione Ulixe."""
     logger.info("Esecuzione ulixe_sync_scheduled...")
-    ulixe_sync_job()
+    db = SessionLocal()
+    job = None
+    try:
+        job = IngestionJob(
+            job_type="ulixe",
+            status="RUNNING",
+            params={"source": "scheduler"},
+            started_at=now_rome(),
+        )
+        db.add(job)
+        db.commit()
+
+        ulixe_sync_job()
+
+        job.status = "SUCCESS"
+        job.completed_at = now_rome()
+        job.message = "Ulixe sync completed"
+        db.commit()
+    except Exception as e:
+        logger.error("Errore in ulixe_sync_scheduled: %s", e, exc_info=True)
+        if job:
+            job.status = "ERROR"
+            job.completed_at = now_rome()
+            job.message = str(e)
+            db.commit()
+        raise
+    finally:
+        db.close()
 
 def meta_marketing_sync_scheduled():
     """Job schedulato per sincronizzazione Meta Marketing."""
@@ -120,12 +147,66 @@ def meta_marketing_sync_scheduled():
 def meta_conversion_marker_scheduled():
     """Job schedulato per marcatura lead Meta Conversion."""
     logger.info("Esecuzione meta_conversion_marker_scheduled...")
-    meta_conversion_marker_job()
+    db = SessionLocal()
+    job = None
+    try:
+        job = IngestionJob(
+            job_type="meta_conversion_marker",
+            status="RUNNING",
+            params={"source": "scheduler"},
+            started_at=now_rome(),
+        )
+        db.add(job)
+        db.commit()
+
+        meta_conversion_marker_job()
+
+        job.status = "SUCCESS"
+        job.completed_at = now_rome()
+        job.message = "Meta conversion marker completed"
+        db.commit()
+    except Exception as e:
+        logger.error("Errore in meta_conversion_marker_scheduled: %s", e, exc_info=True)
+        if job:
+            job.status = "ERROR"
+            job.completed_at = now_rome()
+            job.message = str(e)
+            db.commit()
+        raise
+    finally:
+        db.close()
 
 def meta_conversion_sync_scheduled():
     """Job schedulato per invio eventi Meta Conversion API."""
     logger.info("Esecuzione meta_conversion_sync_scheduled...")
-    meta_conversion_sync_job()
+    db = SessionLocal()
+    job = None
+    try:
+        job = IngestionJob(
+            job_type="meta_conversion",
+            status="RUNNING",
+            params={"source": "scheduler"},
+            started_at=now_rome(),
+        )
+        db.add(job)
+        db.commit()
+
+        meta_conversion_sync_job()
+
+        job.status = "SUCCESS"
+        job.completed_at = now_rome()
+        job.message = "Meta conversion sync completed"
+        db.commit()
+    except Exception as e:
+        logger.error("Errore in meta_conversion_sync_scheduled: %s", e, exc_info=True)
+        if job:
+            job.status = "ERROR"
+            job.completed_at = now_rome()
+            job.message = str(e)
+            db.commit()
+        raise
+    finally:
+        db.close()
 
 
 def _run_meta_campaigns_incremental():
@@ -159,13 +240,47 @@ def _run_meta_campaigns_incremental():
 
 
 def _run_magellano_sync():
-    """Esegue sync Magellano con config da CronJob (quale campagne scaricare)."""
+    """Esegue sync Magellano con config da CronJob (quali ID campagna Magellano scaricare)."""
     db = SessionLocal()
     try:
         cron_job = db.query(CronJob).filter(CronJob.job_name == "magellano_sync").first()
         config = (cron_job.config or {}) if cron_job else {}
-        campaign_ids = config.get("managed_campaign_ids")  # Lista di ManagedCampaign.id
-        magellano_sync_job(db=db, managed_campaign_ids=campaign_ids if campaign_ids else None)
+
+        # Nuova chiave: lista di ID campagna Magellano (es. [190, 199, 423])
+        magellano_ids = config.get("magellano_campaign_ids")
+
+        # Backward compatibility: se esistono solo managed_campaign_ids, traducili in ID Magellano.
+        if not magellano_ids:
+            managed_campaign_ids = config.get("managed_campaign_ids") or []
+            if managed_campaign_ids:
+                from models import ManagedCampaign
+
+                managed = (
+                    db.query(ManagedCampaign)
+                    .filter(ManagedCampaign.id.in_(managed_campaign_ids))
+                    .all()
+                )
+                mags: list[int] = []
+                for mc in managed:
+                    if mc.magellano_ids:
+                        for mid in mc.magellano_ids:
+                            try:
+                                mags.append(int(mid))
+                            except (ValueError, TypeError):
+                                continue
+                # Deduplica mantenendo l'ordine
+                seen: set[int] = set()
+                magellano_ids = []
+                for mid in mags:
+                    if mid in seen:
+                        continue
+                    seen.add(mid)
+                    magellano_ids.append(mid)
+
+        magellano_sync_job(
+            db=db,
+            magellano_campaign_ids=magellano_ids if magellano_ids else None,
+        )
     finally:
         db.close()
 
@@ -230,7 +345,11 @@ def start_scheduler():
     Usa la tabella cron_jobs per determinare quali job eseguire e con quale schedule.
     """
     logger.info("=" * 80)
-    logger.info("Inizializzazione scheduler sincronizzazioni automatiche (pid=%s)...", os.getpid())
+    logger.info(
+        "Inizializzazione scheduler sincronizzazioni automatiche (pid=%s, hostname=%s)...",
+        os.getpid(),
+        os.getenv("HOSTNAME", "-"),
+    )
 
     db = SessionLocal()
     try:

@@ -13,7 +13,11 @@ import logging
 
 logger = logging.getLogger('services.sync')
 
-def run(db: Session = None, managed_campaign_ids: list = None) -> dict:
+def run(
+    db: Session = None,
+    managed_campaign_ids: list | None = None,
+    magellano_campaign_ids: list | None = None,
+) -> dict:
     """
     Esegue il job di sincronizzazione Magellano.
     
@@ -33,24 +37,37 @@ def run(db: Session = None, managed_campaign_ids: list = None) -> dict:
     stats = {"new": 0, "updated": 0, "errors": 0}
     
     try:
-        from models import ManagedCampaign
-        query = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True)
-        if managed_campaign_ids:
-            query = query.filter(ManagedCampaign.id.in_(managed_campaign_ids))
-        managed_campaigns = query.all()
-        
-        # Estrai tutti gli ID Magellano dagli array JSON
-        campaign_ids = []
-        for campaign in managed_campaigns:
-            if campaign.magellano_ids:
-                for mag_id in campaign.magellano_ids:
-                    try:
-                        campaign_ids.append(int(mag_id))
-                    except (ValueError, TypeError):
-                        continue
-        
-        # Rimuovi duplicati mantenendo l'ordine
-        campaign_ids = list(dict.fromkeys(campaign_ids))
+        # Determina la lista finale di ID campagna Magellano da sincronizzare.
+        if magellano_campaign_ids:
+            # Nuovo comportamento: usa direttamente gli ID campagna Magellano configurati nel cron.
+            campaign_ids = []
+            for mag_id in magellano_campaign_ids:
+                try:
+                    campaign_ids.append(int(mag_id))
+                except (ValueError, TypeError):
+                    continue
+            # Rimuovi duplicati mantenendo l'ordine
+            campaign_ids = list(dict.fromkeys(campaign_ids))
+        else:
+            # Comportamento legacy: usa i gruppi ManagedCampaign (manuale da UI).
+            from models import ManagedCampaign
+            query = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True)
+            if managed_campaign_ids:
+                query = query.filter(ManagedCampaign.id.in_(managed_campaign_ids))
+            managed_campaigns = query.all()
+            
+            # Estrai tutti gli ID Magellano dagli array JSON
+            campaign_ids = []
+            for campaign in managed_campaigns:
+                if campaign.magellano_ids:
+                    for mag_id in campaign.magellano_ids:
+                        try:
+                            campaign_ids.append(int(mag_id))
+                        except (ValueError, TypeError):
+                            continue
+            
+            # Rimuovi duplicati mantenendo l'ordine
+            campaign_ids = list(dict.fromkeys(campaign_ids))
         
         if not campaign_ids:
             logger.warning("No active campaigns configured. Skipping Magellano sync.")

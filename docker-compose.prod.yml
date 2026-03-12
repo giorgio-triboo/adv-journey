@@ -49,6 +49,9 @@ services:
     depends_on:
       - db
       - redis
+    volumes:
+      # Esporta i log dal container alla cartella backend/logs sull'host
+      - ./backend/logs:/app/logs
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -75,6 +78,9 @@ services:
     depends_on:
       - db
       - redis
+    volumes:
+      # Esporta i log dal container alla cartella backend/logs sull'host
+      - ./backend/logs:/app/logs
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -97,6 +103,9 @@ services:
       - DATABASE_URL=postgresql://user:password@db:5432/cepudb
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - TZ=Europe/Rome
+    volumes:
+      # Condivide la stessa directory di log dell'app principale
+      - ./backend/logs:/app/logs
     # --concurrency=1: Playwright in sequenza (minor uso RAM su t4g.small)
     command: celery -A celery_app.celery_app worker --loglevel=INFO --concurrency=1
 

@@ -155,7 +155,13 @@ if [ "$USE_BLUE_GREEN" = "true" ]; then
         "$APP_DIR/deploy/scripts/switch-upstream.sh" "$INACTIVE_COLOR" "$APP_DIR"
         TARGET_CONTAINER=$($DOCKER_CMD ps -q -f name=backend-$INACTIVE_COLOR | head -1)
 
-        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT up -d --force-recreate "backend-$CURRENT_COLOR" backend-worker 2>/dev/null || true
+        # Ora che il traffico è stato spostato, ferma e rimuovi il backend non più assegnato
+        echo "Stopping and removing inactive backend-$CURRENT_COLOR..."
+        $COMPOSE_CMD $COMPOSE_FILES stop "backend-$CURRENT_COLOR" 2>/dev/null || true
+        $COMPOSE_CMD $COMPOSE_FILES rm -f "backend-$CURRENT_COLOR" 2>/dev/null || true
+
+        # Assicurati che il worker sia in esecuzione (unico, non blue/green)
+        $COMPOSE_CMD $COMPOSE_FILES up -d --force-recreate backend-worker 2>/dev/null || true
         sleep 5
         DEPLOYED_COLOR="$INACTIVE_COLOR"
     fi
