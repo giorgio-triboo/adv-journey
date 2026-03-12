@@ -145,8 +145,8 @@ if [ "$USE_BLUE_GREEN" = "true" ]; then
         DEPLOYED_COLOR="$CURRENT_COLOR"
     else
         echo "Traffico attuale: $CURRENT_COLOR → deploy su $INACTIVE_COLOR"
-        PROFILE_OPT=""
-        [ "$INACTIVE_COLOR" = "green" ] && PROFILE_OPT="--profile green"
+        # In modalità blue-green usiamo sempre il profilo 'green' per avere sia backend-blue
+        # che backend-green definiti nel progetto (nginx dipende da entrambi).
         $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT up -d --force-recreate "backend-$INACTIVE_COLOR"
         echo "Attesa avvio backend-$INACTIVE_COLOR..."
         sleep 10
