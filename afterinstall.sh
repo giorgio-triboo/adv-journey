@@ -157,11 +157,11 @@ if [ "$USE_BLUE_GREEN" = "true" ]; then
 
         # Ora che il traffico è stato spostato, ferma e rimuovi il backend non più assegnato
         echo "Stopping and removing inactive backend-$CURRENT_COLOR..."
-        $COMPOSE_CMD $COMPOSE_FILES stop "backend-$CURRENT_COLOR" 2>/dev/null || true
-        $COMPOSE_CMD $COMPOSE_FILES rm -f "backend-$CURRENT_COLOR" 2>/dev/null || true
+        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT stop "backend-$CURRENT_COLOR" 2>/dev/null || true
+        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT rm -f "backend-$CURRENT_COLOR" 2>/dev/null || true
 
         # Assicurati che worker e scheduler siano in esecuzione (unici, non blue/green)
-        $COMPOSE_CMD $COMPOSE_FILES up -d --force-recreate backend-worker scheduler 2>/dev/null || true
+        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT up -d --force-recreate backend-worker scheduler 2>/dev/null || true
         sleep 5
         DEPLOYED_COLOR="$INACTIVE_COLOR"
     fi
