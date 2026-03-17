@@ -134,6 +134,11 @@ def run(db: Session = None) -> dict:
                                 existing.ctr = insight['ctr']
                                 existing.cpc = insight['cpc']
                                 existing.cpm = insight['cpm']
+                                # Aggiorna info piattaforma/position se presenti
+                                if 'publisher_platform' in insight:
+                                    existing.publisher_platform = insight.get('publisher_platform') or existing.publisher_platform
+                                if 'platform_position' in insight:
+                                    existing.platform_position = insight.get('platform_position') or existing.platform_position
                                 existing.updated_at = datetime.utcnow()
                             else:
                                 # Create new
@@ -148,6 +153,8 @@ def run(db: Session = None) -> dict:
                                     cpc=insight['cpc'],
                                     cpm=insight['cpm'],
                                     cpa=insight.get('cpa', 0),
+                                    publisher_platform=insight.get('publisher_platform'),
+                                    platform_position=insight.get('platform_position'),
                                     additional_metrics=insight.get('raw_data', {})
                                 )
                                 db.add(marketing_data)
@@ -329,6 +336,11 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
                         existing.ctr = insight.get('ctr', existing.ctr)
                         existing.cpc = insight.get('cpc', existing.cpc)
                         existing.cpm = insight.get('cpm', existing.cpm)
+                        # Aggiorna placement se disponibile
+                        if 'publisher_platform' in insight:
+                            existing.publisher_platform = insight.get('publisher_platform') or existing.publisher_platform
+                        if 'platform_position' in insight:
+                            existing.platform_position = insight.get('platform_position') or existing.platform_position
                         existing.updated_at = datetime.utcnow()
                         
                         # Update additional metrics if present
@@ -348,6 +360,8 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
                             cpc=insight.get('cpc', 0),
                             cpm=insight.get('cpm', 0),
                             cpa=insight.get('cpa', 0),
+                            publisher_platform=insight.get('publisher_platform'),
+                            platform_position=insight.get('platform_position'),
                             additional_metrics=insight.get('raw_data', {})
                         )
                         db.add(marketing_data)
