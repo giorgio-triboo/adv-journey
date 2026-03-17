@@ -198,21 +198,59 @@ def load_csv(csv_path: str, cleanup: bool = False) -> dict:
     return stats
 
 
+def load_multiple_csv(csv_paths: list[str], cleanup: bool = False) -> dict:
+    """
+    Ingestione di più file CSV in un'unica run.
+    Restituisce statistiche aggregate.
+    """
+    aggregate = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0, "deleted": 0}
+    for path in csv_paths:
+        logger.info("Inizio ingest Magellano da CSV: %s", path)
+        stats = load_csv(path, cleanup=cleanup)
+        for k in aggregate:
+            aggregate[k] += stats.get(k, 0)
+        logger.info(
+            "Fine ingest CSV %s: deleted=%s inserted=%s updated=%s skipped=%s errors=%s",
+            path,
+            stats.get("deleted", 0),
+            stats.get("inserted", 0),
+            stats.get("updated", 0),
+            stats.get("skipped", 0),
+            stats.get("errors", 0),
+        )
+    return aggregate
+
+
 def main():
     import argparse
     p = argparse.ArgumentParser()
     p.add_argument("--cleanup", action="store_true", help="Rimuovi prima le lead presenti nel CSV")
-    p.add_argument("--csv", default=CSV_PATH, help="Path al CSV")
+    p.add_argument(
+        "--csv",
+        action="append",
+        help="Path al CSV (può essere passato più volte). Se omesso, usa il CSV unificato di default.",
+    )
     args = p.parse_args()
 
-    if not os.path.isfile(args.csv):
-        logger.error("File non trovato: %s", args.csv)
-        sys.exit(1)
+    csv_paths = args.csv if args.csv else [CSV_PATH]
+    for path in csv_paths:
+        if not os.path.isfile(path):
+            logger.error("File non trovato: %s", path)
+            sys.exit(1)
 
-    stats = load_csv(args.csv, cleanup=args.cleanup)
-    logger.info("Fine: deleted=%s inserted=%s updated=%s skipped=%s errors=%s",
-        stats["deleted"], stats["inserted"], stats["updated"], stats["skipped"], stats["errors"])
-    print(f"Deleted: {stats['deleted']}, Inserted: {stats['inserted']}, Updated: {stats['updated']}, Skipped: {stats['skipped']}, Errors: {stats['errors']}")
+    stats = load_multiple_csv(csv_paths, cleanup=args.cleanup)
+    logger.info(
+        "Fine ingest multipla: deleted=%s inserted=%s updated=%s skipped=%s errors=%s",
+        stats["deleted"],
+        stats["inserted"],
+        stats["updated"],
+        stats["skipped"],
+        stats["errors"],
+    )
+    print(
+        f"Deleted: {stats['deleted']}, Inserted: {stats['inserted']}, "
+        f"Updated: {stats['updated']}, Skipped: {stats['skipped']}, Errors: {stats['errors']}"
+    )
 
 
 if __name__ == "__main__":

@@ -14,6 +14,6 @@ coverage/
 *.log
 logs/
 test_venv/
-backend/exports/
-backend/magellano-user-export.csv
 .venv*
+ulixe_temp/
+meta-export*/
