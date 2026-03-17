@@ -6,6 +6,7 @@ from database import get_db
 from models import MetaAccount, MetaCampaign, User
 from sqlalchemy import func
 from datetime import datetime, timedelta
+import time
 from config import settings
 from services.integrations.meta_marketing import MetaMarketingService
 from services.utils.crypto import encrypt_token, decrypt_token
@@ -17,6 +18,36 @@ import traceback
 from ..common import templates, translate_error
 
 logger = logging.getLogger('services.api.ui')
+
+# region agent log
+import json
+
+DEBUG_LOG_PATH = "/Users/giorgio.contarini/contagio/direct/direct/cepu-lavorazioni/.cursor/debug-5b0c05.log"
+
+
+def agent_debug_log(hypothesis_id: str, location: str, message: str, data: dict | None = None, run_id: str = "pre-fix") -> None:
+    """
+    Lightweight NDJSON logger for debug session 5b0c05.
+    Writes directly to DEBUG_LOG_PATH; avoid logging secrets.
+    """
+    try:
+        now_ms = int(time.time() * 1000)
+        entry = {
+            "sessionId": "5b0c05",
+            "id": f"log_{now_ms}",
+            "timestamp": now_ms,
+            "location": location,
+            "message": message,
+            "data": data or {},
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+        }
+        with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        # Never break main flow for debug logging
+        pass
+# endregion agent log
 
 router = APIRouter(include_in_schema=False)
 
@@ -374,6 +405,16 @@ async def meta_oauth_select_accounts(request: Request, db: Session = Depends(get
     
     # Verifica che il token sia ancora valido (max 10 minuti)
     token_expires = request.session.get('meta_oauth_token_expires')
+    agent_debug_log(
+        hypothesis_id="H1",
+        location="meta_accounts.py:meta_oauth_select_accounts",
+        message="select_accounts_token_check",
+        data={
+            "has_user": bool(request.session.get('user')),
+            "token_expires": token_expires,
+            "now_ts": datetime.utcnow().timestamp(),
+        },
+    )
     if not token_expires or datetime.utcnow().timestamp() > token_expires:
         request.session.pop('meta_oauth_token', None)
         request.session.pop('meta_oauth_token_expires', None)
@@ -441,10 +482,38 @@ async def meta_oauth_save_accounts(request: Request, db: Session = Depends(get_d
     if not encrypted_token:
         return RedirectResponse(url='/settings/meta-accounts?error=no_token', status_code=303)
     
-    form = await request.form()
-    selected_account_ids = form.getlist('account_ids')  # Lista di account selezionati
+    # Riusa il form già parsato dal middleware CSRF se disponibile,
+    # altrimenti parsalo qui. In alcuni casi, una seconda chiamata a
+    # request.form() può restituire un form "vuoto".
+    form = getattr(request.state, "_parsed_form", None)
+    if form is None:
+        form = await request.form()
+    # Estrai gli ID selezionati in modo robusto, indipendentemente dall'implementazione di FormData
+    try:
+        selected_account_ids = form.getlist('account_ids')  # type: ignore[attr-defined]
+    except AttributeError:
+        # Fallback se getlist non è disponibile
+        selected_account_ids = [
+            v for k, v in getattr(form, "multi_items", lambda: list(form.items()))()
+            if k == "account_ids"
+        ]
+
+    # Log di debug in un logger "normale" che finisce in api-ui-YYYY-MM-DD.log
+    logger.info(
+        "[meta_oauth_save_accounts] START "
+        f"user={request.session.get('user', {}).get('email')} "
+        f"form_class={form.__class__.__name__} "
+        f"form_keys={list(form.keys())} "
+        f"selected_ids_len={len(selected_account_ids)} "
+        f"selected_account_ids={selected_account_ids}"
+    )
     
     if not selected_account_ids:
+        logger.warning(
+            "[meta_oauth_save_accounts] no_accounts_selected: "
+            f"user={request.session.get('user', {}).get('email')} "
+            f"form_keys={list(form.keys())}"
+        )
         # Pulisci sessione e torna indietro
         request.session.pop('meta_oauth_token', None)
         request.session.pop('meta_oauth_token_expires', None)

@@ -1,7 +1,6 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from services.sync_orchestrator import SyncOrchestrator
-from services.sync.magellano_sync import run as magellano_sync_job
 from services.sync.ulixe_sync import run as ulixe_sync_job
 from services.sync.meta_marketing_sync import run as meta_marketing_sync_job
 from services.sync.meta_conversion_marker import run as meta_conversion_marker_job
@@ -10,6 +9,7 @@ from database import SessionLocal
 from models import CronJob, IngestionJob, now_rome
 import os
 import logging
+from datetime import datetime, timedelta
 
 logger = logging.getLogger('services.scheduler')
 
@@ -240,7 +240,7 @@ def _run_meta_campaigns_incremental():
 
 
 def _run_magellano_sync():
-    """Esegue sync Magellano con config da CronJob (quali ID campagna Magellano scaricare)."""
+    """Esegue sync Magellano schedulando la nuova pipeline a due step via Celery."""
     db = SessionLocal()
     try:
         cron_job = db.query(CronJob).filter(CronJob.job_name == "magellano_sync").first()
@@ -277,9 +277,30 @@ def _run_magellano_sync():
                     seen.add(mid)
                     magellano_ids.append(mid)
 
-        magellano_sync_job(
-            db=db,
-            magellano_campaign_ids=magellano_ids if magellano_ids else None,
+        if not magellano_ids:
+            logger.warning("Nessuna campagna Magellano configurata per magellano_sync. Skip.")
+            return
+
+        # Intervallo date come job legacy: ieri → oggi
+        today = datetime.now().date()
+        end_date = today
+        start_date = end_date - timedelta(days=1)
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        end_date_str = end_date.strftime("%Y-%m-%d")
+
+        from tasks.magellano import magellano_export_request_task
+
+        magellano_export_request_task.delay(
+            magellano_ids,
+            start_date_str,
+            end_date_str,
+            job_id=None,
+        )
+        logger.info(
+            "Schedulato magellano_export_request_task per campagne %s (%s → %s)",
+            magellano_ids,
+            start_date_str,
+            end_date_str,
         )
     finally:
         db.close()

@@ -230,7 +230,7 @@ async def trigger_sync(request: Request, db: Session = Depends(get_db)):
     else:
         end_date = today
 
-    from tasks.magellano import magellano_sync_task
+    from tasks.magellano import magellano_export_request_task
 
     # Registra un job di ingestion per tracking
     job = IngestionJob(
@@ -247,7 +247,7 @@ async def trigger_sync(request: Request, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(job)
 
-    async_result = magellano_sync_task.delay(
+    async_result = magellano_export_request_task.delay(
         campaigns,
         start_date.strftime("%Y-%m-%d"),
         end_date.strftime("%Y-%m-%d"),
@@ -331,7 +331,7 @@ async def api_magellano_sync(request: Request, db: Session = Depends(get_db)):
     if start_date > end_date:
         return JSONResponse({"error": "start_date deve essere <= end_date"}, status_code=400)
 
-    from tasks.magellano import magellano_sync_task
+    from tasks.magellano import magellano_export_request_task
 
     # Registra un job di ingestion per tracking
     job = IngestionJob(
@@ -348,7 +348,7 @@ async def api_magellano_sync(request: Request, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(job)
 
-    async_result = magellano_sync_task.delay(
+    async_result = magellano_export_request_task.delay(
         campaigns,
         start_date.strftime("%Y-%m-%d"),
         end_date.strftime("%Y-%m-%d"),

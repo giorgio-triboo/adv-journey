@@ -13,8 +13,8 @@
     <!-- Filters -->
     <div class="glass-card mb-6 p-4">
         <form id="filterForm">
-            <!-- Prima riga: Account, Stato, Date, Bottone -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
+            <!-- Prima riga: Account, Stato, Piattaforma, Date, Bottone -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-4">
                 <div>
                     <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Account</label>
                     <select id="accountFilter" onchange="applyFilters()"
@@ -29,6 +29,15 @@
                         <option value="all">Tutte</option>
                         <option value="active">Attive</option>
                         <option value="inactive">Non attive</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Piattaforma</label>
+                    <select id="platformFilter" onchange="applyFilters()"
+                            class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <option value="all">Tutte le piattaforme</option>
+                        <option value="facebook">Facebook</option>
+                        <option value="instagram">Instagram</option>
                     </select>
                 </div>
                 <div class="sm:col-span-2 lg:col-span-2">
@@ -272,6 +281,7 @@ async function loadAllCampaigns() {
     const dateTo = document.getElementById('dateTo').value;
     const accountId = document.getElementById('accountFilter').value;
     const status = document.getElementById('statusFilter').value;
+    const platform = document.getElementById('platformFilter').value || 'all';
     const campaignName = document.getElementById('campaignNameFilter').value.trim();
     const adsetName = document.getElementById('adsetNameFilter').value.trim();
     const adName = document.getElementById('adNameFilter').value.trim();
@@ -295,6 +305,9 @@ async function loadAllCampaigns() {
     }
     if (status && status !== 'all') {
         url += `&status=${status}`;
+    }
+    if (platform && platform !== 'all') {
+        url += `&platform=${platform}`;
     }
     if (campaignName) {
         url += `&campaign_name=${encodeURIComponent(campaignName)}`;
@@ -602,9 +615,14 @@ async function loadAdsetsForCampaign(campaignId) {
     
     const dateFrom = document.getElementById('dateFrom').value;
     const dateTo = document.getElementById('dateTo').value;
+    const platform = document.getElementById('platformFilter').value || 'all';
     
     try {
-        const response = await fetch(`/api/marketing/campaigns/${campaignId}/adsets?date_from=${dateFrom}&date_to=${dateTo}`);
+        let url = `/api/marketing/campaigns/${campaignId}/adsets?date_from=${dateFrom}&date_to=${dateTo}`;
+        if (platform && platform !== 'all') {
+            url += `&platform=${platform}`;
+        }
+        const response = await fetch(url);
         const adsets = await response.json();
         adsetsData[campaignId] = adsets;
         displayAdsets(campaignId, adsets);
@@ -810,9 +828,14 @@ async function loadAdsForAdset(adsetId) {
     
     const dateFrom = document.getElementById('dateFrom').value;
     const dateTo = document.getElementById('dateTo').value;
+    const platform = document.getElementById('platformFilter').value || 'all';
     
     try {
-        const response = await fetch(`/api/marketing/adsets/${adsetId}/ads?date_from=${dateFrom}&date_to=${dateTo}`);
+        let url = `/api/marketing/adsets/${adsetId}/ads?date_from=${dateFrom}&date_to=${dateTo}`;
+        if (platform && platform !== 'all') {
+            url += `&platform=${platform}`;
+        }
+        const response = await fetch(url);
         const ads = await response.json();
         adsData[adsetId] = ads;
         displayAds(adsetId, ads);
@@ -1027,6 +1050,8 @@ async function loadAdsetsDirectly(dateFrom, dateTo, accountId, status, campaignN
     const container = document.getElementById('hierarchicalContainer');
     container.innerHTML = '<div class="p-4 text-center text-neutral-500">Caricamento AdSet...</div>';
     
+    const platform = document.getElementById('platformFilter').value || 'all';
+
     let url = `/api/marketing/adsets?date_from=${dateFrom}&date_to=${dateTo}&adset_name=${encodeURIComponent(adsetName)}`;
     if (accountId) {
         url += `&account_id=${accountId}`;
@@ -1036,6 +1061,9 @@ async function loadAdsetsDirectly(dateFrom, dateTo, accountId, status, campaignN
     }
     if (campaignName) {
         url += `&campaign_name=${encodeURIComponent(campaignName)}`;
+    }
+    if (platform && platform !== 'all') {
+        url += `&platform=${platform}`;
     }
     
     try {
@@ -1116,6 +1144,8 @@ async function loadAdsDirectly(dateFrom, dateTo, accountId, status, campaignName
     const container = document.getElementById('hierarchicalContainer');
     container.innerHTML = '<div class="p-4 text-center text-neutral-500">Caricamento creatività...</div>';
     
+    const platform = document.getElementById('platformFilter').value || 'all';
+
     let url = `/api/marketing/ads?date_from=${dateFrom}&date_to=${dateTo}&ad_name=${encodeURIComponent(adName)}`;
     if (accountId) {
         url += `&account_id=${accountId}`;
@@ -1128,6 +1158,9 @@ async function loadAdsDirectly(dateFrom, dateTo, accountId, status, campaignName
     }
     if (adsetName) {
         url += `&adset_name=${encodeURIComponent(adsetName)}`;
+    }
+    if (platform && platform !== 'all') {
+        url += `&platform=${platform}`;
     }
     
     try {

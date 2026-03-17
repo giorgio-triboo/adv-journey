@@ -18,7 +18,11 @@ from datetime import datetime, timedelta, date
 logger = logging.getLogger('services.integrations.meta_marketing')
 
 # Rate limiting: delay tra chiamate API (in secondi)
-API_CALL_DELAY = 1.0  # 1 secondo tra chiamate (best practice Meta)
+# Limite livello sviluppo Meta Marketing API:
+# - punteggio massimo 60 in 300 secondi (~0.2 richieste/secondo)
+# - oltre la soglia, blocco di 300 secondi
+# Manteniamo un margine di sicurezza con una chiamata ogni 5 secondi.
+API_CALL_DELAY = 5.0  # 5 secondi tra chiamate
 MAX_RETRIES = 4  # Numero massimo di tentativi (1 iniziale + 3 retry con backoff 2s, 5s, 7s)
 RETRY_BACKOFF_TIMES = [2, 5, 7]  # Backoff incrementale per retry: 2s, 5s, 7s
 
@@ -500,9 +504,11 @@ class MetaMarketingService:
             return []
         
         if fields is None:
+            # Campi metrici principali; i breakdown (publisher_platform, platform_position)
+            # vengono passati tramite parametro "breakdowns", non in "fields".
             fields = [
                 'spend', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm',
-                'actions', 'action_values', 'cost_per_action_type'
+                'actions', 'action_values', 'cost_per_action_type',
             ]
         
         # Campi richiesti per livello
@@ -522,7 +528,8 @@ class MetaMarketingService:
             params = {
                 'level': level,
                 'fields': fields,
-                'time_increment': 1  # Daily breakdown
+                'time_increment': 1,  # Daily breakdown
+                'breakdowns': ['publisher_platform', 'platform_position'],
             }
             
             if date_preset:
@@ -595,6 +602,8 @@ class MetaMarketingService:
                     "conversions": conversions,
                     "ctr": self._format_percentage(ctr),
                     "spend": self._format_currency(spend),
+                    "publisher_platform": insight.get("publisher_platform"),
+                    "platform_position": insight.get("platform_position"),
                     "raw_data": dict(insight)
                 })
             

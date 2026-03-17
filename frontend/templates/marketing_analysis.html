@@ -10,8 +10,8 @@
     </div>
 
     <!-- Filtri -->
-    <div class="glass-card mb-6 p-4">
-        <form method="GET" class="grid grid-cols-1 sm:grid-cols-6 gap-4">
+    <div class="glass-card mb-6 p-4 sticky top-4 z-20 bg-white/90 backdrop-blur border border-neutral-200">
+        <form method="GET" class="grid grid-cols-1 sm:grid-cols-6 gap-4" id="analysisFiltersForm">
             <div>
                 <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Account</label>
                 <select name="account_id" id="accountFilter"
@@ -71,10 +71,14 @@
                 </div>
             </div>
 
-            <div class="flex items-end">
+            <div class="flex items-end gap-2 sm:justify-end">
                 <button type="submit"
                         class="w-full px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
                     Applica Filtri
+                </button>
+                <button type="button" id="resetFiltersButton"
+                        class="w-full whitespace-nowrap px-6 py-2 border border-neutral-300 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-50 transition-all active:scale-95">
+                    Azzera filtri
                 </button>
             </div>
         </form>
@@ -301,16 +305,253 @@
             {% endif %}
         </div>
     </div>
+
+    <!-- Breakdown per piattaforma: Facebook vs Instagram -->
+    <div class="mt-10">
+        <h2 class="text-lg font-semibold text-neutral-900 mb-4">Breakdown per piattaforma</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <!-- Facebook -->
+            <div class="glass-card p-6 bg-white border border-neutral-200">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <p class="text-xs font-semibold text-neutral-500 uppercase">Facebook</p>
+                        <p class="text-sm text-neutral-500">Solo traffico con publisher_platform = facebook</p>
+                    </div>
+                </div>
+                {% set fb = platform_totals.facebook if platform_totals is defined and platform_totals.facebook else {} %}
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Speso</p>
+                        <p class="text-xl font-bold text-neutral-900 mt-1">
+                            € {{ "{:,.2f}".format(fb.total_spend or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Lead Meta</p>
+                        <p class="text-xl font-bold text-neutral-900 mt-1">
+                            {{ "{:,}".format(fb.total_conversions or 0)|replace(',', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">CPL medio</p>
+                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                            € {{ "{:,.2f}".format(fb.global_cpl or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Lead entrate Magellano</p>
+                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                            {{ "{:,}".format(fb.total_magellano_entrate or 0)|replace(',', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Inviate WS</p>
+                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                            {{ "{:,}".format(fb.total_magellano_inviate or 0)|replace(',', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Approvate Ulixe</p>
+                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                            {{ "{:,}".format(fb.total_ulixe_approvate or 0)|replace(',', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Ricavo</p>
+                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                            € {{ "{:,.2f}".format(fb.total_ricavo or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Margine</p>
+                        <p class="text-lg font-bold {% if fb.total_margine_pct is not none %}{% if fb.total_margine_pct <= 0 %}text-red-600{% elif fb.total_margine_pct >= 15 %}text-green-600{% else %}text-orange-500{% endif %}{% else %}text-neutral-700{% endif %} mt-1">
+                            {% if fb.total_margine_pct is not none %}{{ (fb.total_margine_pct)|string|replace('.', ',') }}%{% else %}N/D{% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instagram -->
+            <div class="glass-card p-6 bg-white border border-neutral-200">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <p class="text-xs font-semibold text-neutral-500 uppercase">Instagram</p>
+                        <p class="text-sm text-neutral-500">Solo traffico con publisher_platform = instagram</p>
+                    </div>
+                </div>
+                {% set ig = platform_totals.instagram if platform_totals is defined and platform_totals.instagram else {} %}
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Speso</p>
+                        <p class="text-xl font-bold text-neutral-900 mt-1">
+                            € {{ "{:,.2f}".format(ig.total_spend or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Lead Meta</p>
+                        <p class="text-xl font-bold text-neutral-900 mt-1">
+                            {{ "{:,}".format(ig.total_conversions or 0)|replace(',', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">CPL medio</p>
+                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                            € {{ "{:,.2f}".format(ig.global_cpl or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Lead entrate Magellano</p>
+                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                            {{ "{:,}".format(ig.total_magellano_entrate or 0)|replace(',', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Inviate WS</p>
+                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                            {{ "{:,}".format(ig.total_magellano_inviate or 0)|replace(',', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Approvate Ulixe</p>
+                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                            {{ "{:,}".format(ig.total_ulixe_approvate or 0)|replace(',', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Ricavo</p>
+                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                            € {{ "{:,.2f}".format(ig.total_ricavo or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-neutral-500 uppercase">Margine</p>
+                        <p class="text-lg font-bold {% if ig.total_margine_pct is not none %}{% if ig.total_margine_pct <= 0 %}text-red-600{% elif ig.total_margine_pct >= 15 %}text-green-600{% else %}text-orange-500{% endif %}{% else %}text-neutral-700{% endif %} mt-1">
+                            {% if ig.total_margine_pct is not none %}{{ (ig.total_margine_pct)|string|replace('.', ',') }}%{% else %}N/D{% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TODO (estendibile): grafici per piattaforma -->
+    </div>
+
+    <!-- Focus posizionamenti (platform_position) per piattaforma -->
+    <div class="mt-10">
+        <h2 class="text-lg font-semibold text-neutral-900 mb-4">Focus posizionamenti</h2>
+        <p class="text-sm text-neutral-500 mb-4">
+            Posizionamenti Meta (platform_position) per Facebook e Instagram con Speso, Lead e CPL,
+            nel periodo selezionato e con gli stessi filtri (account/campagna/adset).
+        </p>
+
+        {% if placement_insights_by_platform and (placement_insights_by_platform.facebook or placement_insights_by_platform.instagram) %}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Facebook placements -->
+            <div class="glass-card p-6 bg-white border border-neutral-200">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <p class="text-xs font-semibold text-neutral-500 uppercase">Facebook - Posizionamenti</p>
+                        <p class="text-xs text-neutral-500">publisher_platform = facebook, breakdown per platform_position</p>
+                    </div>
+                </div>
+                {% if placement_insights_by_platform.facebook %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-xs">
+                        <thead>
+                            <tr class="border-b border-neutral-200 text-neutral-500">
+                                <th class="text-left py-2 pr-3 font-semibold">Posizionamento</th>
+                                <th class="text-right py-2 pr-3 font-semibold">Speso</th>
+                                <th class="text-right py-2 pr-3 font-semibold">Lead</th>
+                                <th class="text-right py-2 font-semibold">CPL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in placement_insights_by_platform.facebook %}
+                            <tr class="border-b border-neutral-100 hover:bg-neutral-50">
+                                <td class="py-2 pr-3 align-top text-neutral-800">{{ row.position }}</td>
+                                <td class="py-2 pr-3 align-top text-right text-neutral-900">
+                                    € {{ "{:,.2f}".format(row.total_spend)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                </td>
+                                <td class="py-2 pr-3 align-top text-right text-neutral-900">
+                                    {{ "{:,}".format(row.total_conversions)|replace(',', '.') }}
+                                </td>
+                                <td class="py-2 align-top text-right font-semibold {% if row.cpl <= 5 %}text-green-600{% elif row.cpl <= 10 %}text-orange-500{% else %}text-red-600{% endif %}">
+                                    € {{ "{:,.2f}".format(row.cpl)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-xs text-neutral-400">Nessun posizionamento Facebook nel periodo/filtri selezionati.</p>
+                {% endif %}
+            </div>
+
+            <!-- Instagram placements -->
+            <div class="glass-card p-6 bg-white border border-neutral-200">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <p class="text-xs font-semibold text-neutral-500 uppercase">Instagram - Posizionamenti</p>
+                        <p class="text-xs text-neutral-500">publisher_platform = instagram, breakdown per platform_position</p>
+                    </div>
+                </div>
+                {% if placement_insights_by_platform.instagram %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-xs">
+                        <thead>
+                            <tr class="border-b border-neutral-200 text-neutral-500">
+                                <th class="text-left py-2 pr-3 font-semibold">Posizionamento</th>
+                                <th class="text-right py-2 pr-3 font-semibold">Speso</th>
+                                <th class="text-right py-2 pr-3 font-semibold">Lead</th>
+                                <th class="text-right py-2 font-semibold">CPL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in placement_insights_by_platform.instagram %}
+                            <tr class="border-b border-neutral-100 hover:bg-neutral-50">
+                                <td class="py-2 pr-3 align-top text-neutral-800">{{ row.position }}</td>
+                                <td class="py-2 pr-3 align-top text-right text-neutral-900">
+                                    € {{ "{:,.2f}".format(row.total_spend)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                </td>
+                                <td class="py-2 pr-3 align-top text-right text-neutral-900">
+                                    {{ "{:,}".format(row.total_conversions)|replace(',', '.') }}
+                                </td>
+                                <td class="py-2 align-top text-right font-semibold {% if row.cpl <= 5 %}text-green-600{% elif row.cpl <= 10 %}text-orange-500{% else %}text-red-600{% endif %}">
+                                    € {{ "{:,.2f}".format(row.cpl)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-xs text-neutral-400">Nessun posizionamento Instagram nel periodo/filtri selezionati.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="h-40 rounded-xl bg-gradient-to-br from-slate-50 via-white to-sky-50 border border-dashed border-slate-200 flex items-center justify-center">
+            <div class="text-center">
+                <p class="text-sm font-semibold text-neutral-500">Nessuna creatività disponibile per il periodo selezionato</p>
+                <p class="text-xs text-neutral-400 mt-1">Prova ad ampliare l'intervallo date o a modificare i filtri.</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 (function () {
-    // Filtri dinamici Account -> Campagna -> AdSet
+    // Filtri dinamici Account -> Campagna -> AdSet + azzera filtri + preserva scroll
     document.addEventListener('DOMContentLoaded', function () {
         const accountSelect = document.getElementById('accountFilter');
         const campaignSelect = document.getElementById('campaignFilter');
         const adsetSelect = document.getElementById('adsetFilter');
+        const resetButton = document.getElementById('resetFiltersButton');
+        const filtersForm = document.getElementById('analysisFiltersForm');
+        const scrollStorageKey = 'marketingAnalysisScrollY';
 
         if (accountSelect && campaignSelect && adsetSelect) {
             const campaignOptions = Array.from(campaignSelect.options);
@@ -370,6 +611,40 @@
             campaignSelect.addEventListener('change', filterAdsets);
 
             filterCampaigns();
+        }
+
+        // Ripristina posizione scroll dopo il refresh
+        const savedScroll = sessionStorage.getItem(scrollStorageKey);
+        if (savedScroll !== null) {
+            const y = parseInt(savedScroll, 10);
+            if (!Number.isNaN(y)) {
+                window.scrollTo({ top: y, behavior: 'instant' || 'auto' });
+            }
+            sessionStorage.removeItem(scrollStorageKey);
+        }
+
+        // Prima di inviare il form, salva la posizione attuale
+        if (filtersForm) {
+            filtersForm.addEventListener('submit', function () {
+                sessionStorage.setItem(scrollStorageKey, String(window.scrollY || window.pageYOffset || 0));
+            });
+        }
+
+        if (resetButton && filtersForm) {
+            resetButton.addEventListener('click', function () {
+                if (accountSelect) accountSelect.value = '';
+                if (campaignSelect) campaignSelect.value = '';
+                if (adsetSelect) adsetSelect.value = '';
+
+                const hiddenFrom = document.getElementById('analysisDateFrom');
+                const hiddenTo = document.getElementById('analysisDateTo');
+                if (hiddenFrom && hiddenTo) {
+                    hiddenFrom.value = '';
+                    hiddenTo.value = '';
+                }
+
+                filtersForm.submit();
+            });
         }
 
         // Date range picker con libreria dedicata e preset

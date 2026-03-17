@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import logging
 import zipfile
@@ -447,6 +449,9 @@ class MagellanoService:
                 "facebook_adset_id"
             )
             ad_id_col = normalized_columns.get("facebook_ad_name_id")
+
+            # Colonna piattaforma (fb/ig) se presente
+            platform_col = normalized_columns.get("facebook_piattaforma")
             
             for _, row in df.iterrows():
                 # Map based on identified columns from inspection
@@ -515,6 +520,13 @@ class MagellanoService:
                     raw = row.get(ad_id_col, None)
                     if raw is not None and not pd.isna(raw):
                         meta_ad_id = str(raw).strip()
+
+                # Piattaforma normalizzata (facebook / instagram / unknown)
+                normalized_platform = None
+                if platform_col:
+                    raw_platform = row.get(platform_col, None)
+                    if raw_platform is not None and not pd.isna(raw_platform):
+                        normalized_platform = normalize_platform(str(raw_platform))
                 
                 leads.append({
                     'magellano_id': ext_user_id,  # ID da Magellano (senza prefisso)
@@ -544,6 +556,7 @@ class MagellanoService:
                     'facebook_campaign_name': str(row.get('facebook_campaign_name', '')).strip() if not pd.isna(row.get('facebook_campaign_name', '')) else None,
                     'facebook_id': str(row.get('facebook_id', '')).strip() if not pd.isna(row.get('facebook_id', '')) else None,  # ID utente Facebook
                     'facebook_piattaforma': str(row.get('facebook_piattaforma', '')).strip() if not pd.isna(row.get('facebook_piattaforma', '')) else None,
+                    'platform': normalized_platform,
                     # ID Meta (se esportati da Magellano)
                     'meta_campaign_id': meta_campaign_id,
                     'meta_adset_id': meta_adset_id,

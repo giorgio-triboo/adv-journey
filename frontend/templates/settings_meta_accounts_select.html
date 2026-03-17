@@ -18,7 +18,7 @@
     </div>
     {% endif %}
 
-    <form action="/settings/meta-accounts/oauth/save" method="POST">
+    <form id="meta-accounts-form" action="/settings/meta-accounts/oauth/save" method="POST">
         {% include "csrf_input.html" %}
         <div class="glass-card overflow-hidden mb-6">
             <div class="px-6 py-4 border-b border-white/20 bg-white/50 flex items-center justify-between">
@@ -111,6 +111,8 @@
 </div>
 
 <script>
+console.log('[meta-accounts] template JS loaded');
+
 // Select all checkboxes
 const selectAllCheckbox = document.getElementById('select-all');
 const selectAllNewCheckbox = document.getElementById('select-all-new');
@@ -118,12 +120,24 @@ const accountCheckboxes = document.querySelectorAll('.account-checkbox');
 const newAccountCheckboxes = document.querySelectorAll('.account-checkbox:not([data-already-added])');
 const selectedCountSpan = document.getElementById('selected-count');
 const saveButton = document.getElementById('save-button');
+const formEl = document.getElementById('meta-accounts-form');
+
+function getSelectedIds() {
+    return Array.from(document.querySelectorAll('.account-checkbox:checked')).map(cb => cb.value);
+}
 
 function updateSelectedCount() {
     const selected = document.querySelectorAll('.account-checkbox:checked').length;
     selectedCountSpan.textContent = selected;
     saveButton.disabled = selected === 0;
+    console.log('[meta-accounts] updateSelectedCount', { selectedCount: selected, selectedIds: getSelectedIds() });
 }
+
+// Log iniziale
+console.log('[meta-accounts] initial checkboxes', {
+    totalCheckboxes: accountCheckboxes.length,
+    initiallyChecked: getSelectedIds()
+});
 
 // Seleziona tutti
 selectAllCheckbox.addEventListener('change', function(e) {
@@ -131,6 +145,7 @@ selectAllCheckbox.addEventListener('change', function(e) {
     if (e.target.checked) {
         selectAllNewCheckbox.checked = false;
     }
+    console.log('[meta-accounts] select-all changed', { checked: e.target.checked });
     updateSelectedCount();
 });
 
@@ -145,6 +160,7 @@ selectAllNewCheckbox.addEventListener('change', function(e) {
         });
         selectAllCheckbox.checked = false;
     }
+    console.log('[meta-accounts] select-all-new changed', { checked: e.target.checked });
     updateSelectedCount();
 });
 
@@ -155,9 +171,28 @@ accountCheckboxes.forEach(cb => {
             selectAllCheckbox.checked = false;
             selectAllNewCheckbox.checked = false;
         }
+        console.log('[meta-accounts] single checkbox changed', { value: cb.value, checked: cb.checked });
         updateSelectedCount();
     });
 });
+
+// Log del submit con tutti i parametri che partono verso il backend
+if (formEl) {
+    formEl.addEventListener('submit', function(e) {
+        const selectedIds = getSelectedIds();
+        console.log('[meta-accounts] form submit', {
+            action: formEl.action,
+            method: formEl.method,
+            selectedIds
+        });
+
+        const fd = new FormData(formEl);
+        console.log('[meta-accounts] form data dump', {
+            keys: Array.from(fd.keys()),
+            account_ids: fd.getAll('account_ids')
+        });
+    });
+}
 
 // Update count on page load
 updateSelectedCount();

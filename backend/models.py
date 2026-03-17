@@ -61,7 +61,8 @@ class Lead(Base):
     facebook_ad_set = Column(String, index=True, nullable=True)
     facebook_campaign_name = Column(String, index=True, nullable=True)
     facebook_id = Column(String, index=True, nullable=True) # ID utente Facebook (non ID ad)
-    facebook_piattaforma = Column(String, nullable=True)
+    facebook_piattaforma = Column(String, nullable=True)  # Valore raw da export (fb/ig/...)
+    platform = Column(String, index=True, nullable=True)   # Piattaforma normalizzata: facebook / instagram / unknown
     
     # Meta Marketing correlation (from Meta API)
     meta_campaign_id = Column(String, index=True, nullable=True) # Meta Campaign ID
@@ -283,6 +284,10 @@ class MetaMarketingData(Base):
     cpc = Column(Numeric(18, 4), default=0) # Cost per click
     cpm = Column(Numeric(18, 4), default=0) # Cost per mille
     cpa = Column(Numeric(18, 4), default=0) # Cost per acquisition
+
+    # Placement information
+    publisher_platform = Column(String, nullable=True, index=True)  # es. facebook, instagram, audience_network, messenger
+    platform_position = Column(String, nullable=True)               # es. feed, story, reels, search
     
     # Additional metrics (JSON for flexibility)
     additional_metrics = Column(JSON, nullable=True)

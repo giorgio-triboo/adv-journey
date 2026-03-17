@@ -322,6 +322,21 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
 
         marketing_rows = query.all()
 
+        # Breakdown per piattaforma (facebook / instagram)
+        platform_totals = {
+            "facebook": {},
+            "instagram": {},
+        }
+        platform_chart_points = {
+            "facebook": [],
+            "instagram": [],
+        }
+        platform_distribution_points = {
+            "facebook": [],
+            "instagram": [],
+        }
+
+
         # Calcolo KPI aggregati base
         total_spend = 0.0
         total_impressions = 0
@@ -610,6 +625,225 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
         totals["magellano_scartate_pct"] = round((total_magellano_scartate / leads_count * 100), 1) if leads_count > 0 else 0
         totals["ulixe_scartate_pct"] = round((total_ulixe_scartate / leads_count * 100), 1) if leads_count > 0 else 0
 
+        # Calcolo breakdown per piattaforma (Meta only + Magellano/Ulixe)
+        for platform_key in ("facebook", "instagram"):
+            # Meta KPI per piattaforma
+            p_query = (
+                db.query(MetaMarketingData, MetaAd, MetaAdSet, MetaCampaign, MetaAccount)
+                .join(MetaAd, MetaMarketingData.ad_id == MetaAd.id)
+                .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+                .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+                .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+                .filter(
+                    MetaAccount.is_active == True,
+                    (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
+                    MetaMarketingData.date >= date_from,
+                    MetaMarketingData.date <= date_to,
+                    MetaMarketingData.publisher_platform == platform_key,
+                )
+            )
+            if selected_account_id:
+                p_query = p_query.filter(MetaAccount.account_id == selected_account_id)
+            if selected_campaign_id:
+                p_query = p_query.filter(MetaCampaign.campaign_id == selected_campaign_id)
+            if selected_adset_id:
+                p_query = p_query.filter(MetaAdSet.id == selected_adset_id)
+
+            p_rows = p_query.all()
+
+            p_spend = 0.0
+            p_impr = 0
+            p_clicks = 0
+            p_convs = 0
+            p_ctr_vals: list[float] = []
+            p_cpc_vals: list[float] = []
+            p_cpm_vals: list[float] = []
+
+            p_campaign_ids: set[str] = set()
+            for md, ad, adset, campaign, account in p_rows:
+                p_spend += _parse_amount(md.spend)
+                p_impr += md.impressions or 0
+                p_clicks += md.clicks or 0
+                p_convs += md.conversions or 0
+                if md.ctr is not None:
+                    p_ctr_vals.append(float(md.ctr))
+                if md.cpc is not None:
+                    p_cpc_vals.append(float(md.cpc))
+                if md.cpm is not None:
+                    p_cpm_vals.append(float(md.cpm))
+                if campaign and campaign.campaign_id:
+                    p_campaign_ids.add(str(campaign.campaign_id))
+
+            p_cpl = (p_spend / p_convs) if p_convs > 0 else 0.0
+
+            # Serie giornaliera per piattaforma
+            p_daily_query = (
+                db.query(
+                    func.date(MetaMarketingData.date).label("day"),
+                    func.sum(MetaMarketingData.spend).label("total_spend"),
+                    func.sum(MetaMarketingData.conversions).label("total_conversions"),
+                )
+                .join(MetaAd, MetaMarketingData.ad_id == MetaAd.id)
+                .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+                .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+                .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+                .filter(
+                    MetaAccount.is_active == True,
+                    (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
+                    MetaMarketingData.date >= date_from,
+                    MetaMarketingData.date <= date_to,
+                    MetaMarketingData.publisher_platform == platform_key,
+                )
+            )
+            if selected_account_id:
+                p_daily_query = p_daily_query.filter(MetaAccount.account_id == selected_account_id)
+            if selected_campaign_id:
+                p_daily_query = p_daily_query.filter(MetaCampaign.campaign_id == selected_campaign_id)
+            if selected_adset_id:
+                p_daily_query = p_daily_query.filter(MetaAdSet.id == selected_adset_id)
+
+            p_daily_rows = (
+                p_daily_query
+                .group_by(func.date(MetaMarketingData.date))
+                .order_by(func.date(MetaMarketingData.date))
+                .all()
+            )
+
+            p_chart = []
+            for row in p_daily_rows:
+                day = row.day
+                try:
+                    date_str = day.strftime('%Y-%m-%d')
+                except AttributeError:
+                    date_str = str(day)
+                d_spend = _parse_amount(row.total_spend) if row.total_spend is not None else 0.0
+                d_convs = int(row.total_conversions or 0)
+                d_cpl = (d_spend / d_convs) if d_convs > 0 else 0.0
+                p_chart.append(
+                    {
+                        "date": date_str,
+                        "spend": round(d_spend, 2),
+                        "conversions": d_convs,
+                        "cpl": round(d_cpl, 2),
+                    }
+                )
+            platform_chart_points[platform_key] = p_chart
+
+            # Metriche Magellano/Ulixe per piattaforma
+            p_total_mag_entrate = 0
+            p_total_mag_inviate = 0
+            p_total_ulixe_approvate = 0
+            p_total_ulixe_scartate = 0
+            p_total_mag_scartate = 0
+            p_total_mag_doppioni = 0
+            p_leads_count = 0
+            p_total_ricavo = 0.0
+            p_total_margine = 0.0
+            p_total_margine_pct = None
+
+            if p_campaign_ids:
+                p_lead_query = db.query(Lead).filter(_lead_date_filter(date_from, date_to))
+                p_lead_query = p_lead_query.filter(Lead.meta_campaign_id.in_(p_campaign_ids))
+                p_lead_query = p_lead_query.filter(Lead.platform == platform_key)
+                p_leads = p_lead_query.all()
+                p_leads_count = len(p_leads)
+                p_total_mag_entrate = len([l for l in p_leads if l.magellano_campaign_id])
+                p_total_mag_inviate = len([l for l in p_leads if l.magellano_status == "magellano_sent"])
+                p_total_ulixe_approvate = len([l for l in p_leads if l.status_category == StatusCategory.FINALE])
+                p_total_ulixe_scartate = len([l for l in p_leads if l.status_category == StatusCategory.RIFIUTATO])
+                p_total_mag_scartate = len([
+                    l for l in p_leads
+                    if l.magellano_campaign_id
+                    and l.magellano_status not in ("magellano_sent", "magellano_refused")
+                ])
+                p_total_mag_doppioni = max(0, p_convs - p_leads_count)
+
+                p_leads_approvate = [l for l in p_leads if l.status_category == StatusCategory.FINALE]
+                if p_leads_approvate:
+                    p_total_ricavo = _compute_ricavo_for_leads(db, p_leads_approvate)
+                    if p_total_ricavo > 0:
+                        p_total_margine = p_total_ricavo - p_spend
+                        p_total_margine_pct = round((p_total_margine / p_total_ricavo * 100), 2)
+
+            platform_totals[platform_key] = {
+                "total_spend": round(p_spend, 2),
+                "total_impressions": p_impr,
+                "total_clicks": p_clicks,
+                "total_conversions": p_convs,
+                "global_cpl": round(p_cpl, 2),
+                "avg_ctr": round(_avg(p_ctr_vals), 2),
+                "avg_cpc": round(_avg(p_cpc_vals), 4),
+                "avg_cpm": round(_avg(p_cpm_vals), 2),
+                "total_magellano_entrate": p_total_mag_entrate,
+                "total_magellano_inviate": p_total_mag_inviate,
+                "total_ulixe_approvate": p_total_ulixe_approvate,
+                "total_ulixe_scartate": p_total_ulixe_scartate,
+                "total_magellano_scartate": p_total_mag_scartate,
+                "total_magellano_doppioni": p_total_mag_doppioni,
+                "total_ricavo": round(p_total_ricavo, 2),
+                "total_margine": round(p_total_margine, 2),
+                "total_margine_pct": p_total_margine_pct,
+                "leads_count": p_leads_count,
+            }
+
+        # Focus posizionamenti per piattaforma (publisher_platform + platform_position)
+        placement_insights_by_platform: dict[str, list[dict[str, Any]]] = {
+            "facebook": [],
+            "instagram": [],
+        }
+
+        placement_query = (
+            db.query(
+                MetaMarketingData.publisher_platform.label("platform"),
+                MetaMarketingData.platform_position.label("position"),
+                func.sum(MetaMarketingData.spend).label("total_spend"),
+                func.sum(MetaMarketingData.conversions).label("total_conversions"),
+            )
+            .join(MetaAd, MetaMarketingData.ad_id == MetaAd.id)
+            .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+            .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+            .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+            .filter(
+                MetaAccount.is_active == True,
+                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
+                MetaMarketingData.date >= date_from,
+                MetaMarketingData.date <= date_to,
+                MetaMarketingData.publisher_platform.in_(["facebook", "instagram"]),
+            )
+        )
+        if selected_account_id:
+            placement_query = placement_query.filter(MetaAccount.account_id == selected_account_id)
+        if selected_campaign_id:
+            placement_query = placement_query.filter(MetaCampaign.campaign_id == selected_campaign_id)
+        if selected_adset_id:
+            placement_query = placement_query.filter(MetaAdSet.id == selected_adset_id)
+
+        placement_rows = (
+            placement_query.group_by(
+                MetaMarketingData.publisher_platform,
+                MetaMarketingData.platform_position,
+            )
+            .order_by(func.sum(MetaMarketingData.spend).desc())
+            .all()
+        )
+
+        for row in placement_rows:
+            platform_key = (row.platform or "").lower()
+            if platform_key not in placement_insights_by_platform:
+                continue
+            total_spend = _parse_amount(row.total_spend) if row.total_spend is not None else 0.0
+            total_conversions = int(row.total_conversions or 0)
+            cpl = (total_spend / total_conversions) if total_conversions > 0 else 0.0
+            position_label = row.position or "unknown"
+            placement_insights_by_platform[platform_key].append(
+                {
+                    "position": position_label,
+                    "total_spend": round(total_spend, 2),
+                    "total_conversions": total_conversions,
+                    "cpl": round(cpl, 2),
+                }
+            )
+
         return templates.TemplateResponse(
             "marketing_analysis.html",
             {
@@ -622,6 +856,10 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
                 "totals": totals,
                 "chart_points": chart_points,
                 "distribution_points": distribution_points,
+                "platform_totals": platform_totals,
+                "platform_chart_points": platform_chart_points,
+                "platform_distribution_points": platform_distribution_points,
+                "placement_insights_by_platform": placement_insights_by_platform,
                 "selected_account_id": selected_account_id,
                 "selected_campaign_id": selected_campaign_id,
                 "selected_adset_id": selected_adset_id,
@@ -821,6 +1059,9 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                 MetaAd.name.ilike(f"%{ad_name_filter}%")
             ).distinct()
         
+        # Piattaforma (facebook / instagram / all)
+        platform = request.query_params.get('platform', 'all')
+
         # Date filters
         date_from = request.query_params.get('date_from')
         date_to = request.query_params.get('date_to')
@@ -858,17 +1099,23 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                 account = campaign.account
                 
                 # Get leads for this campaign (per calcoli Magellano/Ulixe)
-                leads = db.query(Lead).filter(
+                leads_query = db.query(Lead).filter(
                     Lead.meta_campaign_id == campaign.campaign_id,
                     _lead_date_filter(date_from_obj, date_to_obj),
-                ).all()
+                )
+                if platform in ('facebook', 'instagram'):
+                    leads_query = leads_query.filter(Lead.platform == platform)
+                leads = leads_query.all()
                 
                 # Calculate CPL Meta (from MetaMarketingData)
-                marketing_data = db.query(MetaMarketingData).join(MetaAd).join(MetaAdSet).filter(
+                marketing_query = db.query(MetaMarketingData).join(MetaAd).join(MetaAdSet).filter(
                     MetaAdSet.campaign_id == campaign.id,
                     MetaMarketingData.date >= date_from_obj,
                     MetaMarketingData.date <= date_to_obj
-                ).all()
+                )
+                if platform in ('facebook', 'instagram'):
+                    marketing_query = marketing_query.filter(MetaMarketingData.publisher_platform == platform)
+                marketing_data = marketing_query.all()
                 
                 total_spend_meta = sum(_parse_amount(md.spend) for md in marketing_data)
                 total_conversions_meta = sum(md.conversions or 0 for md in marketing_data)
@@ -1099,6 +1346,9 @@ async def api_marketing_campaign_adsets(campaign_id: int, request: Request, db: 
     if not campaign:
         return JSONResponse({"error": "Campagna non trovata"}, status_code=404)
     
+    # Piattaforma (facebook / instagram / all)
+    platform = request.query_params.get('platform', 'all')
+
     # Date filters
     date_from = request.query_params.get('date_from')
     date_to = request.query_params.get('date_to')
@@ -1126,17 +1376,23 @@ async def api_marketing_campaign_adsets(campaign_id: int, request: Request, db: 
     
     for adset in adsets:
         # Get leads for this adset (per calcoli Magellano/Ulixe)
-        leads = db.query(Lead).filter(
+        leads_query = db.query(Lead).filter(
             Lead.meta_adset_id == adset.adset_id,
             _lead_date_filter(date_from_obj, date_to_obj),
-        ).all()
+        )
+        if platform in ('facebook', 'instagram'):
+            leads_query = leads_query.filter(Lead.platform == platform)
+        leads = leads_query.all()
         
         # Calculate CPL Meta
-        marketing_data = db.query(MetaMarketingData).join(MetaAd).filter(
+        marketing_query = db.query(MetaMarketingData).join(MetaAd).filter(
             MetaAd.adset_id == adset.id,
             MetaMarketingData.date >= date_from_obj,
             MetaMarketingData.date <= date_to_obj
-        ).all()
+        )
+        if platform in ('facebook', 'instagram'):
+            marketing_query = marketing_query.filter(MetaMarketingData.publisher_platform == platform)
+        marketing_data = marketing_query.all()
         
         total_spend_meta = sum(_parse_amount(md.spend) for md in marketing_data)
         total_conversions_meta = sum(md.conversions or 0 for md in marketing_data)
@@ -1225,6 +1481,9 @@ async def api_marketing_adset_ads(adset_id: int, request: Request, db: Session =
     if not adset:
         return JSONResponse({"error": "AdSet non trovato"}, status_code=404)
     
+    # Piattaforma (facebook / instagram / all)
+    platform = request.query_params.get('platform', 'all')
+
     # Date filters
     date_from = request.query_params.get('date_from')
     date_to = request.query_params.get('date_to')
@@ -1252,17 +1511,23 @@ async def api_marketing_adset_ads(adset_id: int, request: Request, db: Session =
     
     for ad in ads:
         # Get leads for this ad (per calcoli Magellano/Ulixe)
-        leads = db.query(Lead).filter(
+        leads_query = db.query(Lead).filter(
             Lead.meta_ad_id == ad.ad_id,
             _lead_date_filter(date_from_obj, date_to_obj),
-        ).all()
+        )
+        if platform in ('facebook', 'instagram'):
+            leads_query = leads_query.filter(Lead.platform == platform)
+        leads = leads_query.all()
         
         # Calculate CPL Meta
-        marketing_data = db.query(MetaMarketingData).filter(
+        marketing_query = db.query(MetaMarketingData).filter(
             MetaMarketingData.ad_id == ad.id,
             MetaMarketingData.date >= date_from_obj,
             MetaMarketingData.date <= date_to_obj
-        ).all()
+        )
+        if platform in ('facebook', 'instagram'):
+            marketing_query = marketing_query.filter(MetaMarketingData.publisher_platform == platform)
+        marketing_data = marketing_query.all()
         
         total_spend_meta = sum(_parse_amount(md.spend) for md in marketing_data)
         total_conversions_meta = sum(md.conversions or 0 for md in marketing_data)
@@ -1385,6 +1650,9 @@ async def api_marketing_adsets(request: Request, db: Session = Depends(get_db)):
     if not adset_name_filter:
         return JSONResponse({"error": "adset_name filter required"}, status_code=400)
     
+    # Piattaforma (facebook / instagram / all)
+    platform = request.query_params.get('platform', 'all')
+
     # Date filters
     date_from = request.query_params.get('date_from')
     date_to = request.query_params.get('date_to')
@@ -1419,17 +1687,23 @@ async def api_marketing_adsets(request: Request, db: Session = Depends(get_db)):
         
         for adset in adsets:
             # Get leads for this adset
-            leads = db.query(Lead).filter(
+            leads_query = db.query(Lead).filter(
                 Lead.meta_adset_id == adset.adset_id,
                 _lead_date_filter(date_from_obj, date_to_obj),
-            ).all()
+            )
+            if platform in ('facebook', 'instagram'):
+                leads_query = leads_query.filter(Lead.platform == platform)
+            leads = leads_query.all()
             
             # Calculate CPL Meta
-            marketing_data = db.query(MetaMarketingData).join(MetaAd).filter(
+            marketing_query = db.query(MetaMarketingData).join(MetaAd).filter(
                 MetaAd.adset_id == adset.id,
                 MetaMarketingData.date >= date_from_obj,
                 MetaMarketingData.date <= date_to_obj
-            ).all()
+            )
+            if platform in ('facebook', 'instagram'):
+                marketing_query = marketing_query.filter(MetaMarketingData.publisher_platform == platform)
+            marketing_data = marketing_query.all()
             
             total_spend_meta = sum(_parse_amount(md.spend) for md in marketing_data)
             total_conversions_meta = sum(md.conversions or 0 for md in marketing_data)
@@ -1555,6 +1829,9 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
     if not ad_name_filter:
         return JSONResponse({"error": "ad_name filter required"}, status_code=400)
     
+    # Piattaforma (facebook / instagram / all)
+    platform = request.query_params.get('platform', 'all')
+
     # Date filters
     date_from = request.query_params.get('date_from')
     date_to = request.query_params.get('date_to')
@@ -1595,17 +1872,23 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
             
             for ad in ads:
                 # Get leads for this ad
-                leads = db.query(Lead).filter(
+                leads_query = db.query(Lead).filter(
                     Lead.meta_ad_id == ad.ad_id,
                     _lead_date_filter(date_from_obj, date_to_obj),
-                ).all()
+                )
+                if platform in ('facebook', 'instagram'):
+                    leads_query = leads_query.filter(Lead.platform == platform)
+                leads = leads_query.all()
                 
                 # Calculate CPL Meta
-                marketing_data = db.query(MetaMarketingData).filter(
+                marketing_query = db.query(MetaMarketingData).filter(
                     MetaMarketingData.ad_id == ad.id,
                     MetaMarketingData.date >= date_from_obj,
                     MetaMarketingData.date <= date_to_obj
-                ).all()
+                )
+                if platform in ('facebook', 'instagram'):
+                    marketing_query = marketing_query.filter(MetaMarketingData.publisher_platform == platform)
+                marketing_data = marketing_query.all()
                 
                 total_spend_meta = sum(_parse_amount(md.spend) for md in marketing_data)
                 total_conversions_meta = sum(md.conversions or 0 for md in marketing_data)
