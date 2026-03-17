@@ -301,7 +301,12 @@ async def meta_oauth_start(request: Request):
         ]
     
     # URL di autorizzazione Meta
-    base_url = str(request.base_url).rstrip('/')
+    # Usa APP_BASE_URL se configurato (per forzare https e ambiente corretto),
+    # altrimenti fallback su request.base_url.
+    if settings.APP_BASE_URL:
+        base_url = settings.APP_BASE_URL.rstrip('/')
+    else:
+        base_url = str(request.base_url).rstrip('/')
     redirect_uri = f"{base_url}/settings/meta-accounts/oauth/callback"
     
     # Se disponibile, includi anche META_CONFIG_ID (nuovo flusso Config ID di Meta)
@@ -351,7 +356,10 @@ async def meta_oauth_callback(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url='/settings/meta-accounts?error=no_code', status_code=303)
     
     # Scambia code con access token
-    base_url = str(request.base_url).rstrip('/')
+    if settings.APP_BASE_URL:
+        base_url = settings.APP_BASE_URL.rstrip('/')
+    else:
+        base_url = str(request.base_url).rstrip('/')
     redirect_uri = f"{base_url}/settings/meta-accounts/oauth/callback"
     
     token_url = "https://graph.facebook.com/v23.0/oauth/access_token"
