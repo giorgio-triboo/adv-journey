@@ -11,6 +11,7 @@ from datetime import datetime, date, timedelta
 from typing import List, Dict, Optional
 
 from config import settings
+from services.utils.platforms import normalize_platform
 
 # Usa il logger configurato centralmente
 logger = logging.getLogger('services.integrations.magellano')
@@ -28,7 +29,13 @@ class MagellanoService:
             file_date = date.today()
         return file_date.strftime("%d%m%Y") + "T-Direct"
     
-    def process_uploaded_file(self, file_path: str, file_date: date, campaign_id: Optional[int] = None, original_filename: Optional[str] = None) -> List[Dict]:
+    def process_uploaded_file(
+        self,
+        file_path: str,
+        file_date: date,
+        campaign_id: Optional[int] = None,
+        original_filename: Optional[str] = None,
+    ) -> List[Dict]:
         """
         Processa un file ZIP o CSV/Excel uploadato manualmente.
         IMPORTANT: All extracted files are automatically deleted after ingestion.
@@ -60,25 +67,21 @@ class MagellanoService:
             else:
                 raise Exception("Formato file non supportato. Usa .zip, .xls, .xlsx o .csv")
             
-            # Processa il file Excel/CSV
-            if campaign_id:
-                leads = self._process_excel(xls_path, campaign_id)
-            else:
-                # Prova a estrarre campaign_id dal nome file originale o dal nome temporaneo
-                # Es: export-188-11012026.xls -> campaign_id = 188
-                # Gestisce anche: export-199-15012026 (1).zip
+            # Processa il file Excel/CSV.
+            # Nota: molti file "unificati" non seguono il pattern `export-<id>-...`,
+            # quindi l'ID campagna può essere inferito dalle colonne interne (es. `Id campaign`).
+            campaign_id_to_use = campaign_id
+            if campaign_id_to_use is None:
+                # Tentativo leggero da nome file (backwards compatibility con gli export originali).
                 import re
-                # Usa il nome originale se disponibile, altrimenti usa il nome del file temporaneo
+
                 filename = original_filename if original_filename else os.path.basename(file_path)
-                # Regex migliorata: cerca "export-" seguito da numeri, anche se ci sono spazi o parentesi dopo
-                match = re.search(r'export-(\d+)', filename)
+                match = re.search(r"export-(\d+)", filename)
                 if match:
-                    campaign_id = int(match.group(1))
-                    logger.info(f"Estratto campaign_id {campaign_id} dal nome file: {filename}")
-                    leads = self._process_excel(xls_path, campaign_id)
-                else:
-                    # Se non troviamo il campaign_id, usiamo un default o solleviamo errore
-                    raise Exception(f"Impossibile determinare l'ID campagna dal nome file '{filename}'. Fornisci l'ID campagna o usa un nome file con formato 'export-{{campaign_id}}-{{date}}.xls'")
+                    campaign_id_to_use = int(match.group(1))
+                    logger.info(f"Estratto campaign_id {campaign_id_to_use} dal nome file: {filename}")
+
+            leads = self._process_excel(xls_path, campaign_id_to_use)
             
             # Elimina file estratti dopo l'ingestion (solo quelli in temp_dir, non il file originale)
             for extracted_file in extracted_files:
@@ -392,7 +395,7 @@ class MagellanoService:
             # Tutti gli altri stati (firewall, refused, waiting, unknown) → RIFIUTATO
             return StatusCategory.RIFIUTATO
 
-    def _process_excel(self, xls_path, campaign_id) -> List[Dict]:
+    def _process_excel(self, xls_path, campaign_id: Optional[int]) -> List[Dict]:
         try:
             # Supporta sia Excel che CSV
             lower_path = str(xls_path).lower()
@@ -405,7 +408,42 @@ class MagellanoService:
             leads = []
             
             # Mappa colonne normalizzate (lowercase, stripped) per essere robusti a maiuscole/spazi
-            normalized_columns = {str(col).strip().lower(): col for col in df.columns}
+            # .lstrip('\ufeff') gestisce BOM nei nomi colonna (tipico di alcuni CSV export).
+            normalized_columns = {
+                str(col).lstrip("\ufeff").strip().lower(): col for col in df.columns
+            }
+
+            # Colonne core: usate per deduplicazione e filtro righe.
+            # Usiamo normalized_columns per essere robusti a spazi/variazioni (es. BOM/whitespace).
+            email_col = normalized_columns.get("email")
+            id_user_col = (
+                normalized_columns.get("id user")
+                or normalized_columns.get("id_user")
+                or normalized_columns.get("iduser")
+            )
+            if not email_col or not id_user_col:
+                logger.warning(
+                    f"Colonne core non trovate nel file Magellano {xls_path}: "
+                    f"email_col={email_col}, id_user_col={id_user_col}. "
+                    f"Colonne disponibili: {list(df.columns)[:30]}"
+                )
+                return []
+
+            # Prova a individuare la colonna con l'ID campagna.
+            # Esempio atteso su export Magellano: `Id campaign`
+            lead_campaign_id_col: Optional[str] = None
+            for key in ["id campaign", "id_campaign"]:
+                if key in normalized_columns:
+                    lead_campaign_id_col = normalized_columns[key]
+                    break
+            if not lead_campaign_id_col:
+                # Fallback: match "idcampaign" ignorando separatori.
+                for col in df.columns:
+                    name_norm = str(col).strip().lower()
+                    compact = name_norm.replace(" ", "").replace("_", "")
+                    if compact == "idcampaign":
+                        lead_campaign_id_col = col
+                        break
             # Prova a individuare la colonna dello stato con diversi alias possibili
             status_col = None
             for candidate in ["sent status", "status", "stato", "lead_status", "lead status"]:
@@ -455,12 +493,27 @@ class MagellanoService:
             
             for _, row in df.iterrows():
                 # Map based on identified columns from inspection
-                email = str(row.get('Email', '')).strip()
-                if not email or pd.isna(row.get('Email')):
+                raw_email = row.get(email_col, "")
+                email = str(raw_email).strip()
+                if not email or pd.isna(raw_email):
                     continue
                 
                 # External User ID is a good candidate for dedup
-                ext_user_id = str(row.get('Id user', ''))
+                raw_id_user = row.get(id_user_col, "")
+                ext_user_id = str(raw_id_user).strip()
+                if not ext_user_id or ext_user_id.lower() == "nan":
+                    continue
+
+                row_campaign_id: Optional[str] = None
+                if lead_campaign_id_col:
+                    raw_campaign_id = row.get(lead_campaign_id_col, None)
+                    if raw_campaign_id is not None and not pd.isna(raw_campaign_id):
+                        row_campaign_id = str(raw_campaign_id).strip() or None
+                magellano_campaign_id = (
+                    row_campaign_id
+                    if row_campaign_id is not None
+                    else (str(campaign_id) if campaign_id is not None else None)
+                )
                 
                 # Estrai e normalizza lo stato Magellano in modo robusto (case-insensitive, alias)
                 status_raw = None
@@ -540,7 +593,7 @@ class MagellanoService:
                     'form_id': str(row.get('gruppocepu_formid', '')).strip() if not pd.isna(row.get('gruppocepu_formid')) else None,
                     'source': str(row.get('Source', '')).strip() if not pd.isna(row.get('Source')) else None,
                     'campaign_name': str(row.get('Campaign', '')).strip().strip(),
-                    'magellano_campaign_id': str(campaign_id),
+                    'magellano_campaign_id': magellano_campaign_id,
                     # Stato Magellano: originale, normalizzato e categoria
                     'magellano_status_raw': status_raw,  # Stato originale esatto
                     'magellano_status': magellano_status,  # Stato normalizzato
@@ -570,5 +623,5 @@ class MagellanoService:
             return leads
 
         except Exception as e:
-            logger.error(f"Excel processing failed: {e}")
+            logger.error(f"Excel processing failed: {e}", exc_info=True)
             return []
