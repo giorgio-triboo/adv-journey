@@ -529,7 +529,8 @@ class MetaMarketingService:
                 'level': level,
                 'fields': fields,
                 'time_increment': 1,  # Daily breakdown
-                'breakdowns': ['publisher_platform', 'platform_position'],
+                # Nessun breakdown aggiuntivo per ridurre la complessità/rate limit
+                # (in particolare niente publisher_platform / platform_position)
             }
             
             if date_preset:
@@ -602,8 +603,7 @@ class MetaMarketingService:
                     "conversions": conversions,
                     "ctr": self._format_percentage(ctr),
                     "spend": self._format_currency(spend),
-                    "publisher_platform": insight.get("publisher_platform"),
-                    "platform_position": insight.get("platform_position"),
+                    # publisher_platform e platform_position rimossi dall'ingestion per ridurre carico
                     "raw_data": dict(insight)
                 })
             

@@ -11,6 +11,21 @@ import logging
 
 logger = logging.getLogger('services.sync')
 
+
+def _append_ingestion_debug(existing_raw: dict | None, tag: dict) -> dict:
+    """
+    Aggiunge informazioni di debug (_ingestion_debug) dentro additional_metrics
+    senza sovrascrivere eventuali dati esistenti.
+    """
+    raw = existing_raw or {}
+    debug_list = raw.get("_ingestion_debug")
+    if not isinstance(debug_list, list):
+        debug_list = []
+    debug_list.append(tag)
+    raw["_ingestion_debug"] = debug_list
+    return raw
+
+
 def run(db: Session = None) -> dict:
     """
     Esegue il job di ingestion dati marketing Meta.
@@ -26,6 +41,12 @@ def run(db: Session = None) -> dict:
     stats = {"accounts_synced": 0, "errors": 0}
     
     try:
+        # Tag di debug comune per questo job automatico
+        job_debug_tag = {
+            "ingestion_source": "auto_meta_sync",
+            "job_type": "meta_marketing",
+        }
+
         # Get active accounts with sync enabled
         accounts = db.query(MetaAccount).filter(
             MetaAccount.is_active == True,
@@ -38,7 +59,11 @@ def run(db: Session = None) -> dict:
         
         for account in accounts:
             try:
-                logger.info(f"Meta Marketing Sync: Syncing account {account.account_id} ({account.name})...")
+                logger.info(
+                    "Meta Marketing Sync: Syncing account %s (%s)...",
+                    account.account_id,
+                    account.name,
+                )
                 
                 # Verifica se ci sono filtri configurati per questo account
                 # I filtri possono essere salvati in un campo sync_filters dell'account o recuperati da campagne esistenti
@@ -125,8 +150,17 @@ def run(db: Session = None) -> dict:
                                 MetaMarketingData.date == insight_date
                             ).first()
                             
+                            placement_info = {}
+
                             if existing:
                                 # Update existing
+                                logger.info(
+                                    "[META_SYNC][AUTO][UPDATE] ad_db_id=%s date=%s spend=%s conv=%s",
+                                    ad_record.id,
+                                    insight_date,
+                                    insight.get('spend'),
+                                    insight.get('conversions'),
+                                )
                                 existing.spend = insight['spend']
                                 existing.impressions = insight['impressions']
                                 existing.clicks = insight['clicks']
@@ -135,13 +169,27 @@ def run(db: Session = None) -> dict:
                                 existing.cpc = insight['cpc']
                                 existing.cpm = insight['cpm']
                                 # Aggiorna info piattaforma/position se presenti
-                                if 'publisher_platform' in insight:
-                                    existing.publisher_platform = insight.get('publisher_platform') or existing.publisher_platform
-                                if 'platform_position' in insight:
-                                    existing.platform_position = insight.get('platform_position') or existing.platform_position
+                                # publisher_platform non più aggiornato per ridurre complessità ingestion
+                                # Aggiorna additional_metrics con tag di debug
+                                existing.additional_metrics = _append_ingestion_debug(
+                                    existing.additional_metrics,
+                                    {**job_debug_tag, **placement_info},
+                                )
                                 existing.updated_at = datetime.utcnow()
                             else:
                                 # Create new
+                                logger.info(
+                                    "[META_SYNC][AUTO][INSERT] ad_db_id=%s date=%s spend=%s conv=%s",
+                                    ad_record.id,
+                                    insight_date,
+                                    insight.get('spend'),
+                                    insight.get('conversions'),
+                                )
+                                base_raw = insight.get('raw_data', {})
+                                base_raw = _append_ingestion_debug(
+                                    base_raw,
+                                    {**job_debug_tag, **placement_info},
+                                )
                                 marketing_data = MetaMarketingData(
                                     ad_id=ad_record.id,
                                     date=insight_date,
@@ -153,9 +201,7 @@ def run(db: Session = None) -> dict:
                                     cpc=insight['cpc'],
                                     cpm=insight['cpm'],
                                     cpa=insight.get('cpa', 0),
-                                    publisher_platform=insight.get('publisher_platform'),
-                                    platform_position=insight.get('platform_position'),
-                                    additional_metrics=insight.get('raw_data', {})
+                                    additional_metrics=base_raw,
                                 )
                                 db.add(marketing_data)
                         
@@ -209,6 +255,15 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
     stats = {"campaigns_synced": 0, "errors": 0}
     
     try:
+        # Tag di debug comune per questo job manuale
+        job_debug_tag = {
+            "ingestion_source": "manual_meta_sync",
+            "job_type": "meta_marketing",
+            "account_id": account_id,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        }
+
         # Trova l'account
         account = db.query(MetaAccount).filter(
             MetaAccount.account_id == account_id,
@@ -220,8 +275,12 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
             stats["errors"] = 1
             return stats
         
-        logger.info(f"Meta Marketing Manual Sync: Syncing account {account.account_id} ({account.name})...")
-        logger.info(f"Period: {start_date} - {end_date}, Metrics: {metrics}")
+        logger.info(
+            "Meta Marketing Manual Sync: Syncing account %s (%s)...",
+            account.account_id,
+            account.name,
+        )
+        logger.info("Period: %s - %s, Metrics: %s", start_date, end_date, metrics)
         
         # Decripta il token prima di usarlo
         from services.utils.crypto import decrypt_token
@@ -265,6 +324,14 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
             MetaAccount.id == account.id
         ).count()
         logger.info(f"Meta Marketing Manual Sync: Found {total_ads} total ads for account {account.account_id}")
+
+        # Se non esiste nessun MetaAd per l'account, la sync marketing non può produrre dati coerenti
+        # e non ha senso segnalarla come completata con 0 record: alziamo un errore esplicito.
+        if total_ads == 0:
+            raise RuntimeError(
+                f"Meta Marketing Manual Sync: no MetaAd records found in DB for account {account.account_id}. "
+                f"Run campaigns/adsets/ads sync before marketing sync."
+            )
         
         # Fetch and save marketing insights for each campaign
         for campaign in campaigns:
@@ -327,8 +394,17 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
                         MetaMarketingData.date == insight_date
                     ).first()
                     
+                    placement_info = {}
+
                     if existing:
                         # Update existing
+                        logger.info(
+                            "[META_SYNC][MANUAL][UPDATE] ad_db_id=%s date=%s spend=%s conv=%s",
+                            ad_record.id,
+                            insight_date,
+                            insight.get('spend'),
+                            insight.get('conversions'),
+                        )
                         existing.spend = insight.get('spend', existing.spend)
                         existing.impressions = insight.get('impressions', existing.impressions)
                         existing.clicks = insight.get('clicks', existing.clicks)
@@ -336,19 +412,29 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
                         existing.ctr = insight.get('ctr', existing.ctr)
                         existing.cpc = insight.get('cpc', existing.cpc)
                         existing.cpm = insight.get('cpm', existing.cpm)
-                        # Aggiorna placement se disponibile
-                        if 'publisher_platform' in insight:
-                            existing.publisher_platform = insight.get('publisher_platform') or existing.publisher_platform
-                        if 'platform_position' in insight:
-                            existing.platform_position = insight.get('platform_position') or existing.platform_position
+                        # publisher_platform non più aggiornato per ridurre complessità ingestion
+                        # Update additional metrics if present + debug tag
+                        base_raw = insight.get('raw_data', existing.additional_metrics)
+                        existing.additional_metrics = _append_ingestion_debug(
+                            base_raw,
+                            {**job_debug_tag, **placement_info},
+                        )
                         existing.updated_at = datetime.utcnow()
-                        
-                        # Update additional metrics if present
-                        if 'raw_data' in insight:
-                            existing.additional_metrics = insight.get('raw_data', {})
                         records_updated += 1
                     else:
                         # Create new
+                        logger.info(
+                            "[META_SYNC][MANUAL][INSERT] ad_db_id=%s date=%s spend=%s conv=%s",
+                            ad_record.id,
+                            insight_date,
+                            insight.get('spend'),
+                            insight.get('conversions'),
+                        )
+                        base_raw = insight.get('raw_data', {})
+                        base_raw = _append_ingestion_debug(
+                            base_raw,
+                            {**job_debug_tag, **placement_info},
+                        )
                         marketing_data = MetaMarketingData(
                             ad_id=ad_record.id,
                             date=insight_date,
@@ -360,9 +446,7 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
                             cpc=insight.get('cpc', 0),
                             cpm=insight.get('cpm', 0),
                             cpa=insight.get('cpa', 0),
-                            publisher_platform=insight.get('publisher_platform'),
-                            platform_position=insight.get('platform_position'),
-                            additional_metrics=insight.get('raw_data', {})
+                            additional_metrics=base_raw,
                         )
                         db.add(marketing_data)
                         records_created += 1

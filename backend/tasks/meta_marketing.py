@@ -5,6 +5,9 @@ from database import SessionLocal
 from models import SyncLog, IngestionJob, now_rome
 from services.sync.meta_marketing_sync import run_manual_sync
 from services.sync.meta_campaigns_sync import run_bootstrap, run_incremental
+import logging
+
+logger = logging.getLogger("tasks.meta")
 
 
 @celery_app.task(name="tasks.meta.manual_sync")
@@ -26,6 +29,14 @@ def meta_manual_sync_task(
         if job_id:
             job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
             if job:
+                logger.info(
+                    "[META_MANUAL_SYNC_TASK][START] job_id=%s account_id=%s period=%s..%s metrics=%s",
+                    job.id,
+                    account_id,
+                    start_date_str,
+                    end_date_str,
+                    metrics,
+                )
                 job.status = "RUNNING"
                 job.started_at = now_rome()
                 db.commit()
@@ -43,6 +54,14 @@ def meta_manual_sync_task(
             )
             db.add(job)
             db.commit()
+            logger.info(
+                "[META_MANUAL_SYNC_TASK][START] job_id=%s account_id=%s period=%s..%s metrics=%s (created ad-hoc)",
+                job.id,
+                account_id,
+                start_date_str,
+                end_date_str,
+                metrics,
+            )
 
         stats = run_manual_sync(db, account_id, start_date, end_date, metrics)
 
@@ -76,10 +95,19 @@ def meta_manual_sync_task(
                 job.message = f"Sync Meta marketing completata ({params['stats']['campaigns_synced']} campagne)"
 
             db.commit()
+            logger.info(
+                "[META_MANUAL_SYNC_TASK][END] job_id=%s account_id=%s campaigns_synced=%s errors=%s",
+                job.id if job else None,
+                account_id,
+                stats.get("campaigns_synced", 0),
+                stats.get("errors", 0),
+            )
         except Exception as log_exc:
-            import logging
-            logger = logging.getLogger("tasks.meta")
-            logger.error(f"Errore salvataggio SyncLog per Meta manual sync: {log_exc}", exc_info=True)
+            logger.error(
+                "Errore salvataggio SyncLog per Meta manual sync: %s",
+                log_exc,
+                exc_info=True,
+            )
 
         return stats
     finally:

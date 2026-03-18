@@ -12,7 +12,6 @@ dist/
 .vscode/
 coverage/
 *.log
-logs/
 test_venv/
 .venv*
 ulixe_temp/
