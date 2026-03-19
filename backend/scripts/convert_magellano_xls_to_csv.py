@@ -57,6 +57,12 @@ def _looks_like_id_column(col_name: str) -> bool:
         for token in [
             "facebook id",
             "facebook_id",
+            "facebook_ad_name_id",
+            "facebook_ad_set_id",
+            "facebook_campaign_name_id",
+            "ad_name_id",
+            "ad_set_id",
+            "campaign_name_id",
             "id user",
             "id_campaign",
             "id campaign",
@@ -67,6 +73,27 @@ def _looks_like_id_column(col_name: str) -> bool:
             "gruppocepu_idmessaggio",
         ]
     )
+
+
+def _maybe_add_meta_columns_from_facebook_ids(df: "pd.DataFrame") -> "pd.DataFrame":
+    """
+    Il caricatore `load_magellano_unificato.py` si aspetta colonne `meta_*`.
+    Negli XLS Magellano però spesso troviamo già gli ID nelle colonne `facebook_*_id`.
+    Per evitare mismatch a valle, creiamo `meta_*` mappando quei campi quando presenti.
+    """
+    # meta_campaign_id  <- facebook_campaign_name_id
+    if "meta_campaign_id" not in df.columns and "facebook_campaign_name_id" in df.columns:
+        df["meta_campaign_id"] = df["facebook_campaign_name_id"]
+
+    # meta_adset_id <- facebook_ad_set_id
+    if "meta_adset_id" not in df.columns and "facebook_ad_set_id" in df.columns:
+        df["meta_adset_id"] = df["facebook_ad_set_id"]
+
+    # meta_ad_id <- facebook_ad_name_id
+    if "meta_ad_id" not in df.columns and "facebook_ad_name_id" in df.columns:
+        df["meta_ad_id"] = df["facebook_ad_name_id"]
+
+    return df
 
 
 def convert_dir(input_dir: str, output_dir: str) -> list[str]:
@@ -97,6 +124,9 @@ def convert_dir(input_dir: str, output_dir: str) -> list[str]:
                 df[col] = df[col].apply(
                     lambda v: _expand_scientific_to_intlike(v) if isinstance(v, str) else v
                 )
+
+        # Se presenti, mappa i facebook_*_id nelle colonne meta_* richieste dal loader unificato.
+        df = _maybe_add_meta_columns_from_facebook_ids(df)
 
         # Aggiunge una colonna sorgente: utile per eventuali dedup/merge.
         df["_source_file"] = in_name

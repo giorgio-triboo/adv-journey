@@ -64,38 +64,38 @@ def run(db: Session = None) -> dict:
                     account.account_id,
                     account.name,
                 )
-                
+
                 # Verifica se ci sono filtri configurati per questo account
                 # I filtri possono essere salvati in un campo sync_filters dell'account o recuperati da campagne esistenti
                 filters = None
-                
+
                 # Prova a recuperare i filtri da una campagna esistente dell'account
                 existing_campaign = db.query(MetaCampaign).filter(
                     MetaCampaign.account_id == account.id
                 ).first()
-                
+
                 if existing_campaign and existing_campaign.sync_filters:
                     filters = existing_campaign.sync_filters.copy()
                     # Se c'è solo un tag filter, non è sufficiente - serve name_pattern
                     if not filters.get('name_pattern'):
                         filters = None
-                
-                # Se non ci sono filtri disponibili, salta l'account con un warning
-                if not filters or not filters.get('name_pattern'):
-                    logger.warning(
-                        f"Meta Marketing Sync: Skipping account {account.account_id} ({account.name}) - "
-                        f"no sync filters configured (name_pattern required). "
-                        f"Please configure filters via UI before enabling automatic sync."
-                    )
-                    continue
-                
+
                 # Decripta il token prima di usarlo
                 from services.utils.crypto import decrypt_token
                 decrypted_token = decrypt_token(account.access_token)
                 service = MetaMarketingService(access_token=decrypted_token)
                 
-                # Sync campaigns structure con filtri
-                service.sync_account_campaigns(account.account_id, db, filters=filters)
+                # Sync campaigns structure:
+                # - se ci sono filtri con name_pattern → usali
+                # - altrimenti, per coerenza con la sync manuale, sincronizza tutte le campagne
+                if filters and filters.get('name_pattern'):
+                    service.sync_account_campaigns(account.account_id, db, filters=filters)
+                else:
+                    logger.info(
+                        "Meta Marketing Sync: No filters found for account %s, syncing all campaigns",
+                        account.account_id,
+                    )
+                    service.sync_account_campaigns(account.account_id, db, filters=None)
                 
                 # Get synced campaigns
                 campaigns = db.query(MetaCampaign).join(MetaAccount).filter(
