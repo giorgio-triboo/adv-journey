@@ -27,7 +27,7 @@ async def settings_platform_users(request: Request, db: Session = Depends(get_db
             emails_with_alerts.add(rec)
     users_alert_enabled = {u.id: (u.email in emails_with_alerts) for u in users}
 
-    return templates.TemplateResponse("settings_platform_users.html", {
+    return templates.TemplateResponse(request, "settings_platform_users.html", {
         "request": request,
         "title": "Gestione Utenti",
         "user": current_user,

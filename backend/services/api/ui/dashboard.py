@@ -166,7 +166,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
     managed_campaigns = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True).all()
 
-    return templates.TemplateResponse("dashboard.html", {
+    return templates.TemplateResponse(request, "dashboard.html", {
         "request": request,
         "title": "Dashboard",
         "user": user,
@@ -259,7 +259,7 @@ async def lavorazioni_ulixe(request: Request, db: Session = Depends(get_db)):
             'campaign_name': agg.campaign_name
         })
 
-    return templates.TemplateResponse("lavorazioni_ulixe.html", {
+    return templates.TemplateResponse(request, "lavorazioni_ulixe.html", {
         "request": request,
         "title": "Lavorazioni - Ulixe",
         "user": user,
@@ -290,7 +290,7 @@ async def lavorazioni_utenti(request: Request, db: Session = Depends(get_db)):
         Lead.created_at.desc()
     ).limit(1000).all()
 
-    return templates.TemplateResponse("lavorazioni_utenti.html", {
+    return templates.TemplateResponse(request, "lavorazioni_utenti.html", {
         "request": request,
         "title": "Lavorazioni - Utenti",
         "user": user,
@@ -416,7 +416,7 @@ async def lavorazioni_canali(request: Request, db: Session = Depends(get_db)):
             'approvate': stats['approvate'],
         })
 
-    return templates.TemplateResponse("lavorazioni_canali.html", {
+    return templates.TemplateResponse(request, "lavorazioni_canali.html", {
         "request": request,
         "title": "Lavorazioni - Canali",
         "user": user,

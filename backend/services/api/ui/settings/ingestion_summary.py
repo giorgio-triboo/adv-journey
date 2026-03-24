@@ -131,6 +131,7 @@ async def ingestion_summary(request: Request, db: Session = Depends(get_db)):
         )
 
     return templates.TemplateResponse(
+        request,
         "settings_ingestion_summary.html",
         {
             "request": request,

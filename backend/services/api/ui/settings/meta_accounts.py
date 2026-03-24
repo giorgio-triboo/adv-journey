@@ -114,7 +114,7 @@ async def settings_meta_accounts(request: Request, db: Session = Depends(get_db)
     if token_expires and datetime.utcnow().timestamp() < token_expires:
         has_valid_oauth_token = bool(request.session.get('meta_oauth_token'))
     
-    return templates.TemplateResponse("settings_meta_accounts.html", {
+    return templates.TemplateResponse(request, "settings_meta_accounts.html", {
         "request": request,
         "title": "Gestione Account Meta",
         "user": current_user,
@@ -460,7 +460,7 @@ async def meta_oauth_select_accounts(request: Request, db: Session = Depends(get
             if not account['already_added']:
                 new_accounts_count += 1
         
-        return templates.TemplateResponse("settings_meta_accounts_select.html", {
+        return templates.TemplateResponse(request, "settings_meta_accounts_select.html", {
             "request": request,
             "title": "Seleziona Account Meta",
             "user": current_user,

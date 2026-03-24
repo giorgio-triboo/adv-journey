@@ -366,7 +366,7 @@ async def root(request: Request):
     user = request.session.get('user')
     if user:
          return RedirectResponse(url='/dashboard')
-    return templates.TemplateResponse("login.html", {"request": request, "title": "Login", "user": None})
+    return templates.TemplateResponse(request, "login.html", {"request": request, "title": "Login", "user": None})
 
 @app.get("/health")
 @limiter.exempt

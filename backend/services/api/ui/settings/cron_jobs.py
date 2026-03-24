@@ -135,7 +135,7 @@ async def settings_cron_jobs(request: Request, db: Session = Depends(get_db)):
         ManagedCampaign.is_active == True
     ).order_by(ManagedCampaign.cliente_name).all()
     
-    return templates.TemplateResponse("settings_cron_jobs.html", {
+    return templates.TemplateResponse(request, "settings_cron_jobs.html", {
         "request": request,
         "title": "Gestione Cron Jobs",
         "user": current_user,

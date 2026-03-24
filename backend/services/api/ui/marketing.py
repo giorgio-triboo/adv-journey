@@ -845,6 +845,7 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             )
 
         return templates.TemplateResponse(
+            request,
             "marketing_analysis.html",
             {
                 "request": request,
@@ -889,6 +890,7 @@ async def marketing_prediction(request: Request, db: Session = Depends(get_db)):
             return RedirectResponse(url='/')
 
         return templates.TemplateResponse(
+            request,
             "marketing_prediction.html",
             {
                 "request": request,
@@ -934,7 +936,7 @@ async def marketing(request: Request, db: Session = Depends(get_db)):
         logger.debug(f"Trovate {len(campaigns)} campaigns")
         
         logger.debug(f"Rendering template marketing.html")
-        return templates.TemplateResponse("marketing.html", {
+        return templates.TemplateResponse(request, "marketing.html", {
             "request": request,
             "title": "Marketing ADV",
             "user": user,

@@ -415,7 +415,7 @@ async def magellano_sync_page(request: Request, db: Session = Depends(get_db)):
     from models import ManagedCampaign
     campaigns = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True).all()
     
-    return templates.TemplateResponse("settings_magellano_upload.html", {
+    return templates.TemplateResponse(request, "settings_magellano_upload.html", {
         "request": request,
         "title": "Sync Magellano",
         "user": user,
@@ -692,7 +692,7 @@ async def settings_meta_sync(request: Request, db: Session = Depends(get_db)):
     default_end_date = (today - timedelta(days=1)).strftime('%Y-%m-%d')
     default_start_date = date(today.year, 1, 1).strftime('%Y-%m-%d')
     
-    return templates.TemplateResponse("settings_meta_sync.html", {
+    return templates.TemplateResponse(request, "settings_meta_sync.html", {
         "request": request,
         "title": "Sync Manuale Meta",
         "user": current_user,
@@ -853,7 +853,7 @@ async def settings_ulixe_sync(request: Request, db: Session = Depends(get_db)):
         Lead.external_user_id != ""
     ).order_by(Lead.created_at.desc()).limit(50).all()
     
-    return templates.TemplateResponse("settings_ulixe_sync.html", {
+    return templates.TemplateResponse(request, "settings_ulixe_sync.html", {
         "request": request,
         "title": "Sync Manuale Ulixe",
         "user": user,

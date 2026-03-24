@@ -37,6 +37,7 @@ async def settings_traffic_platforms(request: Request, db: Session = Depends(get
     ).all()
 
     return templates.TemplateResponse(
+        request,
         "settings_traffic_platforms.html",
         {
             "request": request,

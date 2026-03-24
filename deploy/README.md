@@ -80,6 +80,8 @@ BLUE_GREEN=true ./afterinstall.sh
 ./deploy/scripts/switch-upstream.sh blue   # oppure green
 ```
 
+Il **primo** `server` in `upstream.conf` riceve il traffico; la riga `backup` viene usata solo se il primario non è raggiungibile. Se il green è primario e va in errore mentre il blue è sano, metti il traffico sul blue con `./deploy/scripts/switch-upstream.sh blue` (dalla directory del progetto sul server).
+
 Oppure modifica `deploy/nginx/upstream.conf` e `docker exec <nginx-container> nginx -s reload`.
 
 ## Risorse (t4g.small)

@@ -25,7 +25,7 @@ async def settings_campaigns(request: Request, db: Session = Depends(get_db)):
 
     campaigns = db.query(ManagedCampaign).all()
     
-    return templates.TemplateResponse("settings_campaigns.html", {
+    return templates.TemplateResponse(request, "settings_campaigns.html", {
         "request": request,
         "title": "Gestione Campagne",
         "user": current_user,
@@ -61,7 +61,7 @@ async def settings_meta_datasets(request: Request, db: Session = Depends(get_db)
             MetaDataset.account_id.in_(account_ids)
         ).all()
     
-    return templates.TemplateResponse("settings_meta_datasets.html", {
+    return templates.TemplateResponse(request, "settings_meta_datasets.html", {
         "request": request,
         "title": "Mapping Dataset Meta",
         "user": current_user,
@@ -97,7 +97,7 @@ async def settings_meta_datasets_select_accounts(request: Request, db: Session =
     for account in accounts:
         account.has_datasets = account.id in accounts_with_datasets
     
-    return templates.TemplateResponse("settings_meta_datasets_select.html", {
+    return templates.TemplateResponse(request, "settings_meta_datasets_select.html", {
         "request": request,
         "title": "Seleziona Account per Dataset",
         "user": current_user,
@@ -297,7 +297,7 @@ async def settings_meta_datasets_select_datasets(request: Request, db: Session =
     
     # Se il job è ancora in processing, mostra pagina di attesa
     if job.status == "pending" or job.status == "processing":
-        return templates.TemplateResponse("settings_meta_datasets_select_datasets.html", {
+        return templates.TemplateResponse(request, "settings_meta_datasets_select_datasets.html", {
             "request": request,
             "title": "Recupero Dataset",
             "user": current_user,
@@ -321,7 +321,7 @@ async def settings_meta_datasets_select_datasets(request: Request, db: Session =
     # Conta nuovi dataset
     new_datasets_count = sum(1 for d in datasets if not d.get('already_saved', False))
     
-    return templates.TemplateResponse("settings_meta_datasets_select_datasets.html", {
+    return templates.TemplateResponse(request, "settings_meta_datasets_select_datasets.html", {
         "request": request,
         "title": "Seleziona Dataset",
         "user": current_user,
@@ -513,7 +513,7 @@ async def create_campaign(request: Request, db: Session = Depends(get_db)):
         TrafficPlatform.name.asc()
     ).all()
     
-    return templates.TemplateResponse("settings_campaigns_create.html", {
+    return templates.TemplateResponse(request, "settings_campaigns_create.html", {
         "request": request,
         "title": "Nuova Campagna",
         "user": current_user,
@@ -544,7 +544,7 @@ async def edit_campaign(request: Request, campaign_id: int, db: Session = Depend
     mappings_q = db.query(MsgTrafficMapping).all()
     msg_to_platform = {m.msg_id: m.traffic_platform_id for m in mappings_q}
 
-    return templates.TemplateResponse("settings_campaigns_edit.html", {
+    return templates.TemplateResponse(request, "settings_campaigns_edit.html", {
         "request": request,
         "title": f"Modifica Campagna {campaign.cliente_name}",
         "user": current_user,

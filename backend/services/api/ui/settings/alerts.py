@@ -95,7 +95,7 @@ async def settings_alerts(request: Request, db: Session = Depends(get_db)):
     from services.utils.email import EmailService
     smtp_configured = EmailService().is_configured()
     
-    return templates.TemplateResponse("settings_alerts.html", {
+    return templates.TemplateResponse(request, "settings_alerts.html", {
         "request": request,
         "title": "Alert Email",
         "user": user,

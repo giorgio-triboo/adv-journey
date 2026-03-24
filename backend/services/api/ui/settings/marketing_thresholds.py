@@ -45,6 +45,7 @@ async def settings_marketing_thresholds(request: Request, db: Session = Depends(
 
     config = _get_or_create_config(db)
     return templates.TemplateResponse(
+        request,
         "settings_marketing_thresholds.html",
         {
             "request": request,

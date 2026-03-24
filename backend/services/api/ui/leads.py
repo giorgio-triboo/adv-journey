@@ -67,7 +67,7 @@ async def lead_detail(request: Request, lead_id: int, db: Session = Depends(get_
             'leads': msg_id_leads
         }
     
-    return templates.TemplateResponse("lead_detail.html", {
+    return templates.TemplateResponse(request, "lead_detail.html", {
         "request": request,
         "title": f"Lead #{lead.id}",
         "user": user,

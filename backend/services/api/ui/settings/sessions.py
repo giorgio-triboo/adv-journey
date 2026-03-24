@@ -37,7 +37,7 @@ async def settings_platform_sessions(request: Request, db: Session = Depends(get
             'is_expired': session.expires_at < datetime.utcnow()
         })
     
-    return templates.TemplateResponse("settings_platform_sessions.html", {
+    return templates.TemplateResponse(request, "settings_platform_sessions.html", {
         "request": request,
         "title": "Gestione Sessioni",
         "user": current_user,

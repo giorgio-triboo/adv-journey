@@ -70,7 +70,7 @@ async def settings_meta_campaigns(request: Request, db: Session = Depends(get_db
     else:
         logger.info("No accounts found for user")
     
-    return templates.TemplateResponse("settings_meta_campaigns.html", {
+    return templates.TemplateResponse(request, "settings_meta_campaigns.html", {
         "request": request,
         "title": "Gestione Campagne Meta",
         "user": current_user,
@@ -347,7 +347,7 @@ async def sync_logs_viewer(request: Request, db: Session = Depends(get_db)):
     else:
         logs = ["File di log non trovato. Assicurati che il logging sia configurato correttamente."]
     
-    return templates.TemplateResponse("settings_meta_campaigns_logs.html", {
+    return templates.TemplateResponse(request, "settings_meta_campaigns_logs.html", {
         "request": request,
         "title": "Log Sincronizzazione",
         "user": current_user,
