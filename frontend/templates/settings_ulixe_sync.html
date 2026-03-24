@@ -4,7 +4,9 @@
 <div class="animate-fadeInUp">
     <div class="mb-8">
         <h1 class="text-3xl font-bold gradient-text">Sync Manuale Ulixe</h1>
-        <p class="text-neutral-500 mt-2">RCRM, upload CSV e sync utenti Ulixe.</p>
+        <p class="text-neutral-500 mt-2 max-w-3xl">
+            Sync RCRM (foglio Google o file sul server, upload CSV oppure aggiornamento stati utente da Ulixe).
+        </p>
     </div>
 
     <!-- Tabs: flex-nowrap + scroll orizzontale così le 3 tab restano sempre accessibili -->
@@ -16,7 +18,7 @@
                 data-tab="scraping"
                 onclick="setUlixeTab('scraping')"
             >
-                RCRM da Google Sheet
+                Sync RCRM
             </button>
             <button
                 type="button"
@@ -40,7 +42,19 @@
     <!-- TAB 1: RCRM da Google Sheet -->
     <div id="ulixe-tab-scraping" class="space-y-4">
         <div class="glass-card p-6 mb-6">
-            <h2 class="text-xl font-semibold mb-6">RCRM da Google Sheet</h2>
+            <h2 class="text-xl font-semibold mb-3">Sync RCRM</h2>
+            <p class="text-sm text-neutral-600 mb-4 max-w-3xl">
+                Per il <span class="font-medium">mese selezionato</span>, aggiorna il database RCRM: con l&apos;integrazione Google attiva i dati arrivano dal foglio; in alternativa vengono usati i file CSV già presenti sul server per quel periodo (se esistono).
+                I dati già salvati per quel mese vengono sostituiti.
+            </p>
+            <p class="text-sm text-neutral-500 mb-4 max-w-3xl">
+                Il <span class="font-medium">1° giorno di ogni mese</span>, se scegli il mese appena iniziato, la sincronizzazione usa automaticamente il <span class="font-medium">mese precedente</span> (il foglio/datario RCRM è ancora quello del mese chiuso).
+            </p>
+            {% if not google_rcrm_configured %}
+            <div class="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+                Lettura diretta dal foglio Google non configurata su questo ambiente: il pulsante userà i <span class="font-medium">file CSV sul server</span> per il mese scelto, se presenti. Per caricare un file a mano usa la tab <span class="font-medium">Upload manuale RCRM</span>.
+            </div>
+            {% endif %}
             <form id="ulixeRcrmAutoSyncForm" class="space-y-4">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                     <div>
@@ -59,10 +73,9 @@
                     <div class="flex flex-wrap items-center gap-4 md:col-span-2">
                         <button
                             type="submit"
-                            class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                            {% if not google_rcrm_configured %}disabled title="Sincronizzazione non configurata"{% endif %}
+                            class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all"
                         >
-                            Aggiorna da Google Sheet
+                            Aggiorna RCRM
                         </button>
                         <span id="ulixeRcrmAutoSyncStatus" class="text-xs text-neutral-500"></span>
                     </div>
@@ -75,7 +88,11 @@
     <!-- TAB 2: Upload manuale -->
     <div id="ulixe-tab-upload" class="hidden space-y-4">
         <div class="glass-card p-6 mb-6">
-            <h2 class="text-xl font-semibold mb-6">Upload RCRM mensile</h2>
+            <h2 class="text-xl font-semibold mb-3">Upload RCRM mensile</h2>
+            <p class="text-sm text-neutral-600 mb-4 max-w-3xl">
+                Carica un CSV con colonne <span class="font-medium">IDMessaggio</span> e <span class="font-medium">RCRM</span>.
+                Per il mese scelto, i dati esistenti vengono <span class="font-medium">sostituiti</span> interamente da questo file.
+            </p>
 
             <form id="ulixeRcrmUploadForm" class="space-y-4" enctype="multipart/form-data">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -129,18 +146,27 @@
 
     <!-- TAB 3: Sync utenti puntuale -->
     <div id="ulixe-tab-sync" class="hidden space-y-4">
+        {% if not ulixe_configured %}
+        <div class="glass-card p-4 mb-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+            Connessione Ulixe non attiva. Contatta l&apos;amministratore per abilitare questa funzione.
+        </div>
+        {% endif %}
         <div class="glass-card p-6 mb-6">
-            <h2 class="text-xl font-semibold mb-6">Sync utenti</h2>
+            <h2 class="text-xl font-semibold mb-3">Sync utenti</h2>
+            <p class="text-sm text-neutral-600 mb-4 max-w-3xl">
+                Inserisci gli <span class="font-medium">user ID Ulixe</span> (come sulle lead), uno per riga, fino a 10 per volta.
+                Vengono aggiornati stato e categoria da Ulixe.
+            </p>
 
             <form id="ulixeSyncForm" class="space-y-4">
                 <div>
                     <label class="block text-sm font-medium text-neutral-700 mb-2">
-                        User ID <span class="text-red-500">*</span>
+                        User ID Ulixe <span class="text-red-500">*</span>
                     </label>
                     <textarea 
                         id="userIdsInput"
                         rows="5"
-                        placeholder="Uno per riga, max 10"
+                        placeholder="Esempio:&#10;12345&#10;67890"
                         class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none"
                         required></textarea>
                     <p class="text-xs text-neutral-500 mt-1" id="userIdsCount">
@@ -167,8 +193,8 @@
 
         {% if leads_examples %}
         <div class="glass-card p-6">
-            <h2 class="text-lg font-semibold mb-4">Esempi</h2>
-            
+            <h2 class="text-lg font-semibold mb-1">Esempi da lead recenti</h2>
+            <p class="text-sm text-neutral-500 mb-4">Clicca per aggiungere al campo sopra.</p>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {% for lead in leads_examples %}
                 <div class="p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
@@ -362,6 +388,12 @@ if (autoSyncForm) {
                     const mode = stats.mode || '';
                     let html = '<div class="p-3 rounded-lg bg-green-50 border border-green-200 text-green-800">';
                     html += `<div class="font-semibold mb-1">Riepilogo:</div>`;
+                    if (stats.first_of_month_adjusted && stats.period_requested && stats.period_effective) {
+                        html += `<div class="mb-2 text-xs text-green-900 bg-green-100/80 rounded px-2 py-1.5 border border-green-200">`
+                            + `1° del mese: richiesto <span class="font-mono font-semibold">${stats.period_requested}</span> → `
+                            + `usato <span class="font-mono font-semibold">${stats.period_effective}</span>`
+                            + `</div>`;
+                    }
 
                     if (mode === 'google_sheet') {
                         html += `<div class="mb-1">Sorgente: <span class="font-semibold">Google Sheet (API)</span></div>`;

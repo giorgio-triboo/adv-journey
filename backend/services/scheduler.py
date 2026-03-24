@@ -2,6 +2,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from services.sync_orchestrator import SyncOrchestrator
 from services.sync.ulixe_sync import run as ulixe_sync_job
+from services.sync.ulixe_rcrm_period import resolve_ulixe_rcrm_sync_period
 from services.sync.ulixe_rcrm_google_sync import run_ulixe_rcrm_sync
 from services.integrations.google_sheets_rcrm import is_rcrm_google_sheet_configured
 from services.sync.meta_marketing_sync import run as meta_marketing_sync_job
@@ -121,28 +122,45 @@ def ulixe_sync_scheduled():
 
 
 def ulixe_rcrm_google_scheduled():
-    """Import RCRM Ulixe da Google Sheet (mese corrente, fuso Europe/Rome)."""
+    """Import RCRM Ulixe da Google Sheet (mese operativo, fuso Europe/Rome).
+
+    Il 1° del mese il periodo effettivo è il mese precedente (foglio ancora quello del mese chiuso).
+    """
     if not is_rcrm_google_sheet_configured():
         logger.info("ulixe_rcrm_google_scheduled: Google Sheet RCRM non configurato, skip.")
         return
 
     now = datetime.now(ZoneInfo("Europe/Rome"))
-    period = f"{now.year}-{now.month:02d}"
+    candidate = f"{now.year}-{now.month:02d}"
+    period, adjusted = resolve_ulixe_rcrm_sync_period(candidate, now=now)
 
-    logger.info("Esecuzione ulixe_rcrm_google_scheduled (period=%s)...", period)
+    logger.info(
+        "Esecuzione ulixe_rcrm_google_scheduled (requested=%s, effective=%s, first_of_month_adjusted=%s)...",
+        candidate,
+        period,
+        adjusted,
+    )
     db = SessionLocal()
     job = None
     try:
         job = IngestionJob(
             job_type="ulixe_rcrm_google",
             status="RUNNING",
-            params={"source": "scheduler", "period": period},
+            params={
+                "source": "scheduler",
+                "period_requested": candidate,
+                "period_effective": period,
+                "first_of_month_adjusted": adjusted,
+            },
             started_at=now_rome(),
         )
         db.add(job)
         db.commit()
 
         sync_stats = run_ulixe_rcrm_sync(db, period, source="google_sheet")
+        sync_stats["period_requested"] = candidate
+        sync_stats["period_effective"] = period
+        sync_stats["first_of_month_adjusted"] = adjusted
         db.commit()
 
         job.status = "SUCCESS"
@@ -176,7 +194,12 @@ def ulixe_rcrm_google_scheduled():
                 db,
                 "ulixe_rcrm_google_sync",
                 False,
-                {"period": period, "trigger": "cron"},
+                {
+                    "period_effective": period,
+                    "period_requested": candidate,
+                    "first_of_month_adjusted": adjusted,
+                    "trigger": "cron",
+                },
                 str(e),
             )
         except Exception as alert_exc:

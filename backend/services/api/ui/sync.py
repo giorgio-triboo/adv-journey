@@ -872,6 +872,9 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
     - Con Google Sheet configurato (service account + foglio condiviso): legge via Sheets API.
     - In alternativa (source=auto senza Google): file rcrm-*.csv in exports/ulixe_temp.
 
+    Il 1° giorno del mese (Europe/Rome), se period coincide con il mese corrente,
+    viene usato il mese precedente (tab foglio e righe DB).
+
     Body JSON: period (YYYY-MM, obbligatorio), source opzionale: auto | google_sheet | local_files
     """
     user = request.session.get("user")
@@ -907,10 +910,16 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
     if not source:
         source = "auto"
 
-    try:
-        from services.sync.ulixe_rcrm_google_sync import run_ulixe_rcrm_sync
+    from services.sync.ulixe_rcrm_period import resolve_ulixe_rcrm_sync_period
+    from services.sync.ulixe_rcrm_google_sync import run_ulixe_rcrm_sync
 
-        stats = run_ulixe_rcrm_sync(db, requested_period, source=source)
+    effective_period, period_adjusted = resolve_ulixe_rcrm_sync_period(requested_period)
+
+    try:
+        stats = run_ulixe_rcrm_sync(db, effective_period, source=source)
+        stats["period_requested"] = requested_period
+        stats["period_effective"] = effective_period
+        stats["first_of_month_adjusted"] = period_adjusted
         db.commit()
 
         log_type = (
@@ -924,6 +933,8 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
                     "type": log_type,
                     "stats": stats,
                     "requested_period": requested_period,
+                    "effective_period": effective_period,
+                    "first_of_month_adjusted": period_adjusted,
                     "source_requested": source,
                 }
             }
@@ -942,7 +953,7 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
             notify_ulixe_rcrm_google_after_api(
                 db,
                 source=source,
-                period=requested_period,
+                period=effective_period,
                 success=True,
                 stats=stats,
             )
@@ -959,7 +970,7 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
             notify_ulixe_rcrm_google_after_api(
                 db,
                 source=source,
-                period=requested_period,
+                period=effective_period,
                 success=False,
                 error_message=str(e),
             )
@@ -974,7 +985,7 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
             notify_ulixe_rcrm_google_after_api(
                 db,
                 source=source,
-                period=requested_period,
+                period=effective_period,
                 success=False,
                 error_message=str(e),
             )
@@ -989,7 +1000,7 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
             notify_ulixe_rcrm_google_after_api(
                 db,
                 source=source,
-                period=requested_period,
+                period=effective_period,
                 success=False,
                 error_message=str(e),
             )
@@ -1008,6 +1019,7 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
                         "type": "auto_sync_error",
                         "errors": 1,
                         "requested_period": requested_period,
+                        "effective_period": effective_period,
                         "source_requested": source,
                     }
                 },
@@ -1039,7 +1051,7 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
             notify_ulixe_rcrm_google_after_api(
                 db,
                 source=source,
-                period=requested_period,
+                period=effective_period,
                 success=False,
                 error_message=err_msg,
             )
