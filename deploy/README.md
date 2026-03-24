@@ -89,3 +89,7 @@ Oppure modifica `deploy/nginx/upstream.conf` e `docker exec <nginx-container> ng
 - Celery worker con `--concurrency=1` (Playwright in sequenza)
 - Solo Adminer
 - Consigliata **t4g.medium** per carichi più alti
+
+## Sviluppo locale (venv / Docker)
+
+Stesso `backend/requirements.txt` usato dal build Docker: vedi **`../DEVELOPMENT.md`** nella root del repo (script `scripts/setup-local-venv.sh` e `docker compose`).

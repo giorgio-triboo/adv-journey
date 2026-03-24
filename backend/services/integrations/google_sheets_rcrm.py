@@ -62,11 +62,50 @@ def build_service_account_info() -> dict[str, str] | None:
     }
 
 
-def is_rcrm_google_sheet_configured() -> bool:
-    return bool(
-        build_service_account_info()
-        and (settings.ULIXE_RCRM_GOOGLE_SPREADSHEET_ID or "").strip()
+def missing_ulixe_rcrm_google_config_env_names() -> list[str]:
+    """
+    Nomi delle variabili d'ambiente mancanti o vuote (nessun segreto in log).
+    Il codice non legge credentials.json: servono tutte le ULIXE_RCRM_GOOGLE_SA_* nel .env / container.
+    """
+    missing: list[str] = []
+    pk = _normalize_private_key(settings.ULIXE_RCRM_GOOGLE_SA_PRIVATE_KEY or "")
+    if not pk:
+        missing.append("ULIXE_RCRM_GOOGLE_SA_PRIVATE_KEY")
+    if not (settings.ULIXE_RCRM_GOOGLE_SA_PROJECT_ID or "").strip():
+        missing.append("ULIXE_RCRM_GOOGLE_SA_PROJECT_ID")
+    if not (settings.ULIXE_RCRM_GOOGLE_SA_PRIVATE_KEY_ID or "").strip():
+        missing.append("ULIXE_RCRM_GOOGLE_SA_PRIVATE_KEY_ID")
+    if not (settings.ULIXE_RCRM_GOOGLE_SA_CLIENT_EMAIL or "").strip():
+        missing.append("ULIXE_RCRM_GOOGLE_SA_CLIENT_EMAIL")
+    if not (settings.ULIXE_RCRM_GOOGLE_SA_CLIENT_ID or "").strip():
+        missing.append("ULIXE_RCRM_GOOGLE_SA_CLIENT_ID")
+    if not (settings.ULIXE_RCRM_GOOGLE_SA_CLIENT_X509_CERT_URL or "").strip():
+        missing.append("ULIXE_RCRM_GOOGLE_SA_CLIENT_X509_CERT_URL")
+    if not (settings.ULIXE_RCRM_GOOGLE_SPREADSHEET_ID or "").strip():
+        missing.append("ULIXE_RCRM_GOOGLE_SPREADSHEET_ID")
+    return missing
+
+
+_logged_missing_ulixe_rcrm_google_env = False
+
+
+def log_once_if_ulixe_rcrm_google_incomplete() -> None:
+    """Un solo warning in log con l'elenco delle env mancanti (diagnostica deploy)."""
+    global _logged_missing_ulixe_rcrm_google_env
+    if _logged_missing_ulixe_rcrm_google_env:
+        return
+    if not missing_ulixe_rcrm_google_config_env_names():
+        return
+    logger.warning(
+        "RCRM Google Sheet non utilizzabile: variabili mancanti o vuote: %s. "
+        "Copia i campi dal JSON del service account in ULIXE_RCRM_GOOGLE_SA_* e condividi il foglio con client_email.",
+        ", ".join(missing_ulixe_rcrm_google_config_env_names()),
     )
+    _logged_missing_ulixe_rcrm_google_env = True
+
+
+def is_rcrm_google_sheet_configured() -> bool:
+    return len(missing_ulixe_rcrm_google_config_env_names()) == 0
 
 
 def _escape_sheet_title(title: str) -> str:

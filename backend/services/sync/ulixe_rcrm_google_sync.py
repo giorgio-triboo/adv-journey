@@ -58,8 +58,10 @@ def _sync_from_google(db: Session, period: str) -> dict[str, Any]:
 
 
 def _sync_from_local_files(db: Session, period: str | None) -> dict[str, Any]:
-    if not os.path.isdir(EXPORTS_DIR):
-        raise FileNotFoundError(f"Directory export non trovata: {EXPORTS_DIR}")
+    try:
+        os.makedirs(EXPORTS_DIR, exist_ok=True)
+    except OSError as e:
+        raise FileNotFoundError(f"Impossibile creare la directory export: {EXPORTS_DIR} ({e})") from e
 
     files = [
         f

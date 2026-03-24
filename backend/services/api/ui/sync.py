@@ -1,5 +1,6 @@
 """Sync endpoints per Magellano, Ulixe e Meta"""
 from fastapi import APIRouter, Request, Depends, UploadFile, File, Form
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from database import get_db
@@ -836,9 +837,14 @@ async def settings_ulixe_sync(request: Request, db: Session = Depends(get_db)):
     # Verifica che le credenziali Ulixe siano configurate
     ulixe_configured = bool(settings.ULIXE_USER and settings.ULIXE_PASSWORD and settings.ULIXE_WSDL)
     try:
-        from services.integrations.google_sheets_rcrm import is_rcrm_google_sheet_configured
+        from services.integrations.google_sheets_rcrm import (
+            is_rcrm_google_sheet_configured,
+            log_once_if_ulixe_rcrm_google_incomplete,
+        )
 
         google_rcrm_configured = is_rcrm_google_sheet_configured()
+        if not google_rcrm_configured:
+            log_once_if_ulixe_rcrm_google_incomplete()
     except Exception as e:
         logger.warning(
             "Impossibile valutare configurazione Google Sheet RCRM: %s",
@@ -910,12 +916,15 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
     if not source:
         source = "auto"
 
-    from services.sync.ulixe_rcrm_period import resolve_ulixe_rcrm_sync_period
-    from services.sync.ulixe_rcrm_google_sync import run_ulixe_rcrm_sync
-
-    effective_period, period_adjusted = resolve_ulixe_rcrm_sync_period(requested_period)
+    # Default se import/resolve falliscono prima dell'assegnazione (handler except usa effective_period)
+    effective_period = requested_period
+    period_adjusted = False
 
     try:
+        from services.sync.ulixe_rcrm_period import resolve_ulixe_rcrm_sync_period
+        from services.sync.ulixe_rcrm_google_sync import run_ulixe_rcrm_sync
+
+        effective_period, period_adjusted = resolve_ulixe_rcrm_sync_period(requested_period)
         stats = run_ulixe_rcrm_sync(db, effective_period, source=source)
         stats["period_requested"] = requested_period
         stats["period_effective"] = effective_period
@@ -938,7 +947,7 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
                     "source_requested": source,
                 }
             }
-            sync_log = SyncLog(status="SUCCESS", details=details)
+            sync_log = SyncLog(status="SUCCESS", details=jsonable_encoder(details))
             db.add(sync_log)
             db.commit()
         except Exception as log_exc:
@@ -960,7 +969,9 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
         except Exception:
             pass
 
-        return JSONResponse({"success": True, "stats": stats})
+        return JSONResponse(
+            {"success": True, "stats": jsonable_encoder(stats)},
+        )
 
     except ValueError as e:
         db.rollback()
@@ -1007,6 +1018,19 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
         except Exception:
             pass
         return JSONResponse({"success": False, "error": str(e)}, status_code=400)
+    except ImportError as e:
+        db.rollback()
+        logger.error("Import modulo sync RCRM Ulixe: %s", e, exc_info=True)
+        return JSONResponse(
+            {
+                "success": False,
+                "error": (
+                    f"Dipendenze backend mancanti (es. google-api-python-client): {e}. "
+                    "Installa le dipendenze da backend/requirements.txt nell'ambiente che esegue l'API."
+                ),
+            },
+            status_code=503,
+        )
     except Exception as e:
         logger.error(f"Errore sync RCRM Ulixe: {e}", exc_info=True)
         db.rollback()
@@ -1024,7 +1048,7 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
                     }
                 },
             }
-            sync_log = SyncLog(status="ERROR", details=error_details)
+            sync_log = SyncLog(status="ERROR", details=jsonable_encoder(error_details))
             db.add(sync_log)
             db.commit()
         except Exception as log_exc:
