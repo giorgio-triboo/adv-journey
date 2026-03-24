@@ -184,7 +184,7 @@ def seed_campaigns():
                     needs_update = True
                 
                 # Aggiorna msg_ids se diversi o se sono ancora nella vecchia struttura (stringhe)
-                # Estrai solo gli ID dagli oggetti esistenti per confronto
+                # Estrai solo gli ID dagli oggetti esistenti per confronto (mantieni anche eventuali ID aggiunti da UI)
                 existing_msg_ids = set()
                 is_old_format = False
                 if existing.msg_ids:
@@ -197,11 +197,15 @@ def seed_campaigns():
                             is_old_format = True
                 
                 new_msg_ids_set = set(msg_ids_raw)
-                # Forza aggiornamento se formato vecchio o se gli ID sono diversi
-                if is_old_format or new_msg_ids_set != existing_msg_ids:
-                    existing.msg_ids = msg_ids_objects
-                    # Sincronizza anche ulixe_ids con gli ID (non gli oggetti)
-                    existing.ulixe_ids = msg_ids_raw
+                # Unisci gli ID di configurazione con quelli eventualmente aggiunti da UI,
+                # così il seeder non "pulisce" gli ID Messaggio manualmente inseriti.
+                merged_msg_ids = sorted(existing_msg_ids.union(new_msg_ids_set))
+
+                # Forza aggiornamento se formato vecchio o se l'insieme degli ID è diverso
+                if is_old_format or set(merged_msg_ids) != existing_msg_ids:
+                    existing.msg_ids = convert_msg_ids_to_objects(merged_msg_ids)
+                    # Sincronizza anche ulixe_ids con tutti gli ID (non gli oggetti)
+                    existing.ulixe_ids = merged_msg_ids
                     needs_update = True
                 
                 # Assicura che sia attivo

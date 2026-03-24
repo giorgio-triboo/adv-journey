@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from database import get_db
-from models import User
+from models import User, AlertConfig
 from ..common import templates, require_super_admin
 
 router = APIRouter(include_in_schema=False)
@@ -18,12 +18,21 @@ async def settings_platform_users(request: Request, db: Session = Depends(get_db
         return redirect
         
     users = db.query(User).all()
-    
+
+    # Calcola rapidamente se un utente è presente in almeno una configurazione alert
+    alert_configs = db.query(AlertConfig).all()
+    emails_with_alerts: set[str] = set()
+    for cfg in alert_configs:
+        for rec in cfg.recipients or []:
+            emails_with_alerts.add(rec)
+    users_alert_enabled = {u.id: (u.email in emails_with_alerts) for u in users}
+
     return templates.TemplateResponse("settings_platform_users.html", {
         "request": request,
         "title": "Gestione Utenti",
         "user": current_user,
         "users": users,
+        "users_alert_enabled": users_alert_enabled,
         "active_page": "platform_users"
     })
 
@@ -92,6 +101,43 @@ async def delete_platform_user(request: Request, db: Session = Depends(get_db)):
         db.query(User).filter(User.id == user_id).delete()
         db.commit()
     return RedirectResponse(url='/settings/platform/users', status_code=303)
+
+
+@router.post("/settings/platform/users/alerts")
+async def update_platform_user_alerts(request: Request, db: Session = Depends(get_db)):
+    """Abilita/disabilita le notifiche alert per un utente (toggle globale) - Solo super-admin"""
+    current_user, redirect = require_super_admin(request, db)
+    if redirect:
+        return redirect
+
+    form = getattr(request.state, "_parsed_form", None) or await request.form()
+    user_id = form.get("user_id")
+    enabled_flag = form.get("enabled")  # "on" se checkbox spuntata
+
+    if not user_id:
+        return RedirectResponse(url="/settings/platform/users", status_code=303)
+
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        return RedirectResponse(url="/settings/platform/users", status_code=303)
+
+    enabled = bool(enabled_flag)
+
+    # Aggiorna tutte le AlertConfig esistenti aggiungendo/rimuovendo l'email
+    alert_configs = db.query(AlertConfig).all()
+    email = target_user.email
+
+    for cfg in alert_configs:
+        recipients = list(cfg.recipients or [])
+        if enabled:
+            if email not in recipients:
+                recipients.append(email)
+        else:
+            recipients = [r for r in recipients if r != email]
+        cfg.recipients = recipients
+
+    db.commit()
+    return RedirectResponse(url="/settings/platform/users", status_code=303)
 
 # Manteniamo i vecchi endpoint per compatibilità (redirect)
 @router.post("/settings/users")

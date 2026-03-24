@@ -112,11 +112,22 @@ class EmailService:
         Returns:
             True se inviata con successo
         """
+        # Mappatura nomi leggibili per i vari canali di alert.
+        # Qualsiasi chiave non presente qui userà il valore raw di sync_type.
         sync_names = {
-            'magellano': 'Magellano',
-            'ulixe': 'Ulixe',
-            'meta_marketing': 'Meta Marketing',
-            'meta_conversion': 'Meta Conversion API'
+            # Magellano
+            'magellano_sync': 'Magellano – Sync notturna',
+            'magellano_export': 'Magellano – Export richiesto (STEP 1)',
+            'magellano_ingest': 'Magellano – Fetch & ingest (STEP 2)',
+            # Ulixe
+            'ulixe_sync': 'Ulixe – Sync stati',
+            # Meta Marketing
+            'meta_marketing_sync': 'Meta Marketing',
+            # Meta Conversion API
+            'meta_conversion_sync': 'Meta Conversion API',
+            # Meta Campaigns
+            'meta_campaigns_bootstrap': 'Meta – Campagne (bootstrap)',
+            'meta_campaigns_incremental': 'Meta – Campagne (incrementale)',
         }
         
         sync_name = sync_names.get(sync_type, sync_type)

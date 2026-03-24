@@ -205,11 +205,11 @@ def magellano_export_request_task(
                 db.add(job)
                 db.commit()
 
-        # Alert su errore per lo step 1 (riusa alert_type 'magellano')
+        # Alert su errore per lo step 1 (canale dedicato magellano_export)
         try:
             send_sync_alert_if_needed(
                 db,
-                "magellano",
+                "magellano_export",
                 success=False,
                 stats=stats,
                 error_message=str(e),
@@ -328,11 +328,11 @@ def magellano_export_fetch_task(
             db.add(sync_log)
             db.commit()
 
-            # Alert su errore per step 2
+            # Alert su errore per step 2 (canale dedicato magellano_ingest)
             try:
                 send_sync_alert_if_needed(
                     db,
-                    "magellano",
+                    "magellano_ingest",
                     success=False,
                     stats=stats,
                     error_message="Export Magellano non pronto o non trovato per tutte le campagne",
@@ -488,11 +488,11 @@ def magellano_export_fetch_task(
         db.add(sync_log)
         db.commit()
 
-        # Alert per step 2 (successo/errore)
+        # Alert per step 2 (successo/errore) - canale magellano_ingest
         try:
             send_sync_alert_if_needed(
                 db,
-                "magellano",
+                "magellano_ingest",
                 success=not has_errors,
                 stats=stats,
                 error_message=None if not has_errors else "Magellano export fetch completed with errors",
@@ -510,7 +510,7 @@ def magellano_export_fetch_task(
                 db.add(job)
                 db.commit()
 
-        # Alert su eccezione generica nello step 2
+        # Alert su eccezione generica nello step 2 (canale magellano_ingest)
         try:
             fail_stats = {
                 "stage": "export_fetch",
@@ -520,7 +520,7 @@ def magellano_export_fetch_task(
             }
             send_sync_alert_if_needed(
                 db,
-                "magellano",
+                "magellano_ingest",
                 success=False,
                 stats=fail_stats,
                 error_message=str(e),

@@ -221,9 +221,9 @@ def run(db: Session = None) -> dict:
         
         logger.info(f"Meta Marketing Sync ✅: {stats['accounts_synced']} accounts synced")
         
-        # Invia alert se configurato
+        # Invia alert se configurato (canale cron job meta_marketing_sync)
         from services.utils.alert_sender import send_sync_alert_if_needed
-        send_sync_alert_if_needed(db, 'meta_marketing', True, stats)
+        send_sync_alert_if_needed(db, 'meta_marketing_sync', True, stats)
         
     except Exception as e:
         logger.error(f"Meta Marketing Sync ❌: {e}", exc_info=True)
@@ -231,7 +231,7 @@ def run(db: Session = None) -> dict:
         
         # Invia alert errore se configurato
         from services.utils.alert_sender import send_sync_alert_if_needed
-        send_sync_alert_if_needed(db, 'meta_marketing', False, stats, str(e))
+        send_sync_alert_if_needed(db, 'meta_marketing_sync', False, stats, str(e))
     finally:
         if close_db:
             db.close()

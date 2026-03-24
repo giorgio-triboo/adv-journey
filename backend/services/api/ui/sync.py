@@ -11,6 +11,7 @@ from models import (
     User,
     SyncLog,
     IngestionJob,
+    UlixeRcrmTemp,
 )
 from services.utils.crypto import hash_email_for_meta, hash_phone_for_meta
 from datetime import datetime, timedelta, date
@@ -228,7 +229,8 @@ async def trigger_sync(request: Request, db: Session = Depends(get_db)):
     if end_date_str:
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
     else:
-        end_date = today
+        # Default allineato al job giornaliero: solo ieri
+        end_date = start_date
 
     from tasks.magellano import magellano_export_request_task
 
@@ -265,7 +267,7 @@ async def api_magellano_sync(request: Request, db: Session = Depends(get_db)):
     """
     API endpoint per sincronizzazione Magellano con date variabili.
     Accetta JSON con campaigns (lista ID), start_date, end_date (opzionali).
-    Se le date non sono specificate, usa oggi-1 come default.
+    Se le date non sono specificate, usa solo ieri (start=end=oggi-1).
     """
     user = request.session.get('user')
     if not user:
@@ -326,7 +328,7 @@ async def api_magellano_sync(request: Request, db: Session = Depends(get_db)):
         except ValueError:
             return JSONResponse({"error": "Formato end_date non valido. Usa YYYY-MM-DD"}, status_code=400)
     else:
-        end_date = today  # Default: oggi
+        end_date = start_date  # Default: solo ieri
     
     if start_date > end_date:
         return JSONResponse({"error": "start_date deve essere <= end_date"}, status_code=400)
@@ -848,6 +850,294 @@ async def settings_ulixe_sync(request: Request, db: Session = Depends(get_db)):
         "leads_examples": leads_with_user_id[:10],  # Solo 10 esempi
         "active_page": "ulixe_sync"
     })
+
+
+@router.post("/api/ulixe/rcrm/sync")
+async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
+    """
+    API endpoint per sincronizzazione RCRM Ulixe dai file locali.
+    Opzionalmente accetta un parametro "period" (YYYY-MM) per limitare la sync
+    ad un singolo mese; se non specificato, elabora tutti i file disponibili.
+    """
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"success": False, "error": "Non autorizzato"}, status_code=401)
+
+    from scripts.load_ulixe_rcrm_temp import EXPORTS_DIR, parse_period_from_filename, load_csv
+
+    if not os.path.isdir(EXPORTS_DIR):
+        return JSONResponse(
+            {"success": False, "error": f"Directory export non trovata: {EXPORTS_DIR}"},
+            status_code=400,
+        )
+
+    # Leggi eventuale periodo richiesto (YYYY-MM)
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    requested_period = (data.get("period") or "").strip()
+    if requested_period:
+        try:
+            datetime.strptime(f"{requested_period}-01", "%Y-%m-%d")
+        except ValueError:
+            return JSONResponse(
+                {"success": False, "error": "Periodo non valido. Usa formato YYYY-MM"},
+                status_code=400,
+            )
+
+    try:
+        files = [
+            f
+            for f in os.listdir(EXPORTS_DIR)
+            if f.lower().startswith("rcrm-") and f.lower().endswith(".csv")
+        ]
+        files.sort()
+
+        if not files:
+            return JSONResponse(
+                {"success": False, "error": "Nessun file rcrm-*.csv trovato per la sync"},
+                status_code=400,
+            )
+
+        stats = {
+            "total_files": len(files),
+            "per_period": {},
+            "total_deleted": 0,
+            "total_loaded": 0,
+            "skipped_files": [],
+        }
+
+        for filename in files:
+            period = parse_period_from_filename(filename)
+            if not period:
+                stats["skipped_files"].append({"file": filename, "reason": "Periodo non riconosciuto"})
+                continue
+
+            # Se è stato richiesto un mese specifico, salta gli altri
+            if requested_period and period != requested_period:
+                continue
+
+            path = os.path.join(EXPORTS_DIR, filename)
+
+            # Cancella tutte le righe esistenti per il periodo prima di ricaricare
+            deleted_rows = (
+                db.query(UlixeRcrmTemp)
+                .filter(UlixeRcrmTemp.period == period)
+                .delete(synchronize_session=False)
+            )
+
+            loaded_rows = load_csv(path, period, db)
+
+            stats["per_period"].setdefault(period, {"deleted_before": 0, "rows_loaded": 0, "files": []})
+            stats["per_period"][period]["deleted_before"] += int(deleted_rows)
+            stats["per_period"][period]["rows_loaded"] += int(loaded_rows)
+            stats["per_period"][period]["files"].append(filename)
+
+            stats["total_deleted"] += int(deleted_rows)
+            stats["total_loaded"] += int(loaded_rows)
+
+        if requested_period and requested_period not in stats["per_period"]:
+            return JSONResponse(
+                {
+                    "success": False,
+                    "error": f"Nessun file rcrm-*.csv trovato per il periodo {requested_period}",
+                },
+                status_code=400,
+            )
+
+        db.commit()
+
+        # Registra nel riepilogo ingestion come sync automatica RCRM Ulixe (da file locali)
+        try:
+            details = {
+                "ulixe_rcrm": {
+                    "type": "auto_sync_from_files",
+                    "total_files": stats["total_files"],
+                    "total_deleted": stats["total_deleted"],
+                    "total_loaded": stats["total_loaded"],
+                    "per_period": stats["per_period"],
+                    "skipped_files": stats["skipped_files"],
+                    "requested_period": requested_period or None,
+                }
+            }
+            sync_log = SyncLog(status="SUCCESS", details=details)
+            db.add(sync_log)
+            db.commit()
+        except Exception as log_exc:
+            logger.error(
+                f"Errore salvataggio SyncLog per sync RCRM Ulixe: {log_exc}",
+                exc_info=True,
+            )
+
+        return JSONResponse({"success": True, "stats": stats})
+
+    except Exception as e:
+        logger.error(f"Errore sync RCRM Ulixe: {e}", exc_info=True)
+        db.rollback()
+
+        try:
+            error_details = {
+                "error": str(e),
+                "stats": {
+                    "ulixe_rcrm": {
+                        "type": "auto_sync_from_files",
+                        "errors": 1,
+                        "requested_period": requested_period or None,
+                    }
+                },
+            }
+            sync_log = SyncLog(status="ERROR", details=error_details)
+            db.add(sync_log)
+            db.commit()
+        except Exception as log_exc:
+            logger.error(
+                f"Errore salvataggio SyncLog per sync RCRM Ulixe fallita: {log_exc}",
+                exc_info=True,
+            )
+
+        return JSONResponse(
+            {"success": False, "error": f"Errore durante la sync RCRM Ulixe: {str(e)}"},
+            status_code=500,
+        )
+
+
+@router.post("/api/ulixe/rcrm/upload")
+async def ulixe_rcrm_upload(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Endpoint per upload file RCRM Ulixe (mensile).
+
+    - Richiede: file CSV con colonne almeno IDMessaggio e RCRM
+    - Richiede: periodo nel formato YYYY-MM (es. 2026-03)
+    - Comportamento: prima cancella tutte le righe esistenti per quel periodo,
+      poi ricarica dal file (sovrascrive intero mese).
+    """
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Non autorizzato"}, status_code=401)
+
+    # Recupera form già parsato dal middleware CSRF (se presente) oppure parsalo qui
+    form = getattr(request.state, "_parsed_form", None)
+    if form is None:
+        form = await request.form()
+
+    file = form.get("file")
+    period = form.get("period")  # atteso formato YYYY-MM
+
+    if file is None or not getattr(file, "filename", None):
+        return JSONResponse({"error": "Nessun file selezionato"}, status_code=400)
+
+    if not period:
+        return JSONResponse({"error": "Periodo mancante"}, status_code=400)
+
+    # Validazione periodo di riferimento
+    try:
+        # Aggiunge "-01" solo per validare come data
+        datetime.strptime(f"{period}-01", "%Y-%m-%d")
+    except ValueError:
+        return JSONResponse({"error": "Periodo non valido. Usa formato YYYY-MM"}, status_code=400)
+
+    allowed_extensions = [".csv"]
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in allowed_extensions:
+        return JSONResponse(
+            {"error": f"Formato file non supportato. Usa: {', '.join(allowed_extensions)}"},
+            status_code=400,
+        )
+
+    from scripts.load_ulixe_rcrm_temp import load_csv
+
+    temp_file_path = None
+    deleted_rows = 0
+    inserted_or_updated = 0
+
+    try:
+        # Salva file temporaneo
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+
+        # Rimuovi tutte le righe esistenti per il periodo selezionato
+        deleted_rows = (
+            db.query(UlixeRcrmTemp)
+            .filter(UlixeRcrmTemp.period == period)
+            .delete(synchronize_session=False)
+        )
+
+        # Carica nuovo file per il periodo
+        inserted_or_updated = load_csv(temp_file_path, period, db)
+        db.commit()
+
+        # Registra nel riepilogo ingestion come upload manuale RCRM Ulixe
+        try:
+            details = {
+                "ulixe_rcrm": {
+                    "type": "manual_upload",
+                    "period": period,
+                    "file_name": file.filename,
+                    "deleted_before": int(deleted_rows),
+                    "rows_loaded": int(inserted_or_updated),
+                }
+            }
+            sync_log = SyncLog(status="SUCCESS", details=details)
+            db.add(sync_log)
+            db.commit()
+        except Exception as log_exc:
+            logger.error(
+                f"Errore salvataggio SyncLog per upload RCRM Ulixe: {log_exc}",
+                exc_info=True,
+            )
+
+        return JSONResponse(
+            {
+                "success": True,
+                "message": "File RCRM Ulixe processato con successo",
+                "period": period,
+                "deleted_before": deleted_rows,
+                "rows_loaded": inserted_or_updated,
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Errore upload RCRM Ulixe: {e}", exc_info=True)
+        db.rollback()
+
+        # Prova a registrare comunque il fallimento nel riepilogo ingestion
+        try:
+            error_details = {
+                "error": str(e),
+                "stats": {
+                    "ulixe_rcrm": {
+                        "type": "manual_upload",
+                        "period": period,
+                        "file_name": getattr(file, "filename", None),
+                        "errors": 1,
+                    }
+                },
+            }
+            sync_log = SyncLog(status="ERROR", details=error_details)
+            db.add(sync_log)
+            db.commit()
+        except Exception as log_exc:
+            logger.error(
+                f"Errore salvataggio SyncLog per upload RCRM Ulixe fallito: {log_exc}",
+                exc_info=True,
+            )
+
+        return JSONResponse(
+            {"error": f"Errore durante il processamento: {str(e)}"}, status_code=500
+        )
+
+    finally:
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+            except Exception:
+                pass
 
 @router.post("/api/ulixe/sync")
 async def api_ulixe_sync(request: Request, db: Session = Depends(get_db)):

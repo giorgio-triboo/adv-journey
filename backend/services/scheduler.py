@@ -281,10 +281,10 @@ def _run_magellano_sync():
             logger.warning("Nessuna campagna Magellano configurata per magellano_sync. Skip.")
             return
 
-        # Intervallo date come job legacy: ieri → oggi
+        # Intervallo date giornaliero: solo ieri (start=end=ieri)
         today = datetime.now().date()
-        end_date = today
-        start_date = end_date - timedelta(days=1)
+        end_date = today - timedelta(days=1)
+        start_date = end_date
         start_date_str = start_date.strftime("%Y-%m-%d")
         end_date_str = end_date.strftime("%Y-%m-%d")
 

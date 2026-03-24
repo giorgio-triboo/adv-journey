@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from database import get_db
-from models import AlertConfig, User
+from models import AlertConfig, User, CronJob
 from datetime import datetime
 import logging
 from ..common import templates
@@ -19,6 +19,14 @@ async def settings_alerts(request: Request, db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse(url='/')
     
+    # Utenti configurabili per gli alert (solo admin/super-admin)
+    users = (
+        db.query(User)
+        .filter(User.role.in_(["admin", "super-admin"]))
+        .order_by(User.email)
+        .all()
+    )
+
     alert_configs = db.query(AlertConfig).all()
     
     # Crea dict per tipo
@@ -26,13 +34,61 @@ async def settings_alerts(request: Request, db: Session = Depends(get_db)):
     for config in alert_configs:
         configs_by_type[config.alert_type] = config
     
-    # Tipi di alert disponibili
-    alert_types = [
-        {'value': 'magellano', 'label': 'Magellano'},
-        {'value': 'ulixe', 'label': 'Ulixe'},
-        {'value': 'meta_marketing', 'label': 'Meta Marketing'},
-        {'value': 'meta_conversion', 'label': 'Meta Conversion API'}
+    # Costruisci dinamicamente i "canali di alert" a partire dai cron jobs
+    cron_jobs = db.query(CronJob).order_by(CronJob.job_name).all()
+    alert_types: list[dict] = []
+
+    # Mappa tra job_name dei cron e label più leggibili
+    job_label_overrides = {
+        "magellano_sync": "Magellano – Sync notturna",
+        "ulixe_sync": "Ulixe – Sync stati",
+        "meta_marketing_sync": "Meta – Marketing",
+        "meta_conversion_sync": "Meta – Conversion API",
+        "meta_campaigns_incremental": "Meta – Campagne (incrementale)",
+    }
+
+    # Usiamo il job_name come chiave alert_type per tutti i job "moderni" (no orchestrator/marker)
+    for cron in cron_jobs:
+        if cron.job_type in ("orchestrator", "meta_conversion_marker"):
+            continue
+        value = cron.job_name
+        label = job_label_overrides.get(value, cron.job_name.replace("_", " ").title())
+        alert_types.append(
+            {
+                "value": value,
+                "label": label,
+                "source": "cron",
+                "job_type": cron.job_type,
+            }
+        )
+
+    # Aggiungi canali extra non legati a cron ma a fasi distinte (es. Magellano export/ingest, bootstrap campagne Meta)
+    extra_channels = [
+        {
+            "value": "magellano_export",
+            "label": "Magellano – Export richiesto (STEP 1)",
+            "source": "manual",
+            "job_type": "magellano",
+        },
+        {
+            "value": "magellano_ingest",
+            "label": "Magellano – Fetch & ingest (STEP 2)",
+            "source": "manual",
+            "job_type": "magellano",
+        },
+        {
+            "value": "meta_campaigns_bootstrap",
+            "label": "Meta – Campagne (bootstrap)",
+            "source": "manual",
+            "job_type": "meta_campaigns",
+        },
     ]
+
+    # Evita duplicati se in futuro i nomi coincidono
+    existing_values = {a["value"] for a in alert_types}
+    for ch in extra_channels:
+        if ch["value"] not in existing_values:
+            alert_types.append(ch)
 
     from services.utils.email import EmailService
     smtp_configured = EmailService().is_configured()
@@ -41,6 +97,7 @@ async def settings_alerts(request: Request, db: Session = Depends(get_db)):
         "request": request,
         "title": "Alert Email",
         "user": user,
+        "users": users,
         "alert_types": alert_types,
         "configs_by_type": configs_by_type,
         "active_page": "alerts",

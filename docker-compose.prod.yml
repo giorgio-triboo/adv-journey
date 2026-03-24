@@ -52,7 +52,8 @@ services:
       - redis
     volumes:
       # Esporta i log dal container alla cartella backend/logs sull'host
-      - ./backend/logs:/app/logs
+      # I logger Python scrivono in /app/backend/logs, quindi montiamo lì.
+      - ./backend/logs:/app/backend/logs
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -82,7 +83,8 @@ services:
       - redis
     volumes:
       # Esporta i log dal container alla cartella backend/logs sull'host
-      - ./backend/logs:/app/logs
+      # I logger Python scrivono in /app/backend/logs, quindi montiamo lì.
+      - ./backend/logs:/app/backend/logs
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -107,7 +109,8 @@ services:
       - TZ=Europe/Rome
     volumes:
       # Condivide la stessa directory di log dell'app principale
-      - ./backend/logs:/app/logs
+      # I logger Python scrivono in /app/backend/logs, quindi montiamo lì.
+      - ./backend/logs:/app/backend/logs
     # --concurrency=1: Playwright in sequenza (minor uso RAM su t4g.small)
     command: celery -A celery_app.celery_app worker --loglevel=INFO --concurrency=1
 

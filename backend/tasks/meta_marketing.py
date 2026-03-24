@@ -200,6 +200,20 @@ def meta_campaigns_bootstrap_task(
             )
             db.commit()
 
+        # Alert per bootstrap campagne Meta (canale meta_campaigns_bootstrap)
+        try:
+            from services.utils.alert_sender import send_sync_alert_if_needed
+
+            send_sync_alert_if_needed(
+                db,
+                "meta_campaigns_bootstrap",
+                success=True,
+                stats=stats,
+                error_message=None,
+            )
+        except Exception:
+            pass
+
         return stats
     except Exception as e:
         logger.error("meta_campaigns_bootstrap failed: %s", e, exc_info=True)
@@ -209,6 +223,21 @@ def meta_campaigns_bootstrap_task(
             job.completed_at = now_rome()
             job.message = str(e)
             db.commit()
+
+        # Alert su errore bootstrap campagne Meta
+        try:
+            from services.utils.alert_sender import send_sync_alert_if_needed
+
+            error_stats = {"stage": "meta_campaigns_bootstrap", "error": str(e)}
+            send_sync_alert_if_needed(
+                db,
+                "meta_campaigns_bootstrap",
+                success=False,
+                stats=error_stats,
+                error_message=str(e),
+            )
+        except Exception:
+            pass
 
         raise
 
@@ -262,6 +291,20 @@ def meta_campaigns_incremental_task(target_date_str: str | None = None, job_id: 
             job.message = "Sync incrementale campagne Meta completata"
             db.commit()
 
+        # Alert per sync incrementale campagne Meta (canale meta_campaigns_incremental)
+        try:
+            from services.utils.alert_sender import send_sync_alert_if_needed
+
+            send_sync_alert_if_needed(
+                db,
+                "meta_campaigns_incremental",
+                success=True,
+                stats=stats,
+                error_message=None,
+            )
+        except Exception:
+            pass
+
         return stats
     except Exception as e:
         logger.error("meta_campaigns_incremental failed: %s", e, exc_info=True)
@@ -271,5 +314,20 @@ def meta_campaigns_incremental_task(target_date_str: str | None = None, job_id: 
             job.completed_at = now_rome()
             job.message = str(e)
             db.commit()
+
+        # Alert su errore sync incrementale campagne Meta
+        try:
+            from services.utils.alert_sender import send_sync_alert_if_needed
+
+            error_stats = {"stage": "meta_campaigns_incremental", "error": str(e)}
+            send_sync_alert_if_needed(
+                db,
+                "meta_campaigns_incremental",
+                success=False,
+                stats=error_stats,
+                error_message=str(e),
+            )
+        except Exception:
+            pass
 
         raise

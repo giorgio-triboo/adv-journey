@@ -4,88 +4,251 @@
 <div class="animate-fadeInUp">
     <div class="mb-8">
         <h1 class="text-3xl font-bold gradient-text">Sync Manuale Ulixe</h1>
-        <p class="text-neutral-500 mt-2">Esegui sincronizzazione manuale con Ulixe per user_id specifici. Massimo 10 chiamate per volta per non sovraccaricare il sistema.</p>
+        <p class="text-neutral-500 mt-2">Gestisci integrazione Ulixe: scraping automatico RCRM, upload manuale e sync utenti puntuale.</p>
     </div>
 
-    {% if not ulixe_configured %}
-    <div class="glass-card mb-6 p-4 bg-red-50 border-l-4 border-red-400">
-        <h3 class="font-semibold text-red-900 mb-2">⚠️ Credenziali Ulixe non configurate</h3>
-        <p class="text-sm text-red-700">
-            Le credenziali Ulixe non sono configurate nel file <code class="bg-red-100 px-2 py-1 rounded">.env</code>.
-            Configura <code>ULIXE_USER</code>, <code>ULIXE_PASSWORD</code> e <code>ULIXE_WSDL</code> per abilitare il sync.
-        </p>
-    </div>
-    {% endif %}
-
-    <div class="glass-card p-6 mb-6">
-        <h2 class="text-xl font-semibold mb-4">Sincronizzazione User ID</h2>
-        
-        <form id="ulixeSyncForm" class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-neutral-700 mb-2">
-                    User ID Ulixe <span class="text-red-500">*</span>
-                </label>
-                <textarea 
-                    id="userIdsInput"
-                    rows="5"
-                    placeholder="Inserisci gli user_id, uno per riga (max 10)&#10;Esempio:&#10;12345&#10;67890"
-                    class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none"
-                    required></textarea>
-                <p class="text-xs text-neutral-500 mt-1">
-                    Inserisci gli user_id (external_user_id) delle lead da sincronizzare, uno per riga. Massimo 10 user_id per volta.
-                </p>
-                <p class="text-xs text-neutral-500 mt-1" id="userIdsCount">
-                    <span id="currentCount">0</span> / 10 user_id inseriti
-                </p>
-            </div>
-
-            <div class="flex gap-4">
-                <button 
-                    type="submit" 
-                    class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    {% if not ulixe_configured %}disabled{% endif %}>
-                    Avvia Sync
-                </button>
-                <button 
-                    type="button" 
-                    onclick="clearForm()"
-                    class="px-6 py-2 bg-neutral-100 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-200 transition-all">
-                    Pulisci
-                </button>
-            </div>
-        </form>
+    <!-- Tabs -->
+    <div class="mb-6 border-b border-neutral-200">
+        <nav class="-mb-px flex flex-wrap gap-2" aria-label="Tabs">
+            <button
+                type="button"
+                class="ulixe-tab-btn border-b-2 border-indigo-500 text-indigo-600 px-4 py-2 text-sm font-medium"
+                data-tab="scraping"
+                onclick="setUlixeTab('scraping')"
+            >
+                Scraping automatico RCRM
+            </button>
+            <button
+                type="button"
+                class="ulixe-tab-btn border-b-2 border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 px-4 py-2 text-sm font-medium"
+                data-tab="upload"
+                onclick="setUlixeTab('upload')"
+            >
+                Upload manuale RCRM
+            </button>
+            <button
+                type="button"
+                class="ulixe-tab-btn border-b-2 border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 px-4 py-2 text-sm font-medium"
+                data-tab="sync"
+                onclick="setUlixeTab('sync')"
+            >
+                Sync utenti (puntuale)
+            </button>
+        </nav>
     </div>
 
-    {% if leads_examples %}
-    <div class="glass-card p-6">
-        <h2 class="text-xl font-semibold mb-4">Esempi di User ID disponibili</h2>
-        <p class="text-sm text-neutral-600 mb-4">Clicca su un user_id per copiarlo nel form sopra.</p>
-        
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {% for lead in leads_examples %}
-            <div class="p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
-                 onclick="addUserId('{{ lead.external_user_id }}')"
-                 title="Clicca per aggiungere al form">
-                <div class="flex items-center justify-between">
-                    <code class="text-sm font-mono text-indigo-600">{{ lead.external_user_id }}</code>
-                    <svg class="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                    </svg>
+    <!-- TAB 1: Scraping automatico -->
+    <div id="ulixe-tab-scraping" class="space-y-4">
+        <div class="glass-card p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Scraping automatico RCRM da Google Sheet</h2>
+            <p class="text-sm text-neutral-600 mb-4">
+                Questa sezione gestirà lo scraping automatico del file RCRM Ulixe direttamente da Google Sheet,
+                con job schedulabile via cron e avviabile manualmente da qui.
+            </p>
+            <div class="space-y-3 text-sm text-neutral-700">
+                <div>
+                    <span class="font-semibold">Sorgente dati:</span>
+                    <a href="https://docs.google.com/spreadsheets/d/19pQMgXp9IqzDxFsE7lBIiLZig5bMYCIOvbRJcZGfGtc/edit?gid=1885924564#gid=1885924564"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="text-indigo-600 hover:underline break-all">
+                        Google Sheet RCRM Ulixe
+                    </a>
                 </div>
-                <p class="text-xs text-neutral-500 mt-1">
-                    Lead #{{ lead.id }} - Magellano ID: {{ lead.magellano_id or 'N/A' }}
-                </p>
+                <div>
+                    <span class="font-semibold">Nome file generato:</span>
+                    <code class="bg-neutral-100 px-1 rounded">{mese}-ulixe-rcrm</code>
+                </div>
+                <div>
+                    <span class="font-semibold">Range colonne usato:</span>
+                    <span>A1:G24</span>
+                    <span class="text-neutral-500">(uguale al template <code class="bg-neutral-100 px-1 rounded">rcrm-0326.csv</code>)</span>
+                </div>
+                <form id="ulixeRcrmAutoSyncForm" class="mt-4 space-y-3">
+                    <p class="text-xs text-neutral-600">
+                        Il job legge tutti i file <code class="bg-neutral-100 px-1 rounded">rcrm-*.csv</code> presenti in
+                        <code class="bg-neutral-100 px-1 rounded">backend/exports/ulixe_temp</code>, deduce il mese dal nome
+                        e per il mese selezionato <span class="font-semibold">sovrascrive completamente</span> i dati in
+                        <code class="bg-neutral-100 px-1 rounded">ulixe_rcrm_temp</code>.
+                    </p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                        <div>
+                            <label class="block text-sm font-medium text-neutral-700 mb-2">
+                                Mese di riferimento <span class="text-red-500">*</span>
+                            </label>
+                            <select
+                                id="autoRcrmPeriodInput"
+                                name="period"
+                                class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-sm"
+                                required
+                            >
+                                <!-- Opzioni valorizzate via JS -->
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-4 md:col-span-2">
+                            <button
+                                type="submit"
+                                class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all"
+                            >
+                                Avvia sync RCRM da file
+                            </button>
+                            <span id="ulixeRcrmAutoSyncStatus" class="text-xs text-neutral-500"></span>
+                        </div>
+                    </div>
+                    <div id="ulixeRcrmAutoSyncResult" class="hidden mt-3 text-xs"></div>
+                </form>
             </div>
-            {% endfor %}
         </div>
     </div>
-    {% endif %}
 
-    <!-- Results Area -->
-    <div id="resultsArea" class="hidden mt-6">
+    <!-- TAB 2: Upload manuale -->
+    <div id="ulixe-tab-upload" class="hidden space-y-4">
+        <div class="glass-card p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Upload RCRM mensile (Ulixe)</h2>
+            <p class="text-sm text-neutral-600 mb-4">
+                Carica il file RCRM Ulixe per un mese specifico. Il caricamento <span class="font-semibold">sovrascrive completamente</span>
+                i dati esistenti per il mese selezionato per evitare duplicazioni.
+            </p>
+
+            <form id="ulixeRcrmUploadForm" class="space-y-4" enctype="multipart/form-data">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-neutral-700 mb-2">
+                            Mese di riferimento <span class="text-red-500">*</span>
+                        </label>
+                        <input
+                            type="month"
+                            id="rcrmPeriodInput"
+                            name="period"
+                            class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                            required
+                        />
+                        <p class="text-xs text-neutral-500 mt-1">
+                            Esempio: 2026-03 per il file <code class="bg-neutral-100 px-1 rounded">rcrm-0326.csv</code>.
+                        </p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-neutral-700 mb-2">
+                            File RCRM Ulixe (CSV) <span class="text-red-500">*</span>
+                        </label>
+                        <input
+                            type="file"
+                            id="rcrmFileInput"
+                            name="file"
+                            accept=".csv"
+                            class="w-full text-sm text-neutral-700"
+                            required
+                        />
+                        <p class="text-xs text-neutral-500 mt-1">
+                            Usa il template come <code class="bg-neutral-100 px-1 rounded">rcrm-0326.csv</code> con colonne
+                            <code>IDMessaggio</code> e <code>RCRM</code>.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex gap-4 mt-2">
+                    <button
+                        type="submit"
+                        class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all"
+                    >
+                        Carica RCRM mese
+                    </button>
+                    <button
+                        type="button"
+                        onclick="resetRcrmUploadForm()"
+                        class="px-6 py-2 bg-neutral-100 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-200 transition-all"
+                    >
+                        Pulisci
+                    </button>
+                </div>
+
+                <div id="rcrmUploadResult" class="hidden mt-4 text-sm"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TAB 3: Sync utenti puntuale -->
+    <div id="ulixe-tab-sync" class="hidden space-y-4">
+        {% if not ulixe_configured %}
+        <div class="glass-card mb-6 p-4 bg-red-50 border-l-4 border-red-400">
+            <h3 class="font-semibold text-red-900 mb-2">⚠️ Credenziali Ulixe non configurate</h3>
+            <p class="text-sm text-red-700">
+                Le credenziali Ulixe non sono configurate nel file <code class="bg-red-100 px-2 py-1 rounded">.env</code>.
+                Configura <code>ULIXE_USER</code>, <code>ULIXE_PASSWORD</code> e <code>ULIXE_WSDL</code> per abilitare il sync.
+            </p>
+        </div>
+        {% endif %}
+
+        <div class="glass-card p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Sincronizzazione User ID</h2>
+            
+            <form id="ulixeSyncForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-neutral-700 mb-2">
+                        User ID Ulixe <span class="text-red-500">*</span>
+                    </label>
+                    <textarea 
+                        id="userIdsInput"
+                        rows="5"
+                        placeholder="Inserisci gli user_id, uno per riga (max 10)&#10;Esempio:&#10;12345&#10;67890"
+                        class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        required></textarea>
+                    <p class="text-xs text-neutral-500 mt-1">
+                        Inserisci gli user_id (external_user_id) delle lead da sincronizzare, uno per riga. Massimo 10 user_id per volta.
+                    </p>
+                    <p class="text-xs text-neutral-500 mt-1" id="userIdsCount">
+                        <span id="currentCount">0</span> / 10 user_id inseriti
+                    </p>
+                </div>
+
+                <div class="flex gap-4">
+                    <button 
+                        type="submit" 
+                        class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        {% if not ulixe_configured %}disabled{% endif %}>
+                        Avvia Sync
+                    </button>
+                    <button 
+                        type="button" 
+                        onclick="clearForm()"
+                        class="px-6 py-2 bg-neutral-100 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-200 transition-all">
+                        Pulisci
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        {% if leads_examples %}
         <div class="glass-card p-6">
-            <h2 class="text-xl font-semibold mb-4">Risultati Sync</h2>
-            <div id="resultsContent"></div>
+            <h2 class="text-xl font-semibold mb-4">Esempi di User ID disponibili</h2>
+            <p class="text-sm text-neutral-600 mb-4">Clicca su un user_id per copiarlo nel form sopra.</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {% for lead in leads_examples %}
+                <div class="p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
+                     onclick="addUserId('{{ lead.external_user_id }}')"
+                     title="Clicca per aggiungere al form">
+                    <div class="flex items-center justify-between">
+                        <code class="text-sm font-mono text-indigo-600">{{ lead.external_user_id }}</code>
+                        <svg class="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                    </div>
+                    <p class="text-xs text-neutral-500 mt-1">
+                        Lead #{{ lead.id }} - Magellano ID: {{ lead.magellano_id or 'N/A' }}
+                    </p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Results Area -->
+        <div id="resultsArea" class="hidden mt-6">
+            <div class="glass-card p-6">
+                <h2 class="text-xl font-semibold mb-4">Risultati Sync</h2>
+                <div id="resultsContent"></div>
+            </div>
         </div>
     </div>
 </div>
@@ -148,6 +311,257 @@ function clearForm() {
 
 document.getElementById('userIdsInput').addEventListener('input', updateCount);
 updateCount();
+
+// Tabs handling
+function setUlixeTab(tab) {
+    const tabs = ['scraping', 'upload', 'sync'];
+    tabs.forEach(t => {
+        const panel = document.getElementById(`ulixe-tab-${t}`);
+        const btn = document.querySelector(`.ulixe-tab-btn[data-tab="${t}"]`);
+        if (!panel || !btn) return;
+        if (t === tab) {
+            panel.classList.remove('hidden');
+            btn.classList.remove('border-transparent', 'text-neutral-500');
+            btn.classList.add('border-indigo-500', 'text-indigo-600');
+        } else {
+            panel.classList.add('hidden');
+            btn.classList.remove('border-indigo-500', 'text-indigo-600');
+            btn.classList.add('border-transparent', 'text-neutral-500');
+        }
+    });
+}
+
+// Default tab: scraping automatico
+setUlixeTab('scraping');
+
+// Scraping automatico RCRM - avvio job da frontend
+const autoSyncForm = document.getElementById('ulixeRcrmAutoSyncForm');
+if (autoSyncForm) {
+    // Popola dropdown mesi (ultimi 12 mesi, incluso mese corrente)
+    (function initAutoRcrmPeriodSelect() {
+        const select = document.getElementById('autoRcrmPeriodInput');
+        if (!select) return;
+
+        const now = new Date();
+        const options = [];
+        const formatter = new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' });
+
+        for (let i = 0; i < 12; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const value = `${year}-${month}`;
+            const label = formatter.format(d); // es. "marzo 2026"
+            options.push({ value, label });
+        }
+
+        select.innerHTML = options
+            .map(
+                (opt, idx) =>
+                    `<option value="${opt.value}" ${idx === 0 ? 'selected' : ''}>${opt.label}</option>`,
+            )
+            .join('');
+    })();
+
+    autoSyncForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const periodInput = document.getElementById('autoRcrmPeriodInput');
+        const statusEl = document.getElementById('ulixeRcrmAutoSyncStatus');
+        const resultEl = document.getElementById('ulixeRcrmAutoSyncResult');
+
+        if (!periodInput || !periodInput.value) {
+            alert('Seleziona il mese di riferimento (YYYY-MM).');
+            return;
+        }
+
+        if (statusEl) {
+            statusEl.textContent = 'Sync in corso...';
+        }
+        if (resultEl) {
+            resultEl.classList.add('hidden');
+            resultEl.innerHTML = '';
+        }
+
+        try {
+            const response = await fetch('/api/ulixe/rcrm/sync', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    period: periodInput.value,
+                }),
+            });
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                if (statusEl) {
+                    statusEl.textContent = 'Sync completata con successo.';
+                }
+
+                if (resultEl) {
+                    const stats = data.stats || {};
+                    const perPeriod = stats.per_period || {};
+                    const skipped = stats.skipped_files || [];
+
+                    let html = '<div class="p-3 rounded-lg bg-green-50 border border-green-200 text-green-800">';
+                    html += `<div class="font-semibold mb-1">Riepilogo:</div>`;
+                    html += `<div class="mb-1">File elaborati: <span class="font-semibold">${stats.total_files || 0}</span></div>`;
+                    html += `<div class="mb-1">Righe eliminate prima del caricamento: <span class="font-semibold">${stats.total_deleted || 0}</span></div>`;
+                    html += `<div class="mb-2">Righe caricate dai file: <span class="font-semibold">${stats.total_loaded || 0}</span></div>`;
+
+                    const periods = Object.keys(perPeriod);
+                    if (periods.length > 0) {
+                        html += '<div class="mt-2">';
+                        html += '<div class="font-semibold mb-1">Dettaglio per mese:</div>';
+                        html += '<ul class="list-disc list-inside space-y-0.5">';
+                        periods.forEach(p => {
+                            const info = perPeriod[p];
+                            html += `<li><span class="font-mono">${p}</span>: `
+                                + `cancellate <span class="font-semibold">${info.deleted_before || 0}</span>, `
+                                + `caricate <span class="font-semibold">${info.rows_loaded || 0}</span>`
+                                + ` (file: ${(info.files || []).join(', ')})`
+                                + `</li>`;
+                        });
+                        html += '</ul>';
+                        html += '</div>';
+                    }
+
+                    if (skipped.length > 0) {
+                        html += '<div class="mt-2 pt-2 border-t border-green-100 text-green-900">';
+                        html += '<div class="font-semibold mb-1">File saltati:</div>';
+                        html += '<ul class="list-disc list-inside space-y-0.5">';
+                        skipped.forEach(s => {
+                            html += `<li>${s.file} - ${s.reason}</li>`;
+                        });
+                        html += '</ul>';
+                        html += '</div>';
+                    }
+
+                    html += '</div>';
+
+                    resultEl.innerHTML = html;
+                    resultEl.className = 'mt-3 text-xs';
+                    resultEl.classList.remove('hidden');
+                }
+            } else {
+                const err = data.error || 'Errore durante la sync RCRM Ulixe.';
+                if (statusEl) {
+                    statusEl.textContent = '';
+                }
+                if (resultEl) {
+                    resultEl.className = 'mt-3 text-xs text-red-700';
+                    resultEl.textContent = `❌ ${err}`;
+                    resultEl.classList.remove('hidden');
+                }
+            }
+        } catch (error) {
+            if (statusEl) {
+                statusEl.textContent = '';
+            }
+            if (resultEl) {
+                resultEl.className = 'mt-3 text-xs text-red-700';
+                resultEl.textContent = `❌ Errore di connessione: ${error.message}`;
+                resultEl.classList.remove('hidden');
+            }
+        }
+    });
+}
+
+// --- RCRM Upload (mensile) ---
+
+function resetRcrmUploadForm() {
+    const periodInput = document.getElementById('rcrmPeriodInput');
+    const fileInput = document.getElementById('rcrmFileInput');
+    const resultDiv = document.getElementById('rcrmUploadResult');
+
+    if (periodInput) {
+        const today = new Date();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const year = today.getFullYear();
+        periodInput.value = `${year}-${month}`;
+    }
+
+    if (fileInput) {
+        fileInput.value = '';
+    }
+
+    if (resultDiv) {
+        resultDiv.classList.add('hidden');
+        resultDiv.innerHTML = '';
+    }
+}
+
+const rcrmForm = document.getElementById('ulixeRcrmUploadForm');
+if (rcrmForm) {
+    resetRcrmUploadForm();
+
+    rcrmForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const periodInput = document.getElementById('rcrmPeriodInput');
+        const fileInput = document.getElementById('rcrmFileInput');
+        const resultDiv = document.getElementById('rcrmUploadResult');
+
+        if (!periodInput.value) {
+            alert('Seleziona il mese di riferimento (YYYY-MM).');
+            return;
+        }
+
+        if (!fileInput.files || fileInput.files.length === 0) {
+            alert('Seleziona un file CSV RCRM Ulixe.');
+            return;
+        }
+
+        if (!confirm(`Confermi il caricamento del file per il mese ${periodInput.value}? Verranno sovrascritti i dati esistenti per quel mese.`)) {
+            return;
+        }
+
+        const submitButton = rcrmForm.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        submitButton.textContent = 'Caricamento in corso...';
+
+        const formData = new FormData();
+        formData.append('period', periodInput.value);
+        formData.append('file', fileInput.files[0]);
+
+        try {
+            const response = await fetch('/api/ulixe/rcrm/upload', {
+                method: 'POST',
+                body: formData,
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                resultDiv.className =
+                    'mt-4 p-3 rounded-lg text-sm bg-green-50 border border-green-200 text-green-800';
+                resultDiv.innerHTML = `
+                    <div class="font-semibold mb-1">✅ Upload completato</div>
+                    <div>Mese: <span class="font-mono">${data.period}</span></div>
+                    <div>Righe eliminate prima del caricamento: <span class="font-semibold">${data.deleted_before || 0}</span></div>
+                    <div>Righe caricate dal file: <span class="font-semibold">${data.rows_loaded || 0}</span></div>
+                `;
+                resultDiv.classList.remove('hidden');
+            } else {
+                const errorMsg = data.error || 'Errore durante il caricamento del file.';
+                resultDiv.className =
+                    'mt-4 p-3 rounded-lg text-sm bg-red-50 border border-red-200 text-red-800';
+                resultDiv.textContent = `❌ ${errorMsg}`;
+                resultDiv.classList.remove('hidden');
+            }
+        } catch (error) {
+            resultDiv.className =
+                'mt-4 p-3 rounded-lg text-sm bg-red-50 border border-red-200 text-red-800';
+            resultDiv.textContent = `❌ Errore di connessione: ${error.message}`;
+            resultDiv.classList.remove('hidden');
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Carica RCRM mese';
+        }
+    });
+}
 
 document.getElementById('ulixeSyncForm').addEventListener('submit', async function(e) {
     e.preventDefault();

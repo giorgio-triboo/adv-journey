@@ -74,8 +74,9 @@ def run(
             return stats
         
         service = MagellanoService()
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=1)  # Yesterday
+        # Finestra giornaliera: solo ieri (start=end=ieri)
+        end_date = datetime.now().date() - timedelta(days=1)
+        start_date = end_date
         
         logger.info(f"Magellano Sync: Fetching leads for campaigns {campaign_ids} ({start_date} to {end_date})")
         leads_data = service.fetch_leads(start_date, end_date, campaign_ids)
@@ -205,9 +206,9 @@ def run(
         
         logger.info(f"Magellano Sync ✅: {stats['new']} new, {stats['updated']} updated")
         
-        # Invia alert se configurato
+        # Invia alert se configurato (canale cron job magellano_sync)
         from services.utils.alert_sender import send_sync_alert_if_needed
-        send_sync_alert_if_needed(db, 'magellano', True, stats)
+        send_sync_alert_if_needed(db, 'magellano_sync', True, stats)
         
     except Exception as e:
         logger.error(f"Magellano Sync ❌: {e}", exc_info=True)
@@ -216,7 +217,7 @@ def run(
         
         # Invia alert errore se configurato
         from services.utils.alert_sender import send_sync_alert_if_needed
-        send_sync_alert_if_needed(db, 'magellano', False, stats, str(e))
+        send_sync_alert_if_needed(db, 'magellano_sync', False, stats, str(e))
     finally:
         if close_db:
             db.close()
