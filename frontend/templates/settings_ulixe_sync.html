@@ -7,12 +7,12 @@
         <p class="text-neutral-500 mt-2">Integrazione Ulixe: RCRM da Google Sheet (API), upload manuale CSV e sync utenti puntuale.</p>
     </div>
 
-    <!-- Tabs -->
-    <div class="mb-6 border-b border-neutral-200">
-        <nav class="-mb-px flex flex-wrap gap-2" aria-label="Tabs">
+    <!-- Tabs: flex-nowrap + scroll orizzontale così le 3 tab restano sempre accessibili -->
+    <div class="mb-6 border-b border-neutral-200 overflow-x-auto">
+        <nav class="-mb-px flex flex-nowrap gap-2 min-w-min sm:flex-wrap" aria-label="Tabs">
             <button
                 type="button"
-                class="ulixe-tab-btn border-b-2 border-indigo-500 text-indigo-600 px-4 py-2 text-sm font-medium"
+                class="ulixe-tab-btn shrink-0 border-b-2 border-indigo-500 text-indigo-600 px-4 py-2 text-sm font-medium"
                 data-tab="scraping"
                 onclick="setUlixeTab('scraping')"
             >
@@ -20,7 +20,7 @@
             </button>
             <button
                 type="button"
-                class="ulixe-tab-btn border-b-2 border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 px-4 py-2 text-sm font-medium"
+                class="ulixe-tab-btn shrink-0 border-b-2 border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 px-4 py-2 text-sm font-medium"
                 data-tab="upload"
                 onclick="setUlixeTab('upload')"
             >
@@ -28,7 +28,7 @@
             </button>
             <button
                 type="button"
-                class="ulixe-tab-btn border-b-2 border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 px-4 py-2 text-sm font-medium"
+                class="ulixe-tab-btn shrink-0 border-b-2 border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 px-4 py-2 text-sm font-medium"
                 data-tab="sync"
                 onclick="setUlixeTab('sync')"
             >
@@ -74,8 +74,8 @@
                 </div>
                 <div>
                     <span class="font-semibold">Foglio (tab) per mese:</span>
-                    nome <code class="bg-neutral-100 px-1 rounded">{mm}-ulixe-rcrm</code>
-                    <span class="text-neutral-500">(es. <code class="bg-neutral-100 px-1 rounded">03-ulixe-rcrm</code> per marzo), da <code class="bg-neutral-100 px-1 rounded">ULIXE_RCRM_GOOGLE_SHEET_NAME_TEMPLATE</code></span>
+                    nome <code class="bg-neutral-100 px-1 rounded">MM-ulixe-rcrm</code>
+                    <span class="text-neutral-500">(MM = mese a 2 cifre, es. <code class="bg-neutral-100 px-1 rounded">03-ulixe-rcrm</code>), variabile <code class="bg-neutral-100 px-1 rounded">ULIXE_RCRM_GOOGLE_SHEET_NAME_TEMPLATE</code></span>
                 </div>
                 <div>
                     <span class="font-semibold">Range colonne (configurabile in .env):</span>
@@ -279,28 +279,54 @@
 <script>
 let currentUserIds = [];
 
+/** Tab: definito per primo così i click funzionano anche se il resto dello script fallisce. */
+function setUlixeTab(tab) {
+    const tabs = ['scraping', 'upload', 'sync'];
+    tabs.forEach(t => {
+        const panel = document.getElementById('ulixe-tab-' + t);
+        const btn = document.querySelector('.ulixe-tab-btn[data-tab="' + t + '"]');
+        if (!panel || !btn) return;
+        if (t === tab) {
+            panel.classList.remove('hidden');
+            btn.classList.remove('border-transparent', 'text-neutral-500');
+            btn.classList.add('border-indigo-500', 'text-indigo-600');
+        } else {
+            panel.classList.add('hidden');
+            btn.classList.remove('border-indigo-500', 'text-indigo-600');
+            btn.classList.add('border-transparent', 'text-neutral-500');
+        }
+    });
+}
+
+setUlixeTab('scraping');
+
 function updateCount() {
     const textarea = document.getElementById('userIdsInput');
+    if (!textarea) return;
     const lines = textarea.value.split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0);
-    
+
     const count = lines.length;
-    document.getElementById('currentCount').textContent = count;
-    
-    if (count > 10) {
-        document.getElementById('userIdsCount').classList.add('text-red-500');
-        document.getElementById('userIdsCount').classList.remove('text-neutral-500');
-    } else {
-        document.getElementById('userIdsCount').classList.remove('text-red-500');
-        document.getElementById('userIdsCount').classList.add('text-neutral-500');
+    const cur = document.getElementById('currentCount');
+    const cntWrap = document.getElementById('userIdsCount');
+    if (cur) cur.textContent = count;
+    if (cntWrap) {
+        if (count > 10) {
+            cntWrap.classList.add('text-red-500');
+            cntWrap.classList.remove('text-neutral-500');
+        } else {
+            cntWrap.classList.remove('text-red-500');
+            cntWrap.classList.add('text-neutral-500');
+        }
     }
-    
+
     currentUserIds = lines;
 }
 
 function addUserId(userId) {
     const textarea = document.getElementById('userIdsInput');
+    if (!textarea) return;
     const currentLines = textarea.value.split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0);
@@ -327,35 +353,20 @@ function addUserId(userId) {
 }
 
 function clearForm() {
-    document.getElementById('userIdsInput').value = '';
-    document.getElementById('resultsArea').classList.add('hidden');
+    const ta = document.getElementById('userIdsInput');
+    const ra = document.getElementById('resultsArea');
+    if (ta) ta.value = '';
+    if (ra) ra.classList.add('hidden');
     updateCount();
 }
 
-document.getElementById('userIdsInput').addEventListener('input', updateCount);
-updateCount();
-
-// Tabs handling
-function setUlixeTab(tab) {
-    const tabs = ['scraping', 'upload', 'sync'];
-    tabs.forEach(t => {
-        const panel = document.getElementById(`ulixe-tab-${t}`);
-        const btn = document.querySelector(`.ulixe-tab-btn[data-tab="${t}"]`);
-        if (!panel || !btn) return;
-        if (t === tab) {
-            panel.classList.remove('hidden');
-            btn.classList.remove('border-transparent', 'text-neutral-500');
-            btn.classList.add('border-indigo-500', 'text-indigo-600');
-        } else {
-            panel.classList.add('hidden');
-            btn.classList.remove('border-indigo-500', 'text-indigo-600');
-            btn.classList.add('border-transparent', 'text-neutral-500');
-        }
-    });
-}
-
-// Default tab: scraping automatico
-setUlixeTab('scraping');
+(function initUserIdsListeners() {
+    const userIdsInput = document.getElementById('userIdsInput');
+    if (userIdsInput) {
+        userIdsInput.addEventListener('input', updateCount);
+        updateCount();
+    }
+})();
 
 // Scraping automatico RCRM - avvio job da frontend
 const autoSyncForm = document.getElementById('ulixeRcrmAutoSyncForm');
@@ -596,9 +607,12 @@ if (rcrmForm) {
     });
 }
 
-document.getElementById('ulixeSyncForm').addEventListener('submit', async function(e) {
+(function initUlixeSyncForm() {
+    const ulixeSyncForm = document.getElementById('ulixeSyncForm');
+    if (!ulixeSyncForm) return;
+    ulixeSyncForm.addEventListener('submit', async function(e) {
     e.preventDefault();
-    
+
     const userIds = currentUserIds;
     
     if (userIds.length === 0) {
@@ -616,9 +630,11 @@ document.getElementById('ulixeSyncForm').addEventListener('submit', async functi
     }
     
     const submitButton = e.target.querySelector('button[type="submit"]');
-    submitButton.disabled = true;
-    submitButton.textContent = 'Sincronizzazione in corso...';
-    
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Sincronizzazione in corso...';
+    }
+
     try {
         const response = await fetch('/api/ulixe/sync', {
             method: 'POST',
@@ -640,10 +656,13 @@ document.getElementById('ulixeSyncForm').addEventListener('submit', async functi
     } catch (error) {
         alert('Errore di connessione: ' + error.message);
     } finally {
-        submitButton.disabled = false;
-        submitButton.textContent = 'Avvia Sync';
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Avvia Sync';
+        }
     }
-});
+    });
+})();
 
 function showResults(data) {
     const resultsArea = document.getElementById('resultsArea');
