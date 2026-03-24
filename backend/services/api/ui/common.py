@@ -51,6 +51,8 @@ else:
     FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))), "frontend")
 
 templates = Jinja2Templates(directory=os.path.join(FRONTEND_DIR, "templates"))
+# Vedi main.py: evita TypeError unhashable dict sulla cache template con TemplateResponse.
+templates.env.cache = None
 
 # Aggiungi filtro personalizzato per formattare numeri con separatori di migliaia
 def format_number_with_separator(value):

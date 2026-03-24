@@ -189,6 +189,8 @@ app.mount("/static", StaticFiles(directory=os.path.join(FRONTEND_DIR, "static"))
 
 # Templates Configuration
 templates = Jinja2Templates(directory=os.path.join(FRONTEND_DIR, "templates"))
+# Starlette passa globals dict a get_template; la cache LRU di Jinja2 usa una chiave non hashabile → TypeError in prod (Python 3.13).
+templates.env.cache = None
 
 # Include Routers
 app.include_router(auth_router)
