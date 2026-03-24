@@ -1,5 +1,6 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
+from typing import Any, Optional
 
 class Settings(BaseSettings):
     # App Settings
@@ -67,5 +68,16 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: Optional[str] = "redis://redis:6379/1"
     
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("ULIXE_RCRM_GOOGLE_SHEET_GID", mode="before")
+    @classmethod
+    def _empty_env_to_none_int(cls, v: Any) -> int | None:
+        """Docker/Compose passa spesso '' per interi opzionali: evita ValidationError."""
+        if v is None or v == "":
+            return None
+        if isinstance(v, int):
+            return v
+        return int(v)
+
 
 settings = Settings()

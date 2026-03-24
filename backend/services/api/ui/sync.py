@@ -832,11 +832,20 @@ async def settings_ulixe_sync(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url='/')
     
     from config import settings
-    from services.integrations.google_sheets_rcrm import is_rcrm_google_sheet_configured
 
     # Verifica che le credenziali Ulixe siano configurate
     ulixe_configured = bool(settings.ULIXE_USER and settings.ULIXE_PASSWORD and settings.ULIXE_WSDL)
-    google_rcrm_configured = is_rcrm_google_sheet_configured()
+    try:
+        from services.integrations.google_sheets_rcrm import is_rcrm_google_sheet_configured
+
+        google_rcrm_configured = is_rcrm_google_sheet_configured()
+    except Exception as e:
+        logger.warning(
+            "Impossibile valutare configurazione Google Sheet RCRM: %s",
+            e,
+            exc_info=True,
+        )
+        google_rcrm_configured = False
     
     # Recupera leads con external_user_id per mostrare esempi
     leads_with_user_id = db.query(Lead).filter(
