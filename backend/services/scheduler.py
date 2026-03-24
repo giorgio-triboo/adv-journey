@@ -48,9 +48,9 @@ def nightly_sync_job():
     finally:
         db.close()
 
-def magellano_sync_scheduled():
-    """Job schedulato per sincronizzazione Magellano (usa config da CronJob)."""
-    logger.info("Esecuzione magellano_sync_scheduled...")
+def magellano_pipeline_scheduled():
+    """Job schedulato per pipeline Magellano a due step."""
+    logger.info("Esecuzione magellano_pipeline_scheduled (export/fetch)...")
     db = SessionLocal()
     job = None
     try:
@@ -63,14 +63,14 @@ def magellano_sync_scheduled():
         db.add(job)
         db.commit()
 
-        _run_magellano_sync()
+        _run_magellano_export_pipeline()
 
         job.status = "SUCCESS"
         job.completed_at = now_rome()
         job.message = "Magellano sync completed"
         db.commit()
     except Exception as e:
-        logger.error("Errore in magellano_sync_scheduled: %s", e, exc_info=True)
+        logger.error("Errore in magellano_pipeline_scheduled: %s", e, exc_info=True)
         if job:
             job.status = "ERROR"
             job.completed_at = now_rome()
@@ -239,11 +239,16 @@ def _run_meta_campaigns_incremental():
         db.close()
 
 
-def _run_magellano_sync():
-    """Esegue sync Magellano schedulando la nuova pipeline a due step via Celery."""
+def _run_magellano_export_pipeline():
+    """Esegue il flusso Magellano a due step (export_request -> export_fetch) via Celery."""
     db = SessionLocal()
     try:
-        cron_job = db.query(CronJob).filter(CronJob.job_name == "magellano_sync").first()
+        cron_job = (
+            db.query(CronJob)
+            .filter(CronJob.job_type == "magellano", CronJob.enabled == True)  # type: ignore[comparison-overlap]
+            .order_by(CronJob.id.asc())
+            .first()
+        )
         config = (cron_job.config or {}) if cron_job else {}
 
         # Nuova chiave: lista di ID campagna Magellano (es. [190, 199, 423])
@@ -278,7 +283,7 @@ def _run_magellano_sync():
                     magellano_ids.append(mid)
 
         if not magellano_ids:
-            logger.warning("Nessuna campagna Magellano configurata per magellano_sync. Skip.")
+            logger.warning("Nessuna campagna Magellano configurata per il flusso export/fetch. Skip.")
             return
 
         # Intervallo date giornaliero: solo ieri (start=end=ieri)
@@ -309,7 +314,7 @@ def _run_magellano_sync():
 # Mappa job_type -> callable
 CRON_JOB_HANDLERS = {
     "orchestrator": nightly_sync_job,
-    "magellano": magellano_sync_scheduled,
+    "magellano": magellano_pipeline_scheduled,
     "ulixe": ulixe_sync_scheduled,
     "meta_marketing": meta_marketing_sync_scheduled,
     "meta_conversion_marker": meta_conversion_marker_scheduled,

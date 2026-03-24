@@ -116,7 +116,7 @@ class EmailService:
         # Qualsiasi chiave non presente qui userà il valore raw di sync_type.
         sync_names = {
             # Magellano
-            'magellano_sync': 'Magellano – Sync notturna',
+            'magellano_export_pipeline': 'Magellano – Pipeline automatica',
             'magellano_export': 'Magellano – Export richiesto (STEP 1)',
             'magellano_ingest': 'Magellano – Fetch & ingest (STEP 2)',
             # Ulixe

@@ -164,7 +164,7 @@ class CronJob(Base):
     __tablename__ = "cron_jobs"
     
     id = Column(Integer, primary_key=True, index=True)
-    job_name = Column(String, unique=True, index=True)  # 'nightly_sync', 'magellano_sync', 'ulixe_sync', etc.
+    job_name = Column(String, unique=True, index=True)  # 'nightly_sync', 'magellano_export_pipeline', 'ulixe_sync', etc.
     job_type = Column(String)  # 'orchestrator', 'magellano', 'ulixe', 'meta_marketing', 'meta_conversion'
     enabled = Column(Boolean, default=True)
     hour = Column(Integer, default=0)  # 0-23

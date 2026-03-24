@@ -34,7 +34,7 @@ from services.integrations.lead_correlation import LeadCorrelationService
 
 
 def run_sync(db, campaigns: list, start_date: date, end_date: date, headless: bool = False) -> None:
-    """Logica sync Magellano (identica a run_magellano_sync, senza dipendenze UI)."""
+    """Logica di ingest Magellano usata per test locale, senza dipendenze UI."""
     service = MagellanoService(headless=headless)
     correlation_service = LeadCorrelationService()
 

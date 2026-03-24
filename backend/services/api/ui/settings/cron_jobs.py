@@ -36,7 +36,7 @@ async def settings_cron_jobs(request: Request, db: Session = Depends(get_db)):
             "description": "Sync completo notturno - esegue tutti i job di sincronizzazione"
         },
         {
-            "job_name": "magellano_sync",
+            "job_name": "magellano_export_pipeline",
             "job_type": "magellano",
             "enabled": False,
             "hour": 1,
@@ -44,7 +44,7 @@ async def settings_cron_jobs(request: Request, db: Session = Depends(get_db)):
             "day_of_week": "*",
             "day_of_month": "*",
             "month": "*",
-            "description": "Sincronizzazione Magellano - Recupera e salva dati lead"
+            "description": "Magellano - Pipeline automatica Export richiesto + Fetch & ingest"
         },
         {
             "job_name": "ulixe_sync",
@@ -118,7 +118,7 @@ async def settings_cron_jobs(request: Request, db: Session = Depends(get_db)):
         # Ricarica tutti i cron jobs dopo il commit
         cron_jobs = db.query(CronJob).order_by(CronJob.job_name).all()
     
-    # Campagne attive per selector magellano_sync
+    # Campagne attive per selector job Magellano
     managed_campaigns = db.query(ManagedCampaign).filter(
         ManagedCampaign.is_active == True
     ).order_by(ManagedCampaign.cliente_name).all()
@@ -159,7 +159,7 @@ async def save_cron_job(request: Request, db: Session = Depends(get_db)):
         cron_job.month = data.get("month", cron_job.month) or "*"
         cron_job.updated_at = datetime.utcnow()
         
-        # Config job-specifica (es. magellano: managed_campaign_ids)
+        # Config job-specifica (es. magellano: magellano_campaign_ids)
         if "config" in data:
             cron_job.config = data["config"]
         

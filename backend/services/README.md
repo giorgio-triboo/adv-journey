@@ -17,7 +17,6 @@ services/
 │   └── meta_marketing.py  # Meta Marketing API (Graph API)
 │
 ├── sync/                  # Job di sincronizzazione autonomi
-│   ├── magellano_sync.py  # Job: Recupera e salva dati Magellano
 │   ├── ulixe_sync.py      # Job: Sync stati Ulixe (esclude NO CRM)
 │   ├── meta_marketing_sync.py  # Job: Ingestion dati marketing Meta
 │   └── meta_conversion_sync.py # Job: Invia eventi Conversion API
@@ -31,7 +30,7 @@ services/
 ### Orchestrator Pattern
 L'`SyncOrchestrator` gestisce l'esecuzione sequenziale di tutti i job:
 
-1. **magellano_sync** → Recupera lead da Magellano e salva in DB
+1. **magellano_export_pipeline** → Magellano in 2 step (Export richiesto + Fetch & ingest)
 2. **ulixe_sync** → Controlla stati Ulixe per lead senza "NO CRM"
 3. **meta_marketing_sync** → Ingestion dati marketing da Meta
 4. **meta_conversion_sync** → Invia eventi Conversion API

@@ -5,5 +5,5 @@ from tasks.meta_marketing import (  # noqa: F401
     meta_sync_accounts_sequentially_task,
     meta_sync_single_account_task,
 )
-from tasks.magellano import magellano_sync_task  # noqa: F401
+from tasks.magellano import magellano_export_request_task, magellano_export_fetch_task  # noqa: F401
 from tasks.meta_datasets import fetch_datasets_task  # noqa: F401

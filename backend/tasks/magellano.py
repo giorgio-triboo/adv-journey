@@ -1,4 +1,4 @@
-"""Celery task per sync Magellano."""
+"""Celery task per pipeline Magellano (export/fetch)."""
 from datetime import datetime
 from celery_app import celery_app
 from database import SessionLocal
@@ -6,131 +6,6 @@ from models import SyncLog, IngestionJob, Lead, StatusCategory, now_rome
 from services.utils.crypto import hash_email_for_meta, hash_phone_for_meta
 from services.integrations.lead_correlation import LeadCorrelationService
 from services.utils.alert_sender import send_sync_alert_if_needed
-
-
-@celery_app.task(name="tasks.magellano.sync_legacy")
-def magellano_sync_task(campaigns: list, start_date_str: str, end_date_str: str, job_id: int | None = None):
-    """
-    Task legacy che utilizza ancora il flusso monolitico (MagellanoService.fetch_leads).
-    Lasciato per eventuale rollback, ma non più usato dai nuovi endpoint.
-    """
-    start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
-    end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
-    db = SessionLocal()
-    try:
-        from services.api.ui.sync import run_magellano_sync
-
-        job = None
-        if job_id:
-            job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
-            if job:
-                job.status = "RUNNING"
-                job.started_at = now_rome()
-                db.commit()
-        else:
-            job = IngestionJob(
-                job_type="magellano",
-                status="RUNNING",
-                params={
-                    "source": "unknown",
-                    "campaigns": campaigns,
-                    "start_date": start_date_str,
-                    "end_date": end_date_str,
-                },
-            )
-            db.add(job)
-            db.commit()
-
-        try:
-            stats = run_magellano_sync(
-                db,
-                campaigns,
-                start_date,
-                end_date,
-                job_id=job.id if job else None,
-            )
-
-            failed_campaigns = (stats or {}).get("failed_campaigns") or []
-            total_errors = int((stats or {}).get("total_errors") or 0)
-            has_errors = bool(failed_campaigns or total_errors)
-            status_str = "ERROR" if has_errors else "SUCCESS"
-
-            sync_log = SyncLog(
-                status=status_str,
-                details={
-                    "magellano": {
-                        "type": "frontend_auto",
-                        "campaigns": campaigns,
-                        "start_date": start_date_str,
-                        "end_date": end_date_str,
-                        "errors": total_errors,
-                        "failed_campaigns": failed_campaigns,
-                    }
-                },
-            )
-            db.add(sync_log)
-
-            if job:
-                params = job.params or {}
-                if stats is not None:
-                    params["stats"] = stats
-                job.params = params
-                job.status = status_str
-                job.completed_at = now_rome()
-                if has_errors:
-                    if failed_campaigns:
-                        job.message = (
-                            "Sync Magellano completata con errori "
-                            f"(campagne fallite: {', '.join(failed_campaigns)})"
-                        )
-                    else:
-                        job.message = "Sync Magellano completata con errori"
-                else:
-                    if stats and "total_new" in stats and "total_updated" in stats:
-                        job.message = (
-                            f"Sync Magellano completata "
-                            f"({stats['total_new']} nuove, {stats['total_updated']} aggiornate)"
-                        )
-                    else:
-                        job.message = "Sync Magellano completata"
-
-            db.commit()
-        except Exception as e:
-            db.rollback()
-
-            if job:
-                job.status = "ERROR"
-                job.completed_at = now_rome()
-                job.message = str(e)
-                db.add(job)
-                db.commit()
-
-            try:
-                error_details = {
-                    "error": str(e),
-                    "stats": {
-                        "magellano": {
-                            "type": "frontend_auto",
-                            "campaigns": campaigns,
-                            "start_date": start_date_str,
-                            "end_date": end_date_str,
-                            "errors": 1,
-                        }
-                    },
-                }
-                sync_log = SyncLog(status="ERROR", details=error_details)
-                db.add(sync_log)
-                db.commit()
-            except Exception:
-                import logging
-
-                logger = logging.getLogger("tasks.magellano")
-                logger.error("Errore salvataggio SyncLog per Magellano Celery", exc_info=True)
-
-            raise
-    finally:
-        db.close()
-
 
 @celery_app.task(name="tasks.magellano.export_request")
 def magellano_export_request_task(
@@ -232,7 +107,7 @@ def magellano_export_fetch_task(
 ):
     """
     STEP 2: verifica se gli export sono pronti, scarica i file, li processa in lead
-    e li salva nel DB, utilizzando la stessa logica di ingest di run_magellano_sync.
+    e li salva nel DB, usando la stessa logica di ingest del flusso manuale.
 
     Se per una campagna l'export non è pronto/non trovato, il job viene marcato ERROR.
     """
@@ -341,7 +216,7 @@ def magellano_export_fetch_task(
                 pass
             return
 
-        # Ingestion identica a run_magellano_sync, ma a partire da all_leads già pronti
+        # Ingestion comune, ma a partire da all_leads già pronti
         def _get_campaign_key(data, existing=None) -> str:
             cid = (
                 data.get("magellano_campaign_id")

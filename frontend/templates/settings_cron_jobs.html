@@ -246,7 +246,7 @@
                     </div>
                 </div>
 
-                <!-- Campagne Magellano (solo per magellano_sync) -->
+                <!-- Campagne Magellano (solo per job_type=magellano) -->
                 <div id="magellanoCampaignsSection" class="mb-6 hidden">
                     <h4 class="text-sm font-semibold text-neutral-700 mb-3 flex items-center">
                         <svg class="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -339,7 +339,7 @@ function openEditModal(jobId) {
     document.getElementById('editMonth').value = job.month;
     document.getElementById('editModalTitle').textContent = `Modifica: ${job.job_name.replace(/_/g, ' ')}`;
 
-    // Sezione campagne Magellano (solo per magellano_sync)
+    // Sezione campagne Magellano (solo per job_type=magellano)
     const campaignsSection = document.getElementById('magellanoCampaignsSection');
     if (job.job_type === 'magellano') {
         campaignsSection.classList.remove('hidden');

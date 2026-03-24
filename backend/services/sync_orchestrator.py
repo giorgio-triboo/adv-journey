@@ -4,7 +4,6 @@ Permette di aggiungere facilmente nuove piattaforme in futuro.
 """
 from database import SessionLocal
 from models import SyncLog
-from services.sync.magellano_sync import run as magellano_sync_job
 from services.sync.ulixe_sync import run as ulixe_sync_job
 from services.sync.meta_marketing_sync import run as meta_marketing_sync_job
 from services.sync.meta_conversion_marker import run as meta_conversion_marker_job
@@ -21,11 +20,6 @@ class SyncOrchestrator:
     
     def __init__(self):
         self.jobs = [
-            {
-                "name": "magellano",
-                "job": magellano_sync_job,
-                "description": "Magellano - Recupera e salva dati"
-            },
             {
                 "name": "ulixe",
                 "job": ulixe_sync_job,
@@ -107,10 +101,6 @@ class SyncOrchestrator:
     
     def _log_summary(self, stats: dict):
         """Log delle statistiche aggregate."""
-        if "magellano" in stats:
-            m = stats["magellano"]
-            logger.info(f"  Magellano: {m.get('new', 0)} new, {m.get('updated', 0)} updated")
-        
         if "ulixe" in stats:
             u = stats["ulixe"]
             logger.info(f"  Ulixe: {u.get('checked', 0)} checked, {u.get('updated', 0)} updated")

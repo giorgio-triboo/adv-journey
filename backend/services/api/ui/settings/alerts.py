@@ -40,7 +40,7 @@ async def settings_alerts(request: Request, db: Session = Depends(get_db)):
 
     # Mappa tra job_name dei cron e label più leggibili
     job_label_overrides = {
-        "magellano_sync": "Magellano – Sync notturna",
+        "magellano_export_pipeline": "Magellano – Pipeline automatica",
         "ulixe_sync": "Ulixe – Sync stati",
         "meta_marketing_sync": "Meta – Marketing",
         "meta_conversion_sync": "Meta – Conversion API",
@@ -49,7 +49,7 @@ async def settings_alerts(request: Request, db: Session = Depends(get_db)):
 
     # Usiamo il job_name come chiave alert_type per tutti i job "moderni" (no orchestrator/marker)
     for cron in cron_jobs:
-        if cron.job_type in ("orchestrator", "meta_conversion_marker"):
+        if cron.job_type in ("orchestrator", "meta_conversion_marker") or cron.job_name == "magellano_sync":
             continue
         value = cron.job_name
         label = job_label_overrides.get(value, cron.job_name.replace("_", " ").title())
