@@ -22,10 +22,10 @@ def meta_manual_sync_task(
     start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
     db = SessionLocal()
+    job = None
     try:
         # Se è stato creato un IngestionJob associato, segna come RUNNING.
         # Se non esiste, creane uno al volo (es. cron interno).
-        job = None
         if job_id:
             job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
             if job:
@@ -109,7 +109,61 @@ def meta_manual_sync_task(
                 exc_info=True,
             )
 
+        try:
+            from services.utils.alert_sender import send_sync_alert_if_needed
+
+            err_count = int(stats.get("errors", 0) or 0)
+            send_sync_alert_if_needed(
+                db,
+                "meta_marketing_sync",
+                success=(err_count == 0),
+                stats={
+                    "manual": True,
+                    "account_id": account_id,
+                    "start_date": start_date_str,
+                    "end_date": end_date_str,
+                    "campaigns_synced": stats.get("campaigns_synced", 0),
+                    "errors": err_count,
+                },
+                error_message=(
+                    None
+                    if err_count == 0
+                    else f"{err_count} errori durante la sync manuale"
+                ),
+            )
+        except Exception:
+            pass
+
         return stats
+    except Exception as e:
+        logger.error("[META_MANUAL_SYNC_TASK] failed: %s", e, exc_info=True)
+        try:
+            if job:
+                job.status = "ERROR"
+                job.completed_at = now_rome()
+                job.message = str(e)
+                db.add(job)
+                db.commit()
+        except Exception:
+            db.rollback()
+        try:
+            from services.utils.alert_sender import send_sync_alert_if_needed
+
+            send_sync_alert_if_needed(
+                db,
+                "meta_marketing_sync",
+                False,
+                {
+                    "manual": True,
+                    "account_id": account_id,
+                    "start_date": start_date_str,
+                    "end_date": end_date_str,
+                },
+                str(e),
+            )
+        except Exception:
+            pass
+        raise
     finally:
         db.close()
 

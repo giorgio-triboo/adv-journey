@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_ALERTS = [
     {"alert_type": "magellano", "enabled": True, "recipients": [], "on_success": False, "on_error": True},
     {"alert_type": "ulixe", "enabled": True, "recipients": [], "on_success": False, "on_error": True},
+    {"alert_type": "ulixe_rcrm_google_sync", "enabled": True, "recipients": [], "on_success": True, "on_error": True},
     {"alert_type": "meta_marketing", "enabled": True, "recipients": [], "on_success": False, "on_error": True},
     {"alert_type": "meta_conversion", "enabled": True, "recipients": [], "on_success": False, "on_error": True},
 ]

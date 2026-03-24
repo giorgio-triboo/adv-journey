@@ -55,6 +55,18 @@ def run(db: Session = None) -> dict:
         
         if not accounts:
             logger.info("No active Meta accounts with sync enabled. Skipping Meta Marketing sync.")
+            from services.utils.alert_sender import send_sync_alert_if_needed
+
+            send_sync_alert_if_needed(
+                db,
+                "meta_marketing_sync",
+                True,
+                {
+                    **stats,
+                    "skipped": True,
+                    "skip_reason": "no_active_accounts_with_sync_enabled",
+                },
+            )
             return stats
         
         for account in accounts:

@@ -17,6 +17,7 @@ router = APIRouter(include_in_schema=False)
 JOB_LABELS = {
     'magellano': 'Magellano',
     'ulixe': 'Ulixe',
+    'ulixe_rcrm_google': 'RCRM Ulixe (Google Sheet)',
     'meta_marketing': 'Meta Marketing',
     'meta_conversion_marker': 'Meta Conversion Marker',
     'meta_conversion': 'Meta Conversion API',

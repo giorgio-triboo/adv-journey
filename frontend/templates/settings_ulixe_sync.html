@@ -4,7 +4,7 @@
 <div class="animate-fadeInUp">
     <div class="mb-8">
         <h1 class="text-3xl font-bold gradient-text">Sync Manuale Ulixe</h1>
-        <p class="text-neutral-500 mt-2">Gestisci integrazione Ulixe: scraping automatico RCRM, upload manuale e sync utenti puntuale.</p>
+        <p class="text-neutral-500 mt-2">Integrazione Ulixe: RCRM da Google Sheet (API), upload manuale CSV e sync utenti puntuale.</p>
     </div>
 
     <!-- Tabs -->
@@ -16,7 +16,7 @@
                 data-tab="scraping"
                 onclick="setUlixeTab('scraping')"
             >
-                Scraping automatico RCRM
+                RCRM da Google Sheet
             </button>
             <button
                 type="button"
@@ -40,11 +40,28 @@
     <!-- TAB 1: Scraping automatico -->
     <div id="ulixe-tab-scraping" class="space-y-4">
         <div class="glass-card p-6 mb-6">
-            <h2 class="text-xl font-semibold mb-4">Scraping automatico RCRM da Google Sheet</h2>
+            <h2 class="text-xl font-semibold mb-4">RCRM da Google Sheet (API)</h2>
             <p class="text-sm text-neutral-600 mb-4">
-                Questa sezione gestirà lo scraping automatico del file RCRM Ulixe direttamente da Google Sheet,
-                con job schedulabile via cron e avviabile manualmente da qui.
+                Legge il foglio tramite <span class="font-semibold">Google Sheets API</span> con un service account,
+                aggiorna <code class="bg-neutral-100 px-1 rounded text-xs">ulixe_rcrm_temp</code> per il mese scelto
+                (cancella e ricarica tutte le righe di quel periodo). Puoi schedulare anche il job
+                <span class="font-semibold">ulixe_rcrm_google_sync</span> da Impostazioni → Cron.
             </p>
+            {% if not google_rcrm_configured %}
+            <div class="mb-4 p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+                <p class="font-semibold mb-1">Credenziali Google Sheet non configurate</p>
+                <p class="mb-2">
+                    In <code class="bg-amber-100 px-1 rounded text-xs">backend/.env</code> imposta le variabili
+                    <code class="bg-amber-100 px-1 rounded text-xs">ULIXE_RCRM_GOOGLE_SA_*</code>
+                    (valori copiati dal JSON del service account: project id, private key, client email, ecc.),
+                    abilita <span class="font-semibold">Google Sheets API</span> sul progetto GCP e
+                    <span class="font-semibold">condividi il foglio</span> con l&apos;email del service account.
+                </p>
+                <p class="text-xs text-amber-800">
+                    Senza quelle variabili, la sync da foglio non è disponibile: usa l&apos;upload manuale CSV nell&apos;altra tab o file in <code class="bg-amber-100 px-1 rounded">exports/ulixe_temp</code> (solo fallback locale).
+                </p>
+            </div>
+            {% endif %}
             <div class="space-y-3 text-sm text-neutral-700">
                 <div>
                     <span class="font-semibold">Sorgente dati:</span>
@@ -56,20 +73,24 @@
                     </a>
                 </div>
                 <div>
-                    <span class="font-semibold">Nome file generato:</span>
-                    <code class="bg-neutral-100 px-1 rounded">{mese}-ulixe-rcrm</code>
+                    <span class="font-semibold">Foglio (tab) per mese:</span>
+                    nome <code class="bg-neutral-100 px-1 rounded">{mm}-ulixe-rcrm</code>
+                    <span class="text-neutral-500">(es. <code class="bg-neutral-100 px-1 rounded">03-ulixe-rcrm</code> per marzo), da <code class="bg-neutral-100 px-1 rounded">ULIXE_RCRM_GOOGLE_SHEET_NAME_TEMPLATE</code></span>
                 </div>
                 <div>
-                    <span class="font-semibold">Range colonne usato:</span>
-                    <span>A1:G24</span>
-                    <span class="text-neutral-500">(uguale al template <code class="bg-neutral-100 px-1 rounded">rcrm-0326.csv</code>)</span>
+                    <span class="font-semibold">Range colonne (configurabile in .env):</span>
+                    default <code class="bg-neutral-100 px-1 rounded">A1:Q</code>
+                    <span class="text-neutral-500">— deve includere <code class="bg-neutral-100 px-1 rounded">IDMessaggio</code> e <code class="bg-neutral-100 px-1 rounded">RCRM</code> (colonna L nel layout esteso)</span>
                 </div>
+                {% if google_rcrm_configured %}
+                <div class="text-xs text-green-800 bg-green-50 border border-green-100 rounded px-3 py-2">
+                    Service account configurato: la sync userà le API Google (fallback su file locali solo se disabiliti le credenziali).
+                </div>
+                {% endif %}
                 <form id="ulixeRcrmAutoSyncForm" class="mt-4 space-y-3">
                     <p class="text-xs text-neutral-600">
-                        Il job legge tutti i file <code class="bg-neutral-100 px-1 rounded">rcrm-*.csv</code> presenti in
-                        <code class="bg-neutral-100 px-1 rounded">backend/exports/ulixe_temp</code>, deduce il mese dal nome
-                        e per il mese selezionato <span class="font-semibold">sovrascrive completamente</span> i dati in
-                        <code class="bg-neutral-100 px-1 rounded">ulixe_rcrm_temp</code>.
+                        Con le API attive, i dati arrivano direttamente dal foglio. Dopo ogni import con successo viene salvato anche un backup CSV con timestamp in
+                        <code class="bg-neutral-100 px-1 rounded">exports/ulixe_temp</code>.
                     </p>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                         <div>
@@ -85,14 +106,16 @@
                                 <!-- Opzioni valorizzate via JS -->
                             </select>
                         </div>
-                        <div class="flex items-center gap-4 md:col-span-2">
+                        <div class="flex flex-col gap-2 md:col-span-2">
+                            <div class="flex flex-wrap items-center gap-4">
                             <button
                                 type="submit"
                                 class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all"
                             >
-                                Avvia sync RCRM da file
+                                Scarica da Google Sheet e aggiorna DB
                             </button>
                             <span id="ulixeRcrmAutoSyncStatus" class="text-xs text-neutral-500"></span>
+                            </div>
                         </div>
                     </div>
                     <div id="ulixeRcrmAutoSyncResult" class="hidden mt-3 text-xs"></div>
@@ -402,45 +425,55 @@ if (autoSyncForm) {
 
                 if (resultEl) {
                     const stats = data.stats || {};
-                    const perPeriod = stats.per_period || {};
-                    const skipped = stats.skipped_files || [];
-
+                    const mode = stats.mode || '';
                     let html = '<div class="p-3 rounded-lg bg-green-50 border border-green-200 text-green-800">';
                     html += `<div class="font-semibold mb-1">Riepilogo:</div>`;
-                    html += `<div class="mb-1">File elaborati: <span class="font-semibold">${stats.total_files || 0}</span></div>`;
-                    html += `<div class="mb-1">Righe eliminate prima del caricamento: <span class="font-semibold">${stats.total_deleted || 0}</span></div>`;
-                    html += `<div class="mb-2">Righe caricate dai file: <span class="font-semibold">${stats.total_loaded || 0}</span></div>`;
 
-                    const periods = Object.keys(perPeriod);
-                    if (periods.length > 0) {
-                        html += '<div class="mt-2">';
-                        html += '<div class="font-semibold mb-1">Dettaglio per mese:</div>';
-                        html += '<ul class="list-disc list-inside space-y-0.5">';
-                        periods.forEach(p => {
-                            const info = perPeriod[p];
-                            html += `<li><span class="font-mono">${p}</span>: `
-                                + `cancellate <span class="font-semibold">${info.deleted_before || 0}</span>, `
-                                + `caricate <span class="font-semibold">${info.rows_loaded || 0}</span>`
-                                + ` (file: ${(info.files || []).join(', ')})`
-                                + `</li>`;
-                        });
-                        html += '</ul>';
-                        html += '</div>';
-                    }
-
-                    if (skipped.length > 0) {
-                        html += '<div class="mt-2 pt-2 border-t border-green-100 text-green-900">';
-                        html += '<div class="font-semibold mb-1">File saltati:</div>';
-                        html += '<ul class="list-disc list-inside space-y-0.5">';
-                        skipped.forEach(s => {
-                            html += `<li>${s.file} - ${s.reason}</li>`;
-                        });
-                        html += '</ul>';
-                        html += '</div>';
+                    if (mode === 'google_sheet') {
+                        html += `<div class="mb-1">Sorgente: <span class="font-semibold">Google Sheet (API)</span></div>`;
+                        html += `<div class="mb-1">Periodo: <span class="font-mono font-semibold">${stats.period || ''}</span></div>`;
+                        html += `<div class="mb-1">Righe eliminate prima del caricamento: <span class="font-semibold">${stats.deleted_before || 0}</span></div>`;
+                        html += `<div class="mb-1">Righe caricate: <span class="font-semibold">${stats.rows_loaded || 0}</span></div>`;
+                        if (stats.sheet_rows_raw != null) {
+                            html += `<div class="mb-1">Righe dati lette dal foglio (escl. intestazione): <span class="font-semibold">${stats.sheet_rows_raw}</span></div>`;
+                        }
+                        if (stats.backup_path) {
+                            html += `<div class="text-xs mt-2 text-green-900">Backup: <code class="bg-green-100 px-1 rounded break-all">${stats.backup_path}</code></div>`;
+                        }
+                    } else {
+                        const perPeriod = stats.per_period || {};
+                        const skipped = stats.skipped_files || [];
+                        html += `<div class="mb-1">Sorgente: <span class="font-semibold">file locali</span> (exports/ulixe_temp)</div>`;
+                        html += `<div class="mb-1">File elaborati: <span class="font-semibold">${stats.total_files || 0}</span></div>`;
+                        html += `<div class="mb-1">Righe eliminate prima del caricamento: <span class="font-semibold">${stats.total_deleted || 0}</span></div>`;
+                        html += `<div class="mb-2">Righe caricate dai file: <span class="font-semibold">${stats.total_loaded || 0}</span></div>`;
+                        const periods = Object.keys(perPeriod);
+                        if (periods.length > 0) {
+                            html += '<div class="mt-2">';
+                            html += '<div class="font-semibold mb-1">Dettaglio per mese:</div>';
+                            html += '<ul class="list-disc list-inside space-y-0.5">';
+                            periods.forEach(p => {
+                                const info = perPeriod[p];
+                                html += `<li><span class="font-mono">${p}</span>: `
+                                    + `cancellate <span class="font-semibold">${info.deleted_before || 0}</span>, `
+                                    + `caricate <span class="font-semibold">${info.rows_loaded || 0}</span>`
+                                    + ` (file: ${(info.files || []).join(', ')})`
+                                    + `</li>`;
+                            });
+                            html += '</ul></div>';
+                        }
+                        if (skipped.length > 0) {
+                            html += '<div class="mt-2 pt-2 border-t border-green-100 text-green-900">';
+                            html += '<div class="font-semibold mb-1">File saltati:</div>';
+                            html += '<ul class="list-disc list-inside space-y-0.5">';
+                            skipped.forEach(s => {
+                                html += `<li>${s.file} - ${s.reason}</li>`;
+                            });
+                            html += '</ul></div>';
+                        }
                     }
 
                     html += '</div>';
-
                     resultEl.innerHTML = html;
                     resultEl.className = 'mt-3 text-xs';
                     resultEl.classList.remove('hidden');

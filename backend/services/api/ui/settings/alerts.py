@@ -42,14 +42,16 @@ async def settings_alerts(request: Request, db: Session = Depends(get_db)):
     job_label_overrides = {
         "magellano_export_pipeline": "Magellano – Pipeline automatica",
         "ulixe_sync": "Ulixe – Sync stati",
+        "ulixe_rcrm_google_sync": "Ulixe – RCRM da Google Sheet",
         "meta_marketing_sync": "Meta – Marketing",
+        "meta_conversion_marker": "Meta – Conversion marker",
         "meta_conversion_sync": "Meta – Conversion API",
         "meta_campaigns_incremental": "Meta – Campagne (incrementale)",
     }
 
-    # Usiamo il job_name come chiave alert_type per tutti i job "moderni" (no orchestrator/marker)
+    # Usiamo il job_name come chiave alert_type per tutti i job "moderni" (no orchestrator)
     for cron in cron_jobs:
-        if cron.job_type in ("orchestrator", "meta_conversion_marker") or cron.job_name == "magellano_sync":
+        if cron.job_type in ("orchestrator",) or cron.job_name == "magellano_sync":
             continue
         value = cron.job_name
         label = job_label_overrides.get(value, cron.job_name.replace("_", " ").title())

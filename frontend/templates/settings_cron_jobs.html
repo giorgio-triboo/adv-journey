@@ -13,9 +13,10 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
             <div>
-                <h3 class="font-semibold text-blue-900 mb-1">⚠️ Nota Importante</h3>
+                <h3 class="font-semibold text-blue-900 mb-1">ℹ️ Applicazione modifiche</h3>
         <p class="text-sm text-blue-700">
-            Dopo aver modificato le configurazioni dei cron jobs, è necessario <strong>riavviare l'applicazione</strong> per applicare le modifiche.
+            Dopo il salvataggio, il <strong>servizio scheduler</strong> ricarica i job da database tramite Redis (nessun riavvio necessario in produzione).
+            In locale, se non avvii il processo <code class="text-xs bg-blue-100 px-1 rounded">scheduler_runner</code>, le modifiche restano solo sul DB finché non lo avvii o riavvii lo scheduler in Docker.
         </p>
             </div>
         </div>

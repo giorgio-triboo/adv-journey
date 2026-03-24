@@ -63,7 +63,7 @@
         <div class="mb-4">
             <h2 class="text-lg font-semibold text-neutral-900">Utenti che ricevono gli alert</h2>
             <p class="text-xs text-neutral-500 mt-1">
-                Righe = utenti, colonne = job. Se la casella è selezionata, l'utente riceve tutte le notifiche (successo e errore) per quel job.
+                Righe = utenti, colonne = job. Se la casella è selezionata, l'utente riceve le notifiche per quel job (sia esito positivo sia errore).
             </p>
         </div>
 
@@ -122,8 +122,8 @@ async function saveAlertConfig(alertType) {
         }
     });
 
-    const onSuccess = recipients.length > 0;
-    const onError = recipients.length > 0;
+    const onSuccess = true;
+    const onError = true;
 
     try {
         const response = await fetch('/api/alerts', {

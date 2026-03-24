@@ -121,8 +121,10 @@ class EmailService:
             'magellano_ingest': 'Magellano – Fetch & ingest (STEP 2)',
             # Ulixe
             'ulixe_sync': 'Ulixe – Sync stati',
+            'ulixe_rcrm_google_sync': 'Ulixe – RCRM da Google Sheet',
             # Meta Marketing
             'meta_marketing_sync': 'Meta Marketing',
+            'meta_conversion_marker': 'Meta – Conversion marker',
             # Meta Conversion API
             'meta_conversion_sync': 'Meta Conversion API',
             # Meta Campaigns

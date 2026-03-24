@@ -2,6 +2,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from services.sync_orchestrator import SyncOrchestrator
 from services.sync.ulixe_sync import run as ulixe_sync_job
+from services.sync.ulixe_rcrm_google_sync import run_ulixe_rcrm_sync
+from services.integrations.google_sheets_rcrm import is_rcrm_google_sheet_configured
 from services.sync.meta_marketing_sync import run as meta_marketing_sync_job
 from services.sync.meta_conversion_marker import run as meta_conversion_marker_job
 from services.sync.meta_conversion_sync import run as meta_conversion_sync_job
@@ -9,9 +11,14 @@ from database import SessionLocal
 from models import CronJob, IngestionJob, now_rome
 import os
 import logging
+import threading
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger('services.scheduler')
+
+# Serializza reload da startup e da segnale Redis (stesso processo scheduler_runner).
+_scheduler_reload_lock = threading.Lock()
 
 scheduler = BackgroundScheduler()
 
@@ -111,6 +118,73 @@ def ulixe_sync_scheduled():
         raise
     finally:
         db.close()
+
+
+def ulixe_rcrm_google_scheduled():
+    """Import RCRM Ulixe da Google Sheet (mese corrente, fuso Europe/Rome)."""
+    if not is_rcrm_google_sheet_configured():
+        logger.info("ulixe_rcrm_google_scheduled: Google Sheet RCRM non configurato, skip.")
+        return
+
+    now = datetime.now(ZoneInfo("Europe/Rome"))
+    period = f"{now.year}-{now.month:02d}"
+
+    logger.info("Esecuzione ulixe_rcrm_google_scheduled (period=%s)...", period)
+    db = SessionLocal()
+    job = None
+    try:
+        job = IngestionJob(
+            job_type="ulixe_rcrm_google",
+            status="RUNNING",
+            params={"source": "scheduler", "period": period},
+            started_at=now_rome(),
+        )
+        db.add(job)
+        db.commit()
+
+        sync_stats = run_ulixe_rcrm_sync(db, period, source="google_sheet")
+        db.commit()
+
+        job.status = "SUCCESS"
+        job.completed_at = now_rome()
+        job.message = f"RCRM Google Sheet sync completed ({period})"
+        db.commit()
+
+        try:
+            from services.utils.alert_sender import send_sync_alert_if_needed
+
+            send_sync_alert_if_needed(
+                db,
+                "ulixe_rcrm_google_sync",
+                True,
+                {**sync_stats, "trigger": "cron"},
+            )
+        except Exception as alert_exc:
+            logger.error("Errore invio alert successo ulixe_rcrm_google: %s", alert_exc, exc_info=True)
+    except Exception as e:
+        logger.error("Errore in ulixe_rcrm_google_scheduled: %s", e, exc_info=True)
+        db.rollback()
+        if job:
+            job.status = "ERROR"
+            job.completed_at = now_rome()
+            job.message = str(e)
+            db.commit()
+        try:
+            from services.utils.alert_sender import send_sync_alert_if_needed
+
+            send_sync_alert_if_needed(
+                db,
+                "ulixe_rcrm_google_sync",
+                False,
+                {"period": period, "trigger": "cron"},
+                str(e),
+            )
+        except Exception as alert_exc:
+            logger.error("Errore invio alert fallimento ulixe_rcrm_google: %s", alert_exc, exc_info=True)
+        raise
+    finally:
+        db.close()
+
 
 def meta_marketing_sync_scheduled():
     """Job schedulato per sincronizzazione Meta Marketing."""
@@ -316,6 +390,7 @@ CRON_JOB_HANDLERS = {
     "orchestrator": nightly_sync_job,
     "magellano": magellano_pipeline_scheduled,
     "ulixe": ulixe_sync_scheduled,
+    "ulixe_rcrm_google": ulixe_rcrm_google_scheduled,
     "meta_marketing": meta_marketing_sync_scheduled,
     "meta_conversion_marker": meta_conversion_marker_scheduled,
     "meta_conversion": meta_conversion_sync_scheduled,
@@ -369,7 +444,13 @@ def start_scheduler():
     """
     Avvia APScheduler e registra tutti i CronJob abilitati presenti a database.
     Usa la tabella cron_jobs per determinare quali job eseguire e con quale schedule.
+    Idempotente e richiamabile a caldo (es. dopo salvataggio da UI via Redis).
     """
+    with _scheduler_reload_lock:
+        _start_scheduler_unlocked()
+
+
+def _start_scheduler_unlocked():
     logger.info("=" * 80)
     logger.info(
         "Inizializzazione scheduler sincronizzazioni automatiche (pid=%s, hostname=%s)...",
@@ -383,6 +464,15 @@ def start_scheduler():
 
         if not cron_jobs:
             logger.warning("Nessun CronJob abilitato trovato. Scheduler non registrerà alcun job.")
+            if scheduler.get_jobs():
+                logger.info("Rimozione dei job schedulati esistenti (nessun CronJob abilitato).")
+                scheduler.remove_all_jobs()
+            if not scheduler.running:
+                scheduler.start()
+                logger.info("Scheduler avviato senza job schedulati.")
+            else:
+                logger.info("Scheduler in esecuzione; 0 job attivi dopo il reload.")
+            logger.info("=" * 80)
             return
 
         # Pulisci eventuali job già registrati per evitare duplicazioni su riavvii

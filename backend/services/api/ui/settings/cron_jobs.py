@@ -7,6 +7,7 @@ from models import CronJob, ManagedCampaign
 from datetime import datetime
 import logging
 from ..common import templates, require_super_admin
+from services.cron_scheduler_reload_signal import notify_cron_scheduler_reload
 
 logger = logging.getLogger('services.api.ui')
 
@@ -56,6 +57,17 @@ async def settings_cron_jobs(request: Request, db: Session = Depends(get_db)):
             "day_of_month": "*",
             "month": "*",
             "description": "Sincronizzazione Ulixe - Controlla stati per lead attive"
+        },
+        {
+            "job_name": "ulixe_rcrm_google_sync",
+            "job_type": "ulixe_rcrm_google",
+            "enabled": False,
+            "hour": 2,
+            "minute": 30,
+            "day_of_week": "*",
+            "day_of_month": "*",
+            "month": "*",
+            "description": "RCRM Ulixe - Import da Google Sheet (mese corrente, service account)"
         },
         {
             "job_name": "meta_marketing_sync",
@@ -164,10 +176,15 @@ async def save_cron_job(request: Request, db: Session = Depends(get_db)):
             cron_job.config = data["config"]
         
         db.commit()
-        
+
+        notify_cron_scheduler_reload()
+
         return JSONResponse({
             "success": True,
-            "message": "Configurazione cron job salvata. Riavvia l'applicazione per applicare le modifiche."
+            "message": (
+                "Configurazione salvata. Il servizio scheduler applica le modifiche in automatico "
+                "(se in esecuzione e raggiungibile Redis); altrimenti riavvia il container scheduler."
+            ),
         })
         
     except Exception as e:

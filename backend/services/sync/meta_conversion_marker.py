@@ -59,11 +59,27 @@ def run(db: Session = None) -> dict:
         
         db.commit()
         logger.info(f"Meta Conversion Marker ✅: {stats['marked']} marked, {stats['skipped']} skipped")
+
+        from services.utils.alert_sender import send_sync_alert_if_needed
+
+        send_sync_alert_if_needed(db, "meta_conversion_marker", True, stats)
         
     except Exception as e:
         logger.error(f"Meta Conversion Marker ❌: {e}", exc_info=True)
         if close_db:
             db.rollback()
+        try:
+            from services.utils.alert_sender import send_sync_alert_if_needed
+
+            send_sync_alert_if_needed(
+                db,
+                "meta_conversion_marker",
+                False,
+                stats,
+                str(e),
+            )
+        except Exception:
+            pass
     finally:
         if close_db:
             db.close()

@@ -61,6 +61,24 @@ def magellano_export_request_task(
             args=[campaigns, start_date_str, end_date_str, password_date_str, job_id],
             countdown=300,
         )
+
+        success_stats = {
+            "stage": "export_request",
+            "campaigns": campaigns,
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+            "password_date": password_date_str,
+            "step2_countdown_seconds": 300,
+        }
+        try:
+            send_sync_alert_if_needed(
+                db,
+                "magellano_export",
+                success=True,
+                stats=success_stats,
+            )
+        except Exception:
+            pass
     except Exception as e:
         db.rollback()
         # Prepara stats minime per alert

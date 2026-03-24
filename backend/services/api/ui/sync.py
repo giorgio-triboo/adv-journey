@@ -832,9 +832,11 @@ async def settings_ulixe_sync(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url='/')
     
     from config import settings
-    
+    from services.integrations.google_sheets_rcrm import is_rcrm_google_sheet_configured
+
     # Verifica che le credenziali Ulixe siano configurate
     ulixe_configured = bool(settings.ULIXE_USER and settings.ULIXE_PASSWORD and settings.ULIXE_WSDL)
+    google_rcrm_configured = is_rcrm_google_sheet_configured()
     
     # Recupera leads con external_user_id per mostrare esempi
     leads_with_user_id = db.query(Lead).filter(
@@ -847,6 +849,7 @@ async def settings_ulixe_sync(request: Request, db: Session = Depends(get_db)):
         "title": "Sync Manuale Ulixe",
         "user": user,
         "ulixe_configured": ulixe_configured,
+        "google_rcrm_configured": google_rcrm_configured,
         "leads_examples": leads_with_user_id[:10],  # Solo 10 esempi
         "active_page": "ulixe_sync"
     })
@@ -855,111 +858,64 @@ async def settings_ulixe_sync(request: Request, db: Session = Depends(get_db)):
 @router.post("/api/ulixe/rcrm/sync")
 async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
     """
-    API endpoint per sincronizzazione RCRM Ulixe dai file locali.
-    Opzionalmente accetta un parametro "period" (YYYY-MM) per limitare la sync
-    ad un singolo mese; se non specificato, elabora tutti i file disponibili.
+    Sincronizzazione RCRM Ulixe in ulixe_rcrm_temp.
+
+    - Con Google Sheet configurato (service account + foglio condiviso): legge via Sheets API.
+    - In alternativa (source=auto senza Google): file rcrm-*.csv in exports/ulixe_temp.
+
+    Body JSON: period (YYYY-MM, obbligatorio), source opzionale: auto | google_sheet | local_files
     """
     user = request.session.get("user")
     if not user:
         return JSONResponse({"success": False, "error": "Non autorizzato"}, status_code=401)
 
-    from scripts.load_ulixe_rcrm_temp import EXPORTS_DIR, parse_period_from_filename, load_csv
-
-    if not os.path.isdir(EXPORTS_DIR):
-        return JSONResponse(
-            {"success": False, "error": f"Directory export non trovata: {EXPORTS_DIR}"},
-            status_code=400,
-        )
-
-    # Leggi eventuale periodo richiesto (YYYY-MM)
     try:
         data = await request.json()
     except Exception:
         data = {}
 
     requested_period = (data.get("period") or "").strip()
-    if requested_period:
-        try:
-            datetime.strptime(f"{requested_period}-01", "%Y-%m-%d")
-        except ValueError:
-            return JSONResponse(
-                {"success": False, "error": "Periodo non valido. Usa formato YYYY-MM"},
-                status_code=400,
-            )
+    source = (data.get("source") or "auto").strip().lower()
+
+    if not requested_period:
+        return JSONResponse(
+            {"success": False, "error": "Parametro period (YYYY-MM) obbligatorio"},
+            status_code=400,
+        )
+    try:
+        datetime.strptime(f"{requested_period}-01", "%Y-%m-%d")
+    except ValueError:
+        return JSONResponse(
+            {"success": False, "error": "Periodo non valido. Usa formato YYYY-MM"},
+            status_code=400,
+        )
+
+    if source not in ("auto", "google_sheet", "local_files", ""):
+        return JSONResponse(
+            {"success": False, "error": 'source non valido (usa auto, google_sheet o local_files)'},
+            status_code=400,
+        )
+    if not source:
+        source = "auto"
 
     try:
-        files = [
-            f
-            for f in os.listdir(EXPORTS_DIR)
-            if f.lower().startswith("rcrm-") and f.lower().endswith(".csv")
-        ]
-        files.sort()
+        from services.sync.ulixe_rcrm_google_sync import run_ulixe_rcrm_sync
 
-        if not files:
-            return JSONResponse(
-                {"success": False, "error": "Nessun file rcrm-*.csv trovato per la sync"},
-                status_code=400,
-            )
-
-        stats = {
-            "total_files": len(files),
-            "per_period": {},
-            "total_deleted": 0,
-            "total_loaded": 0,
-            "skipped_files": [],
-        }
-
-        for filename in files:
-            period = parse_period_from_filename(filename)
-            if not period:
-                stats["skipped_files"].append({"file": filename, "reason": "Periodo non riconosciuto"})
-                continue
-
-            # Se è stato richiesto un mese specifico, salta gli altri
-            if requested_period and period != requested_period:
-                continue
-
-            path = os.path.join(EXPORTS_DIR, filename)
-
-            # Cancella tutte le righe esistenti per il periodo prima di ricaricare
-            deleted_rows = (
-                db.query(UlixeRcrmTemp)
-                .filter(UlixeRcrmTemp.period == period)
-                .delete(synchronize_session=False)
-            )
-
-            loaded_rows = load_csv(path, period, db)
-
-            stats["per_period"].setdefault(period, {"deleted_before": 0, "rows_loaded": 0, "files": []})
-            stats["per_period"][period]["deleted_before"] += int(deleted_rows)
-            stats["per_period"][period]["rows_loaded"] += int(loaded_rows)
-            stats["per_period"][period]["files"].append(filename)
-
-            stats["total_deleted"] += int(deleted_rows)
-            stats["total_loaded"] += int(loaded_rows)
-
-        if requested_period and requested_period not in stats["per_period"]:
-            return JSONResponse(
-                {
-                    "success": False,
-                    "error": f"Nessun file rcrm-*.csv trovato per il periodo {requested_period}",
-                },
-                status_code=400,
-            )
-
+        stats = run_ulixe_rcrm_sync(db, requested_period, source=source)
         db.commit()
 
-        # Registra nel riepilogo ingestion come sync automatica RCRM Ulixe (da file locali)
+        log_type = (
+            "auto_sync_from_google_sheet"
+            if stats.get("mode") == "google_sheet"
+            else "auto_sync_from_files"
+        )
         try:
             details = {
                 "ulixe_rcrm": {
-                    "type": "auto_sync_from_files",
-                    "total_files": stats["total_files"],
-                    "total_deleted": stats["total_deleted"],
-                    "total_loaded": stats["total_loaded"],
-                    "per_period": stats["per_period"],
-                    "skipped_files": stats["skipped_files"],
-                    "requested_period": requested_period or None,
+                    "type": log_type,
+                    "stats": stats,
+                    "requested_period": requested_period,
+                    "source_requested": source,
                 }
             }
             sync_log = SyncLog(status="SUCCESS", details=details)
@@ -971,8 +927,66 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
                 exc_info=True,
             )
 
+        try:
+            from services.utils.alert_sender import notify_ulixe_rcrm_google_after_api
+
+            notify_ulixe_rcrm_google_after_api(
+                db,
+                source=source,
+                period=requested_period,
+                success=True,
+                stats=stats,
+            )
+        except Exception:
+            pass
+
         return JSONResponse({"success": True, "stats": stats})
 
+    except ValueError as e:
+        db.rollback()
+        try:
+            from services.utils.alert_sender import notify_ulixe_rcrm_google_after_api
+
+            notify_ulixe_rcrm_google_after_api(
+                db,
+                source=source,
+                period=requested_period,
+                success=False,
+                error_message=str(e),
+            )
+        except Exception:
+            pass
+        return JSONResponse({"success": False, "error": str(e)}, status_code=400)
+    except FileNotFoundError as e:
+        db.rollback()
+        try:
+            from services.utils.alert_sender import notify_ulixe_rcrm_google_after_api
+
+            notify_ulixe_rcrm_google_after_api(
+                db,
+                source=source,
+                period=requested_period,
+                success=False,
+                error_message=str(e),
+            )
+        except Exception:
+            pass
+        return JSONResponse({"success": False, "error": str(e)}, status_code=400)
+    except RuntimeError as e:
+        db.rollback()
+        try:
+            from services.utils.alert_sender import notify_ulixe_rcrm_google_after_api
+
+            notify_ulixe_rcrm_google_after_api(
+                db,
+                source=source,
+                period=requested_period,
+                success=False,
+                error_message=str(e),
+            )
+        except Exception:
+            pass
+        return JSONResponse({"success": False, "error": str(e)}, status_code=400)
     except Exception as e:
         logger.error(f"Errore sync RCRM Ulixe: {e}", exc_info=True)
         db.rollback()
@@ -982,9 +996,10 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
                 "error": str(e),
                 "stats": {
                     "ulixe_rcrm": {
-                        "type": "auto_sync_from_files",
+                        "type": "auto_sync_error",
                         "errors": 1,
-                        "requested_period": requested_period or None,
+                        "requested_period": requested_period,
+                        "source_requested": source,
                     }
                 },
             }
@@ -997,9 +1012,34 @@ async def api_ulixe_rcrm_sync(request: Request, db: Session = Depends(get_db)):
                 exc_info=True,
             )
 
+        err_msg = str(e)
+        status_code = 500
+        try:
+            from googleapiclient.errors import HttpError
+
+            if isinstance(e, HttpError):
+                status_code = 502
+                st = e.resp.status if e.resp is not None else "?"
+                err_msg = f"Google Sheets API (HTTP {st}): {e}"
+        except ImportError:
+            pass
+
+        try:
+            from services.utils.alert_sender import notify_ulixe_rcrm_google_after_api
+
+            notify_ulixe_rcrm_google_after_api(
+                db,
+                source=source,
+                period=requested_period,
+                success=False,
+                error_message=err_msg,
+            )
+        except Exception:
+            pass
+
         return JSONResponse(
-            {"success": False, "error": f"Errore durante la sync RCRM Ulixe: {str(e)}"},
-            status_code=500,
+            {"success": False, "error": f"Errore durante la sync RCRM Ulixe: {err_msg}"},
+            status_code=status_code,
         )
 
 
