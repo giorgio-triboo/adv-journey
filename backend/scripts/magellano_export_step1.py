@@ -52,6 +52,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Data fine YYYY-MM-DD (override di --days)",
     )
+    parser.add_argument(
+        "--headed",
+        action="store_true",
+        help="Apri il browser visibile (Playwright non headless) per debug",
+    )
     return parser.parse_args()
 
 
@@ -76,7 +81,7 @@ def main() -> None:
     logger.info("Campagna: %s", args.campaign)
     logger.info("Periodo:  %s → %s", start_date, end_date)
 
-    automation = MagellanoAutomation()
+    automation = MagellanoAutomation(headless=not args.headed)
 
     with sync_playwright() as p:
         export_filename_xls = automation.enqueue_export_only(

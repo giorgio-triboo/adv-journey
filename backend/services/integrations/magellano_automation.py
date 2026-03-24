@@ -51,7 +51,7 @@ class MagellanoAutomation:
         page.on("dialog", lambda dialog: dialog.accept(export_filename) if dialog.type == "prompt" else dialog.accept())
 
         try:
-            # Login + filtro + apertura pannello Users + set date + sent + click Export
+            # Login + filtro + apertura pannello Users + set date (stato lasciato vuoto) + Export
             self._enqueue_export_common(page, campaign_number, start_date, end_date)
 
             # Dopo aver richiesto l'export, passa alla lista export e aspetta il completamento
@@ -158,7 +158,7 @@ class MagellanoAutomation:
         - download_campaign_file (vecchia logica)
         - enqueue_export_only (script 1)
 
-        Esegue login, filtro, apertura pannello Users, impostazione date e stato, click su Export.
+        Esegue login, filtro, apertura pannello Users, impostazione date (filtro stato vuoto), click su Export.
         """
         # Login
         page.goto(f"{self.base_url}?menuNode=15.04&module=importPanelPublisher&method=main")
@@ -202,9 +202,17 @@ class MagellanoAutomation:
             if (toEl) { $(toEl).trigger('change'); }
         """)
         page.wait_for_timeout(500)
-        
-        # Sent Status
-        page.evaluate("$('#filters_sent').val('1').trigger('change');")
+
+        # Stato: non selezionare nulla (vuoto = tutte le lead, come script originale MagellanoService)
+        page.evaluate("""
+            const select = document.getElementById('filters_sent');
+            if (select) {
+                select.value = '';
+                $(select).trigger('change');
+            }
+        """)
+        page.wait_for_timeout(500)
+
         page.click('a.btn-success:has-text("Apply filters")')
         page.wait_for_load_state('networkidle')
         
