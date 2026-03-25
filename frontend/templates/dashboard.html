@@ -3,259 +3,51 @@
 {% block content %}
 <div class="animate-fadeInUp">
     <div class="mb-8">
-        <h1 class="text-3xl font-bold gradient-text">Dashboard</h1>
-        <p class="text-neutral-500 mt-2">Panoramica delle attività e sincronizzazione dei lead.</p>
+        <h1 class="text-3xl font-bold gradient-text">Dashboard Operativa</h1>
+        <p class="text-neutral-500 mt-2">Seleziona un box per accedere subito all'azione che ti serve.</p>
     </div>
 
-    <!-- Stats Grid -->
-    <div class="grid grid-cols-1 gap-6 sm:grid-cols-3 mb-8">
-        <div class="glass-card p-6 flex items-center">
-            <div class="bg-indigo-100/50 p-3 rounded-xl mr-4">
-                <svg class="h-6 w-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-            </div>
-            <div>
-                <p class="text-sm font-medium text-neutral-500">Total Leads</p>
-                <p class="text-2xl font-bold text-neutral-900">{{ stats.total_leads }}</p>
-            </div>
-        </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        <a href="/lavorazioni/ulixe" class="glass-card p-6 hover:-translate-y-1 hover:shadow-xl transition-all block">
+            <h2 class="text-lg font-semibold text-neutral-900">Lavorazioni Ulixe</h2>
+            <p class="text-sm text-neutral-500 mt-2">Controlla lo stato aggregato per ID messaggio e le lavorazioni in corso.</p>
+            <span class="inline-block mt-4 text-sm font-semibold text-indigo-600">Apri sezione</span>
+        </a>
 
-        <div class="glass-card p-6 flex items-center border-l-4 border-yellow-400">
-            <div class="bg-yellow-100/50 p-3 rounded-xl mr-4">
-                <svg class="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-            </div>
-            <div>
-                <p class="text-sm font-medium text-neutral-500">In Lavorazione</p>
-                <p class="text-2xl font-bold text-neutral-900">{{ stats.in_processing }}</p>
-            </div>
-        </div>
-        
-        <div class="glass-card p-6 flex items-center border-l-4 border-green-400">
-            <div class="bg-green-100/50 p-3 rounded-xl mr-4">
-                <svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-            </div>
-            <div>
-                <p class="text-sm font-medium text-neutral-500">Converted (CRM)</p>
-                <p class="text-2xl font-bold text-neutral-900">{{ stats.converted }}</p>
-            </div>
-        </div>
-    </div>
+        <a href="/lavorazioni/canali" class="glass-card p-6 hover:-translate-y-1 hover:shadow-xl transition-all block">
+            <h2 class="text-lg font-semibold text-neutral-900">Lavorazioni Canali</h2>
+            <p class="text-sm text-neutral-500 mt-2">Analizza andamento e scarti per piattaforma di traffico.</p>
+            <span class="inline-block mt-4 text-sm font-semibold text-indigo-600">Apri sezione</span>
+        </a>
 
-    <!-- Sync Controls -->
-    <div class="glass-card mb-8 overflow-hidden">
-        <div class="px-6 py-4 border-b border-white/20 bg-white/50 flex justify-between items-center">
-            <h2 class="text-lg font-semibold">Sincronizzazione</h2>
-            <form action="/sync/full" method="post" class="inline">
+        <a href="/lavorazioni/utenti" class="glass-card p-6 hover:-translate-y-1 hover:shadow-xl transition-all block">
+            <h2 class="text-lg font-semibold text-neutral-900">Lavorazioni Utenti</h2>
+            <p class="text-sm text-neutral-500 mt-2">Vai al dettaglio delle singole lead con filtri operativi.</p>
+            <span class="inline-block mt-4 text-sm font-semibold text-indigo-600">Apri sezione</span>
+        </a>
+
+        <a href="/marketing" class="glass-card p-6 hover:-translate-y-1 hover:shadow-xl transition-all block">
+            <h2 class="text-lg font-semibold text-neutral-900">Marketing ADV</h2>
+            <p class="text-sm text-neutral-500 mt-2">Gestisci insight e stato delle campagne marketing.</p>
+            <span class="inline-block mt-4 text-sm font-semibold text-indigo-600">Apri sezione</span>
+        </a>
+
+        <a href="/settings/ulixe-sync" class="glass-card p-6 hover:-translate-y-1 hover:shadow-xl transition-all block">
+            <h2 class="text-lg font-semibold text-neutral-900">Configura Sync Ulixe</h2>
+            <p class="text-sm text-neutral-500 mt-2">Imposta opzioni e comportamento della sincronizzazione Ulixe.</p>
+            <span class="inline-block mt-4 text-sm font-semibold text-indigo-600">Apri impostazioni</span>
+        </a>
+
+        <div class="glass-card p-6">
+            <h2 class="text-lg font-semibold text-neutral-900">Avvio Sync Completo</h2>
+            <p class="text-sm text-neutral-500 mt-2">Esegui subito la sincronizzazione completa tramite orchestrator.</p>
+            <form action="/sync/full" method="post" class="mt-4">
                 {% include "csrf_input.html" %}
-                <button type="submit" class="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 shadow-md shadow-green-200 transition-all active:scale-95 text-sm">
+                <button type="submit" class="w-full px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 shadow-md shadow-green-200 transition-all active:scale-95 text-sm">
                     🔄 Sync Completo (Orchestrator)
                 </button>
             </form>
         </div>
-        <div class="p-6">
-            <h3 class="text-sm font-semibold text-neutral-700 mb-4">Sync Manuale Magellano</h3>
-            <form id="dashboardSyncForm" action="/sync" method="post" class="flex flex-col lg:flex-row gap-4 items-end">
-                {% include "csrf_input.html" %}
-                <div class="flex-1 w-full">
-                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Campagne <span class="text-neutral-400 text-xs normal-case">(opzionale - lascia vuoto per tutte)</span></label>
-                    <select name="campaigns" id="dashboardCampaigns" multiple
-                            class="w-full px-4 py-2 rounded-lg border border-neutral-200 outline-none focus:ring-2 focus:ring-indigo-500 bg-white min-h-[80px] text-sm">
-                        {% for campaign in managed_campaigns %}
-                        {% if campaign.magellano_ids %}
-                        {% for mag_id in campaign.magellano_ids %}
-                        <option value="{{ mag_id }}">
-                            {{ campaign.name or campaign.cliente_name }} ({{ mag_id }})
-                        </option>
-                        {% endfor %}
-                        {% endif %}
-                        {% endfor %}
-                    </select>
-                    <p class="text-xs text-neutral-400 mt-1">Tieni premuto Ctrl/Cmd per selezionare più campagne</p>
-                </div>
-                <div class="flex gap-2 w-full lg:w-auto">
-                    <div class="flex-1">
-                        <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Periodo</label>
-                        <input type="text" id="dashboardDateRange"
-                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 outline-none focus:ring-2 focus:ring-indigo-500 text-sm cursor-pointer"
-                               placeholder="Seleziona intervallo">
-                        <input type="hidden" name="start_date" id="dashboardStartDate">
-                        <input type="hidden" name="end_date" id="dashboardEndDate">
-                    </div>
-                </div>
-                <button type="button" id="dashboardSyncBtn" class="w-full lg:w-auto px-8 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95">
-                    Avvia Sync
-                </button>
-            </form>
-        </div>
-    </div>
-
-</div>
-
-<!-- Modale di Conferma -->
-<div id="confirmModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div class="p-6">
-            <div class="flex items-center mb-4">
-                <div class="flex-shrink-0 w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
-                    <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                    </svg>
-                </div>
-                <h3 class="ml-3 text-lg font-semibold text-neutral-900">Conferma Operazione</h3>
-            </div>
-            <div class="mb-6">
-                <p class="text-sm text-neutral-600 mb-2" id="confirmModalMessage">
-                    Sei sicuro di voler procedere con questa operazione?
-                </p>
-                <div id="confirmModalDetails" class="mt-3 p-3 bg-neutral-50 rounded-lg text-xs text-neutral-600 space-y-1"></div>
-            </div>
-            <div class="flex gap-3 justify-end">
-                <button type="button" id="confirmModalCancel" 
-                        class="px-4 py-2 bg-neutral-100 text-neutral-700 font-medium rounded-lg hover:bg-neutral-200 transition-all">
-                    Annulla
-                </button>
-                <button type="button" id="confirmModalConfirm" 
-                        class="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-all">
-                    Conferma
-                </button>
-            </div>
-        </div>
     </div>
 </div>
-
-<script>
-// Modale di Conferma - Funzioni
-let pendingSyncAction = null;
-
-function showConfirmModal(message, details, onConfirm) {
-    document.getElementById('confirmModalMessage').textContent = message;
-    const detailsEl = document.getElementById('confirmModalDetails');
-    if (details) {
-        detailsEl.innerHTML = details;
-        detailsEl.classList.remove('hidden');
-    } else {
-        detailsEl.classList.add('hidden');
-    }
-    document.getElementById('confirmModal').classList.remove('hidden');
-    pendingSyncAction = onConfirm;
-}
-
-function hideConfirmModal() {
-    document.getElementById('confirmModal').classList.add('hidden');
-    pendingSyncAction = null;
-}
-
-document.getElementById('confirmModalCancel').addEventListener('click', hideConfirmModal);
-document.getElementById('confirmModalConfirm').addEventListener('click', function() {
-    if (pendingSyncAction) {
-        hideConfirmModal();
-        pendingSyncAction();
-    }
-});
-
-// Chiudi modale cliccando fuori
-document.getElementById('confirmModal').addEventListener('click', function(e) {
-    if (e.target.id === 'confirmModal') {
-        hideConfirmModal();
-    }
-});
-
-// Inizializza date range picker per sync Magellano
-document.addEventListener('DOMContentLoaded', function () {
-    const rangeInput = document.getElementById('dashboardDateRange');
-    const hiddenFrom = document.getElementById('dashboardStartDate');
-    const hiddenTo = document.getElementById('dashboardEndDate');
-
-    if (rangeInput && hiddenFrom && hiddenTo && window.DateRangePicker && window.moment) {
-        const start = hiddenFrom.value ? moment(hiddenFrom.value, 'YYYY-MM-DD') : moment().subtract(7, 'days');
-        const end = hiddenTo.value ? moment(hiddenTo.value, 'YYYY-MM-DD') : moment();
-
-        hiddenFrom.value = start.format('YYYY-MM-DD');
-        hiddenTo.value = end.format('YYYY-MM-DD');
-
-        new DateRangePicker(rangeInput, {
-            startDate: start,
-            endDate: end,
-            autoApply: true,
-            alwaysShowCalendars: true,
-            opens: 'left',
-            maxSpan: { days: 365 },
-            locale: {
-                format: 'DD/MM/YYYY',
-                separator: ' al ',
-                applyLabel: 'Aggiorna',
-                cancelLabel: 'Annulla',
-                weekLabel: 'Set',
-                daysOfWeek: ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'],
-                monthNames: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'],
-                firstDay: 1
-            },
-            ranges: {
-                'Oggi': [moment(), moment()],
-                'Ieri': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
-                'Ultimi 7 giorni': [moment().subtract(6, 'days'), moment()],
-                'Ultimi 14 giorni': [moment().subtract(13, 'days'), moment()],
-                'Ultimi 28 giorni': [moment().subtract(27, 'days'), moment()],
-                'Ultimi 30 giorni': [moment().subtract(29, 'days'), moment()],
-                'Questo mese': [moment().startOf('month'), moment().endOf('month')],
-                'Mese scorso': [
-                    moment().subtract(1, 'month').startOf('month'),
-                    moment().subtract(1, 'month').endOf('month')
-                ]
-            }
-        }, function (startDate, endDate) {
-            hiddenFrom.value = startDate.format('YYYY-MM-DD');
-            hiddenTo.value = endDate.format('YYYY-MM-DD');
-        });
-    }
-});
-
-// Dashboard Sync Form Handler
-document.getElementById('dashboardSyncBtn').addEventListener('click', function(e) {
-    e.preventDefault();
-    
-    const form = document.getElementById('dashboardSyncForm');
-    const startDate = document.getElementById('dashboardStartDate').value;
-    const endDate = document.getElementById('dashboardEndDate').value;
-    const campaignsSelect = document.getElementById('dashboardCampaigns');
-    
-    // Validazione
-    if (!startDate || !endDate) {
-        alert('Seleziona entrambe le date');
-        return;
-    }
-    
-    if (new Date(startDate) > new Date(endDate)) {
-        alert('La data di inizio deve essere precedente o uguale alla data di fine');
-        return;
-    }
-    
-    // Prepara dettagli per il modale
-    const selectedCampaigns = Array.from(campaignsSelect.selectedOptions).map(opt => opt.value);
-    const campaignsText = selectedCampaigns.length > 0 
-        ? `Campagne: ${selectedCampaigns.join(', ')}` 
-        : 'Tutte le campagne attive';
-    const details = `
-        <div><strong>Periodo:</strong> ${startDate} → ${endDate}</div>
-        <div><strong>${campaignsText}</strong></div>
-        <div class="mt-2 text-yellow-700 bg-yellow-50 p-2 rounded border border-yellow-200">
-            ⚠️ Questa operazione può richiedere diversi minuti e aggiornerà/creerà lead nel database.
-        </div>
-    `;
-    
-    // Mostra modale di conferma
-    showConfirmModal(
-        'Confermi di voler avviare la sincronizzazione Magellano?',
-        details,
-        function() {
-            form.submit();
-        }
-    );
-});
-</script>
 {% endblock %}

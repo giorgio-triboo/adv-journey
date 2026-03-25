@@ -15,7 +15,6 @@ from scripts.load_ulixe_rcrm_temp import (
     load_csv,
     load_rcrm_dict_rows,
     parse_period_from_filename,
-    save_rcrm_backup_csv,
 )
 from services.integrations.google_sheets_rcrm import (
     effective_sheet_name_template,
@@ -43,7 +42,6 @@ def _sync_from_google(db: Session, period: str) -> dict[str, Any]:
     source_label = "google_sheet"
     loaded = load_rcrm_dict_rows(rows, period, db, source_label)
 
-    backup_path = save_rcrm_backup_csv(rows, period)
     _tpl = effective_sheet_name_template()
     sheet_tab = sheet_title_for_period(period, _tpl) if _tpl else None
     return {
@@ -53,7 +51,6 @@ def _sync_from_google(db: Session, period: str) -> dict[str, Any]:
         "deleted_before": int(deleted),
         "rows_loaded": int(loaded),
         "sheet_rows_raw": len(raw) - 1 if raw else 0,
-        "backup_path": backup_path,
     }
 
 
