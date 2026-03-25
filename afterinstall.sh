@@ -53,15 +53,16 @@ if [ "$USE_BLUE_GREEN" = "true" ]; then
     echo "✓ Blue-green deploy attivo (zero downtime)"
 fi
 
-[ -f "$APP_DIR/.env" ] && COMPOSE_FILES="$COMPOSE_FILES --env-file $APP_DIR/.env"
+# Unico env ufficiale (locale + produzione): backend/.env
+ENV_FILE="$APP_DIR/backend/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "ATTENZIONE: $ENV_FILE non trovato. Crealo da backend/.env.example e configurarlo."
+    exit 1
+fi
+COMPOSE_FILES="$COMPOSE_FILES --env-file $ENV_FILE"
 
 # Directory deploy
 mkdir -p deploy/nginx deploy/scripts
-
-if [ ! -f .env ]; then
-    echo "ATTENZIONE: .env non trovato. Copiare .env.example in .env e configurarlo."
-    exit 1
-fi
 
 echo "=========================================="
 echo "DEPLOYMENT"
