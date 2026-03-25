@@ -47,10 +47,8 @@ async def settings_meta_datasets(request: Request, db: Session = Depends(get_db)
     # Recupera tutte le campagne attive
     campaigns = db.query(ManagedCampaign).filter(ManagedCampaign.is_active == True).order_by(ManagedCampaign.cliente_name).all()
     
-    # Recupera i dataset salvati nel DB (collegati agli account accessibili)
     accounts = db.query(MetaAccount).filter(
         MetaAccount.is_active == True,
-        (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
     ).all()
     account_ids = [acc.id for acc in accounts]
     
@@ -81,10 +79,8 @@ async def settings_meta_datasets_select_accounts(request: Request, db: Session =
     if not current_user:
         return RedirectResponse(url='/')
     
-    # Recupera account accessibili
     accounts = db.query(MetaAccount).filter(
         MetaAccount.is_active == True,
-        (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
     ).all()
     
     # Verifica quali account hanno già dataset salvati
@@ -250,7 +246,6 @@ async def fetch_datasets_status(job_id: int, request: Request, db: Session = Dep
     
     job = db.query(MetaDatasetFetchJob).filter(
         MetaDatasetFetchJob.id == job_id,
-        MetaDatasetFetchJob.user_id == current_user.id
     ).first()
     
     if not job:
@@ -289,7 +284,6 @@ async def settings_meta_datasets_select_datasets(request: Request, db: Session =
     # Recupera job dal database
     job = db.query(MetaDatasetFetchJob).filter(
         MetaDatasetFetchJob.id == job_id,
-        MetaDatasetFetchJob.user_id == current_user.id
     ).first()
     
     if not job:
@@ -360,7 +354,6 @@ async def save_selected_datasets(request: Request, db: Session = Depends(get_db)
     # Recupera job dal database
     job = db.query(MetaDatasetFetchJob).filter(
         MetaDatasetFetchJob.id == job_id,
-        MetaDatasetFetchJob.user_id == current_user.id,
         MetaDatasetFetchJob.status == "completed"
     ).first()
     
@@ -448,7 +441,6 @@ async def delete_meta_dataset(request: Request, db: Session = Depends(get_db)):
             account = db.query(MetaAccount).filter(
                 MetaAccount.id == dataset.account_id,
                 MetaAccount.is_active == True,
-                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
             ).first()
             
             if not account:

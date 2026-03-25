@@ -680,12 +680,9 @@ async def settings_meta_sync(request: Request, db: Session = Depends(get_db)):
     if not current_user:
         return RedirectResponse(url='/')
     
-    current_user_id = current_user.id
-    
-    # Get active accounts (condivisi + dell'utente)
+    # Tutti gli account Meta attivi (condivisi tra utenti autenticati)
     accounts = db.query(MetaAccount).filter(
         MetaAccount.is_active == True,
-        (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user_id)
     ).order_by(MetaAccount.name).all()
     
     # Date di default: dal 1 gennaio a oggi-1
@@ -743,15 +740,12 @@ async def manual_meta_sync(request: Request, db: Session = Depends(get_db)):
         if not current_user:
             return JSONResponse({"success": False, "message": "Utente non trovato"}, status_code=401)
         
-        current_user_id = current_user.id
-        
         # Determina account da sincronizzare
         if account_id:
             # Sync account specifico
             account = db.query(MetaAccount).filter(
                 MetaAccount.account_id == account_id,
                 MetaAccount.is_active == True,
-                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user_id)
             ).first()
             
             if not account:
@@ -764,7 +758,6 @@ async def manual_meta_sync(request: Request, db: Session = Depends(get_db)):
             accounts_to_sync = db.query(MetaAccount).filter(
                 MetaAccount.is_active == True,
                 MetaAccount.sync_enabled == True,
-                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user_id)
             ).all()
             
             if not accounts_to_sync:

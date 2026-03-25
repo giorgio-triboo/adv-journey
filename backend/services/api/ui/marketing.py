@@ -273,13 +273,11 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
         # Accounts accessibili all'utente
         accounts = db.query(MetaAccount).filter(
             MetaAccount.is_active == True,
-            (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
         ).order_by(MetaAccount.name).all()
 
         # Campagne accessibili (per select)
         campaigns_query = db.query(MetaCampaign).join(MetaAccount).filter(
             MetaAccount.is_active == True,
-            (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
         )
 
         if selected_account_id:
@@ -290,7 +288,6 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
         # AdSet accessibili (per select, dipendono da account/campagna)
         adsets_query = db.query(MetaAdSet).join(MetaCampaign).join(MetaAccount).filter(
             MetaAccount.is_active == True,
-            (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
         )
         if selected_account_id:
             adsets_query = adsets_query.filter(MetaAccount.account_id == selected_account_id)
@@ -307,7 +304,6 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
             .filter(
                 MetaAccount.is_active == True,
-                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
                 MetaMarketingData.date >= date_from,
                 MetaMarketingData.date <= date_to,
             )
@@ -389,7 +385,6 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
             .filter(
                 MetaAccount.is_active == True,
-                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
                 MetaMarketingData.date >= date_from,
                 MetaMarketingData.date <= date_to,
             )
@@ -449,7 +444,6 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
             .filter(
                 MetaAccount.is_active == True,
-                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
                 MetaMarketingData.date >= date_from,
                 MetaMarketingData.date <= date_to,
             )
@@ -482,7 +476,6 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
             .filter(
                 MetaAccount.is_active == True,
-                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
                 MetaMarketingData.date >= prev_start,
                 MetaMarketingData.date <= prev_end,
             )
@@ -636,7 +629,6 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
                 .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
                 .filter(
                     MetaAccount.is_active == True,
-                    (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
                     MetaMarketingData.date >= date_from,
                     MetaMarketingData.date <= date_to,
                     MetaMarketingData.publisher_platform == platform_key,
@@ -689,7 +681,6 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
                 .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
                 .filter(
                     MetaAccount.is_active == True,
-                    (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
                     MetaMarketingData.date >= date_from,
                     MetaMarketingData.date <= date_to,
                     MetaMarketingData.publisher_platform == platform_key,
@@ -805,7 +796,6 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
             .filter(
                 MetaAccount.is_active == True,
-                (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id),
                 MetaMarketingData.date >= date_from,
                 MetaMarketingData.date <= date_to,
                 MetaMarketingData.publisher_platform.in_(["facebook", "instagram"]),
@@ -924,14 +914,12 @@ async def marketing(request: Request, db: Session = Depends(get_db)):
         # Get user's accessible accounts
         accounts = db.query(MetaAccount).filter(
             MetaAccount.is_active == True,
-            (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
         ).all()
         logger.debug(f"Trovati {len(accounts)} accounts")
         
         # Get all campaigns from accessible accounts
         campaigns = db.query(MetaCampaign).join(MetaAccount).filter(
             MetaAccount.is_active == True,
-            (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
         ).order_by(MetaCampaign.name).all()
         logger.debug(f"Trovate {len(campaigns)} campaigns")
         
@@ -1014,12 +1002,11 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
         if not user:
             return JSONResponse({"error": "Non autorizzato"}, status_code=401)
         
-        current_user = db.query(User).filter(User.email == user.get('email')).first()
-        
-        # Get accessible campaigns
+        if not db.query(User).filter(User.email == user.get('email')).first():
+            return JSONResponse({"error": "Non autorizzato"}, status_code=401)
+
         campaigns_query = db.query(MetaCampaign).join(MetaAccount).filter(
             MetaAccount.is_active == True,
-            (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id if current_user else None)
         )
         
         # Account filter
@@ -1254,12 +1241,11 @@ async def api_marketing_accounts(request: Request, db: Session = Depends(get_db)
     if not user:
         return JSONResponse({"error": "Non autorizzato"}, status_code=401)
     
-    current_user = db.query(User).filter(User.email == user.get('email')).first()
-    
-    # Get accessible accounts
+    if not db.query(User).filter(User.email == user.get('email')).first():
+        return JSONResponse({"error": "Non autorizzato"}, status_code=401)
+
     accounts = db.query(MetaAccount).filter(
         MetaAccount.is_active == True,
-        (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id if current_user else None)
     ).order_by(MetaAccount.name).all()
     
     result = []
@@ -1282,12 +1268,11 @@ async def api_marketing_datasets(request: Request, db: Session = Depends(get_db)
     from services.integrations.meta_marketing import MetaMarketingService
     from services.utils.crypto import decrypt_token
     
-    current_user = db.query(User).filter(User.email == user.get('email')).first()
-    
-    # Get accessible accounts
+    if not db.query(User).filter(User.email == user.get('email')).first():
+        return JSONResponse({"error": "Non autorizzato"}, status_code=401)
+
     accounts = db.query(MetaAccount).filter(
         MetaAccount.is_active == True,
-        (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id if current_user else None)
     ).all()
     
     all_datasets = []
@@ -1615,12 +1600,11 @@ async def api_marketing_adsets(request: Request, db: Session = Depends(get_db)):
     if not user:
         return JSONResponse({"error": "Non autorizzato"}, status_code=401)
     
-    current_user = db.query(User).filter(User.email == user.get('email')).first()
-    
-    # Get accessible campaigns
+    if not db.query(User).filter(User.email == user.get('email')).first():
+        return JSONResponse({"error": "Non autorizzato"}, status_code=401)
+
     campaigns_query = db.query(MetaCampaign).join(MetaAccount).filter(
         MetaAccount.is_active == True,
-        (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id if current_user else None)
     )
     
     # Account filter
@@ -1791,12 +1775,11 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
     if not user:
         return JSONResponse({"error": "Non autorizzato"}, status_code=401)
     
-    current_user = db.query(User).filter(User.email == user.get('email')).first()
-    
-    # Get accessible campaigns
+    if not db.query(User).filter(User.email == user.get('email')).first():
+        return JSONResponse({"error": "Non autorizzato"}, status_code=401)
+
     campaigns_query = db.query(MetaCampaign).join(MetaAccount).filter(
         MetaAccount.is_active == True,
-        (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id if current_user else None)
     )
     
     # Account filter

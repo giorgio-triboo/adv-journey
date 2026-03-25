@@ -47,10 +47,8 @@ async def settings_meta_campaigns(request: Request, db: Session = Depends(get_db
     if not current_user:
         return RedirectResponse(url='/')
     
-    # Filtra account: mostra account condivisi (user_id IS NULL) + account dell'utente corrente
     accounts = db.query(MetaAccount).filter(
         MetaAccount.is_active == True,
-        (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
     ).all()
     
     # Recupera i filtri master dalla sessione (usati solo per ingestion, non per visualizzazione)
@@ -285,10 +283,8 @@ async def sync_logs_viewer(request: Request, db: Session = Depends(get_db)):
     if not current_user:
         return RedirectResponse(url='/')
     
-    # Filtra account accessibili
     accounts = db.query(MetaAccount).filter(
         MetaAccount.is_active == True,
-        (MetaAccount.user_id == None) | (MetaAccount.user_id == current_user.id)
     ).all()
     
     # Parametri di filtro
