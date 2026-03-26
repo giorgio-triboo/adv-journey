@@ -26,10 +26,98 @@ from models import (
     StatusCategory,
     TrafficPlatform,
 )
-from services.api.ui.dashboard import _get_meta_conversions_for_ad_ids_by_key, _get_platform_for_lead
-from services.api.ui.marketing import _lead_date_filter, _parse_amount
 
 logger = logging.getLogger("tasks.exports")
+
+
+def _get_meta_conversions_for_ad_ids_by_key(db, ad_ids_by_key, date_from, date_to):
+    """
+    Per ogni chiave in ad_ids_by_key, ritorna la somma conversioni Meta per quei meta_ad_id.
+    Duplicata localmente per evitare circular import con services.api.ui.dashboard.
+    """
+    date_from_d = date_from.date() if hasattr(date_from, "date") else date_from
+    date_to_d = date_to.date() if hasattr(date_to, "date") else date_to
+    clean = {k: {str(a) for a in (v or []) if a and str(a).strip()} for k, v in ad_ids_by_key.items()}
+    all_ad_ids = set()
+    for ad_id_set in clean.values():
+        all_ad_ids.update(ad_id_set)
+    if not all_ad_ids:
+        return {k: 0 for k in ad_ids_by_key}
+    rows = (
+        db.query(MetaAd.ad_id, func.sum(MetaMarketingData.conversions).label("total"))
+        .join(MetaMarketingData, MetaMarketingData.ad_id == MetaAd.id)
+        .filter(
+            MetaAd.ad_id.in_(list(all_ad_ids)),
+            MetaMarketingData.date >= date_from_d,
+            MetaMarketingData.date <= date_to_d,
+        )
+        .group_by(MetaAd.ad_id)
+        .all()
+    )
+    ad_to_conv = {str(r.ad_id): int(r.total or 0) for r in rows}
+    result = {}
+    for key, ad_ids in clean.items():
+        result[key] = sum(ad_to_conv.get(aid, 0) for aid in ad_ids)
+    for key in ad_ids_by_key:
+        if key not in result:
+            result[key] = 0
+    return result
+
+
+def _get_platform_for_lead(lead, msg_to_platform, facebook_platform_to_slug):
+    """
+    Determina piattaforma lead con fallback su facebook_piattaforma.
+    Duplicata localmente per evitare circular import con services.api.ui.dashboard.
+    """
+    if lead.msg_id and str(lead.msg_id) in msg_to_platform:
+        return msg_to_platform[str(lead.msg_id)]
+    if lead.facebook_piattaforma:
+        slug = (lead.facebook_piattaforma or "").lower().strip()
+        for key, value in facebook_platform_to_slug.items():
+            if key in slug:
+                return value
+        if slug in ("facebook", "instagram", "messenger", "audience network"):
+            return "meta"
+    return "non_mappato"
+
+
+def _lead_date_filter(date_from_obj, date_to_obj):
+    """
+    Filtra lead per data iscrizione Magellano.
+    Duplicata localmente per evitare circular import con services.api.ui.marketing.
+    """
+    date_from_d = date_from_obj.date() if hasattr(date_from_obj, "date") else date_from_obj
+    date_to_d = date_to_obj.date() if hasattr(date_to_obj, "date") else date_to_obj
+    return and_(
+        Lead.magellano_subscr_date.isnot(None),
+        Lead.magellano_subscr_date >= date_from_d,
+        Lead.magellano_subscr_date <= date_to_d,
+    )
+
+
+def _parse_amount(val) -> float:
+    """
+    Normalizza importi provenienti da MetaMarketingData in float.
+    Duplicata localmente per evitare circular import con services.api.ui.marketing.
+    """
+    if val is None:
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        from decimal import Decimal
+        if isinstance(val, Decimal):
+            return float(val)
+    except ImportError:
+        pass
+    raw = str(val).strip()
+    if not raw:
+        return 0.0
+    if "." in raw and "," in raw:
+        raw = raw.replace(".", "").replace(",", ".")
+    elif "," in raw:
+        raw = raw.replace(",", ".")
+    return float(raw)
 
 
 def _fmt_decimal(value: Any, decimals: int = 2) -> str:
@@ -189,7 +277,8 @@ def _export_lavorazioni(db, subsection: str, filters: dict[str, Any]) -> tuple[l
             inviate = row["inviate"]
             scartate_fw = row["scartate_firewall"]
             scarto_in = (doppioni / lead_acquistate_meta * 100) if lead_acquistate_meta else 0
-            scarto_out = (scartate_fw / inviate * 100) if inviate else 0
+            uscita_totale = inviate + scartate_fw
+            scarto_out = (scartate_fw / uscita_totale * 100) if uscita_totale else 0
             p = platform_by_slug.get(slug)
             channel_name = p.name if p else slug
             rows.append({
@@ -264,7 +353,7 @@ def _export_lavorazioni(db, subsection: str, filters: dict[str, Any]) -> tuple[l
             "scarto_pct_ingresso": _fmt_decimal((doppioni / lead_acquistate_meta * 100) if lead_acquistate_meta else 0, 2),
             "scartate_firewall": scartate_fw,
             "inviate": inviate,
-            "scarto_pct_uscita": _fmt_decimal((scartate_fw / inviate * 100) if inviate else 0, 2),
+            "scarto_pct_uscita": _fmt_decimal((scartate_fw / (inviate + scartate_fw) * 100) if (inviate + scartate_fw) else 0, 2),
             "in_lavorazione": int(agg.in_lavorazione or 0),
             "doppioni_ulixe": int(agg.doppioni_ulixe or 0),
             "approvate": int(agg.approvate or 0),
@@ -332,7 +421,8 @@ def _export_marketing(db, filters: dict[str, Any]) -> tuple[list[str], list[dict
         cpl_ingresso = (spend / mag_entrate) if mag_entrate > 0 else 0
         cpl_uscita = (spend / mag_inviate) if mag_inviate > 0 else 0
         scarto_in = (mag_scartate / total_leads * 100) if total_leads > 0 else 0
-        scarto_out = (mag_rifiutate / mag_inviate * 100) if mag_inviate > 0 else 0
+        uscita_totale = mag_inviate + mag_rifiutate
+        scarto_out = (mag_rifiutate / uscita_totale * 100) if uscita_totale > 0 else 0
         scarto_tot = ((total_leads - mag_inviate) / total_leads * 100) if total_leads > 0 else 0
 
         rows.append({

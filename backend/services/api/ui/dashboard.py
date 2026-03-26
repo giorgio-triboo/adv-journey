@@ -241,8 +241,9 @@ async def lavorazioni_ulixe(request: Request, db: Session = Depends(get_db)):
         approvate = agg.approvate or 0
         # % Scarto Ingresso: doppioni / lead_acquistate_meta
         scarto_pct_ingresso = round((doppioni / lead_acquistate_meta * 100), 1) if lead_acquistate_meta else 0
-        # % Scarto Uscita: scartate_firewall / inviate
-        scarto_pct_uscita = round((scartate_fw / inviate * 100), 1) if inviate else 0
+        # % Scarto Uscita: scartate_firewall / (inviate + scartate_firewall)
+        uscita_totale = inviate + scartate_fw
+        scarto_pct_uscita = round((scartate_fw / uscita_totale * 100), 1) if uscita_totale else 0
         lavorazioni_aggregate.append({
             'msg_id': agg.msg_id,
             'lead_acquistate_meta': lead_acquistate_meta,
@@ -401,7 +402,8 @@ async def lavorazioni_canali(request: Request, db: Session = Depends(get_db)):
         inviate = stats['inviate']
         scartate_fw = stats['scartate_firewall']
         scarto_pct_ingresso = round((doppioni / lead_acquistate_meta * 100), 1) if lead_acquistate_meta else 0
-        scarto_pct_uscita = round((scartate_fw / inviate * 100), 1) if inviate else 0
+        uscita_totale = inviate + scartate_fw
+        scarto_pct_uscita = round((scartate_fw / uscita_totale * 100), 1) if uscita_totale else 0
         canali_data.append({
             'slug': slug,
             'name': name,
