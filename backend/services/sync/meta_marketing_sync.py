@@ -26,6 +26,70 @@ def _append_ingestion_debug(existing_raw: dict | None, tag: dict) -> dict:
     return raw
 
 
+def _normalize_meta_id(raw: object) -> str:
+    """
+    Normalizza ID Meta in formato stringa semplice.
+    """
+    if raw is None:
+        return ""
+    value = str(raw).strip()
+    if "/" in value:
+        value = value.split("/")[-1]
+    for prefix in ("ad_", "adset_", "campaign_", "act_"):
+        if value.startswith(prefix):
+            value = value.replace(prefix, "", 1)
+    return value.strip()
+
+
+def _group_insights_by_campaign(insights: List[dict]) -> dict[str, List[dict]]:
+    grouped: dict[str, List[dict]] = {}
+    for insight in insights:
+        campaign_id = _normalize_meta_id(insight.get("campaign_id", ""))
+        if not campaign_id:
+            continue
+        grouped.setdefault(campaign_id, []).append(insight)
+    return grouped
+
+
+def _aggregate_insights_by_key(insights: List[dict], key_name: str) -> dict[str, dict]:
+    """
+    Aggrega metriche base per la chiave indicata (campaign_id/adset_id).
+    """
+    grouped: dict[str, dict] = {}
+    for insight in insights:
+        raw_key = _normalize_meta_id(insight.get(key_name, ""))
+        if not raw_key:
+            continue
+
+        spend = float(insight.get("spend", 0) or 0)
+        impressions = int(insight.get("impressions", 0) or 0)
+        clicks = int(insight.get("clicks", 0) or 0)
+        conversions = int(insight.get("conversions", 0) or 0)
+
+        row = grouped.setdefault(
+            raw_key,
+            {
+                "spend": 0.0,
+                "impressions": 0,
+                "clicks": 0,
+                "conversions": 0,
+            },
+        )
+        row["spend"] += spend
+        row["impressions"] += impressions
+        row["clicks"] += clicks
+        row["conversions"] += conversions
+
+    for _, row in grouped.items():
+        impressions = int(row.get("impressions", 0) or 0)
+        clicks = int(row.get("clicks", 0) or 0)
+        spend = float(row.get("spend", 0) or 0)
+        row["ctr"] = (clicks / impressions * 100) if impressions > 0 else 0
+        row["cpc"] = (spend / clicks) if clicks > 0 else 0
+        row["cpm"] = (spend / impressions * 1000) if impressions > 0 else 0
+    return grouped
+
+
 def run(db: Session = None) -> dict:
     """
     Esegue il job di ingestion dati marketing Meta.
@@ -195,9 +259,12 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
         if filters and filters.get('name_pattern'):
             service.sync_account_campaigns(account.account_id, db, filters=filters)
         else:
-            # Se non ci sono filtri, sincronizza tutte le campagne
-            logger.info(f"Meta Marketing Manual Sync: No filters found, syncing all campaigns for account {account.account_id}")
-            service.sync_account_campaigns(account.account_id, db, filters=None)
+            # Senza filtri non richiamiamo sync_account_campaigns: emetterebbe warning e skip.
+            # Usiamo la struttura campagne già presente a DB per la sync marketing.
+            logger.info(
+                "Meta Marketing Manual Sync: No sync filters found, using existing campaigns in DB for account %s",
+                account.account_id,
+            )
         
         # Get campaigns (for manual sync, we use all campaigns, not just is_synced=True)
         # because manual sync should work even without filters
@@ -225,21 +292,46 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
                 f"Run campaigns/adsets/ads sync before marketing sync."
             )
         
-        # Fetch and save marketing insights for each campaign
+        # Fetch insights una sola volta per account/range (A)
+        logger.info(
+            "Meta Marketing Manual Sync: Fetching account-level ad insights once for account %s",
+            account.account_id,
+        )
+        insights = service.get_insights(
+            account_id=account.account_id,
+            level='ad',
+            date_preset=None,  # usa esplicitamente il range richiesto, non last_7d di default
+            start_date=start_date,
+            end_date=end_date,
+            fields=metrics,
+        )
+        logger.info(
+            "Meta Marketing Manual Sync: Retrieved %s ad-level insights for account %s",
+            len(insights),
+            account.account_id,
+        )
+
+        # Aggregazioni da ad-level per validazione tecnica (B)
+        campaign_aggregates = _aggregate_insights_by_key(insights, "campaign_id")
+        adset_aggregates = _aggregate_insights_by_key(insights, "adset_id")
+        logger.info(
+            "Meta Marketing Manual Sync: Aggregates built from ad-level insights (campaigns=%s, adsets=%s)",
+            len(campaign_aggregates),
+            len(adset_aggregates),
+        )
+
+        insights_by_campaign = _group_insights_by_campaign(insights)
+
+        # Fetch and save marketing insights for each campaign (using pre-fetched insights)
         for campaign in campaigns:
             try:
-                logger.info(f"Meta Marketing Manual Sync: Fetching insights for campaign {campaign.campaign_id}")
-                
-                insights = service.get_insights(
-                    account_id=account.account_id,
-                    level='ad',
-                    date_preset=None,  # usa esplicitamente il range richiesto, non last_7d di default
-                    start_date=start_date,
-                    end_date=end_date,
-                    fields=metrics,
+                normalized_campaign_id = _normalize_meta_id(campaign.campaign_id)
+                campaign_insights = insights_by_campaign.get(normalized_campaign_id, [])
+                logger.info(
+                    "Meta Marketing Manual Sync: Processing campaign %s with %s pre-fetched insights",
+                    campaign.campaign_id,
+                    len(campaign_insights),
                 )
-                
-                logger.info(f"Meta Marketing Manual Sync: Retrieved {len(insights)} insights for campaign {campaign.campaign_id}")
                 
                 # Get all ad_ids for this campaign to help debug matching issues
                 campaign_ad_ids = db.query(MetaAd.ad_id).join(MetaAdSet).filter(
@@ -255,7 +347,7 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
                 records_skipped_no_ad_record = 0
                 insight_ad_ids = set()
                 
-                for insight in insights:
+                for insight in campaign_insights:
                     ad_id_str = insight.get('ad_id', '')
                     if not ad_id_str:
                         records_skipped_no_ad_id += 1
@@ -369,6 +461,24 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
         logger.info(f"Meta Marketing Manual Sync ✅: {stats['campaigns_synced']} campaigns synced for account {account.account_id}")
         
     except Exception as e:
+        if "Meta quota critical" in str(e):
+            try:
+                from services.utils.alert_sender import send_sync_alert_if_needed
+                send_sync_alert_if_needed(
+                    db,
+                    "meta_marketing_sync",
+                    False,
+                    {
+                        "manual": True,
+                        "account_id": account_id,
+                        "start_date": start_date.isoformat(),
+                        "end_date": end_date.isoformat(),
+                        "reason": "meta_quota_critical",
+                    },
+                    str(e),
+                )
+            except Exception:
+                pass
         logger.error(f"Meta Marketing Manual Sync ❌: {e}", exc_info=True)
         stats["errors"] = 1
     finally:

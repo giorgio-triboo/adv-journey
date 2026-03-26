@@ -12,8 +12,10 @@ from config import settings
 from models import now_rome
 import logging
 import time
+import json
+import requests
 import traceback
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta, date
 
 logger = logging.getLogger('services.integrations.meta_marketing')
@@ -26,6 +28,7 @@ logger = logging.getLogger('services.integrations.meta_marketing')
 API_CALL_DELAY = 5.0  # 5 secondi tra chiamate
 MAX_RETRIES = 4  # Numero massimo di tentativi (1 iniziale + 3 retry con backoff 2s, 5s, 7s)
 RETRY_BACKOFF_TIMES = [2, 5, 7]  # Backoff incrementale per retry: 2s, 5s, 7s
+GRAPH_API_TIMEOUT_SECONDS = 60
 
 class MetaMarketingService:
     def __init__(self, access_token: Optional[str] = None):
@@ -38,6 +41,122 @@ class MetaMarketingService:
             FacebookAdsApi.init(access_token=self.access_token)
         else:
             logger.warning("META_ACCESS_TOKEN not set. Meta Marketing service disabled.")
+        self.last_quota_snapshot: Dict[str, Any] = {}
+
+    def _extract_usage_headers(self, headers: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Estrae e normalizza gli header quota più utili.
+        """
+        ad_account_usage_raw = headers.get('X-Ad-Account-Usage') or headers.get('x-ad-account-usage') or ""
+        business_usage_raw = headers.get('X-Business-Use-Case-Usage') or headers.get('x-business-use-case-usage') or ""
+        return {
+            "ad_account_usage_raw": ad_account_usage_raw,
+            "business_use_case_usage_raw": business_usage_raw,
+        }
+
+    def _safe_json_loads(self, raw_value: str) -> Any:
+        if not raw_value:
+            return {}
+        try:
+            return json.loads(raw_value)
+        except Exception:
+            return {}
+
+    def _collect_usage_numbers(self, value: Any, out: Dict[str, float]):
+        """
+        Cerca ricorsivamente metriche numeriche negli header usage.
+        """
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                lowered = str(key).strip().lower()
+                if lowered in {"call_count", "total_cputime", "total_time", "estimated_time_to_regain_access"}:
+                    try:
+                        out[lowered] = max(out.get(lowered, 0.0), float(nested))
+                    except Exception:
+                        pass
+                self._collect_usage_numbers(nested, out)
+        elif isinstance(value, list):
+            for item in value:
+                self._collect_usage_numbers(item, out)
+
+    def _extract_usage_pressure(self, parsed_ad_usage: Any, parsed_business_usage: Any) -> Dict[str, float]:
+        """
+        Restituisce indicatori utili a stimare la pressione quota.
+        """
+        values: Dict[str, float] = {}
+        self._collect_usage_numbers(parsed_ad_usage, values)
+        self._collect_usage_numbers(parsed_business_usage, values)
+
+        call_count = float(values.get("call_count", 0.0))
+        total_cputime = float(values.get("total_cputime", 0.0))
+        total_time = float(values.get("total_time", 0.0))
+        regain_seconds = float(values.get("estimated_time_to_regain_access", 0.0))
+        max_pressure_pct = max(call_count, total_cputime, total_time)
+
+        return {
+            "call_count": call_count,
+            "total_cputime": total_cputime,
+            "total_time": total_time,
+            "estimated_time_to_regain_access": regain_seconds,
+            "max_pressure_pct": max_pressure_pct,
+        }
+
+    def _compute_dynamic_delay(self, pressure: Dict[str, float]) -> float:
+        """
+        Calcola delay dinamico in base alla pressione quota.
+        """
+        max_pressure_pct = float(pressure.get("max_pressure_pct", 0.0))
+        regain_seconds = float(pressure.get("estimated_time_to_regain_access", 0.0))
+
+        if regain_seconds > 0:
+            # Se Meta indica tempo per recuperare accesso, rispettiamolo.
+            return max(float(regain_seconds), 30.0)
+        if max_pressure_pct >= 95.0:
+            return 30.0
+        if max_pressure_pct >= 90.0:
+            return 15.0
+        if max_pressure_pct >= 80.0:
+            return 8.0
+        return API_CALL_DELAY
+
+    def _apply_dynamic_rate_limit(self, headers: Dict[str, str], context: str):
+        usage_headers = self._extract_usage_headers(headers)
+        parsed_ad_usage = self._safe_json_loads(usage_headers.get("ad_account_usage_raw", ""))
+        parsed_business_usage = self._safe_json_loads(usage_headers.get("business_use_case_usage_raw", ""))
+        pressure = self._extract_usage_pressure(parsed_ad_usage, parsed_business_usage)
+        dynamic_delay = self._compute_dynamic_delay(pressure)
+
+        self.last_quota_snapshot = {
+            "context": context,
+            "pressure": pressure,
+            "dynamic_delay": dynamic_delay,
+            "headers": usage_headers,
+        }
+
+        max_pressure_pct = float(pressure.get("max_pressure_pct", 0.0))
+        if max_pressure_pct >= 98.0:
+            # Quota prossima all'esaurimento: interrompiamo per evitare blocchi più lunghi.
+            raise RuntimeError(
+                f"Meta quota critical ({max_pressure_pct:.2f}%) in {context}. "
+                f"Stopping sync to avoid hard rate-limit lock."
+            )
+
+        if max_pressure_pct >= 90.0:
+            logger.warning(
+                "[QUOTA] High pressure %.2f%% in %s. Dynamic sleep %.1fs",
+                max_pressure_pct,
+                context,
+                dynamic_delay,
+            )
+        elif max_pressure_pct >= 80.0:
+            logger.info(
+                "[QUOTA] Moderate pressure %.2f%% in %s. Dynamic sleep %.1fs",
+                max_pressure_pct,
+                context,
+                dynamic_delay,
+            )
+
+        time.sleep(dynamic_delay)
     
     def _make_api_call_with_retry(self, api_call_func, *args, **kwargs):
         """
@@ -524,34 +643,61 @@ class MetaMarketingService:
                     fields.append(f)
         
         try:
-            account = AdAccount(f"act_{account_id}")
-            
+            graph_url = f"https://graph.facebook.com/v23.0/act_{account_id}/insights"
             params = {
                 'level': level,
-                'fields': fields,
+                'fields': ",".join(fields),
                 'time_increment': 1,  # Daily breakdown
                 # Nessun breakdown aggiuntivo per ridurre la complessità/rate limit
                 # (in particolare niente publisher_platform / platform_position)
+                'access_token': self.access_token,
             }
             
             if date_preset:
                 params['date_preset'] = date_preset
             elif start_date and end_date:
-                params['time_range'] = {
+                params['time_range'] = json.dumps({
                     'since': start_date.strftime('%Y-%m-%d'),
                     'until': end_date.strftime('%Y-%m-%d')
-                }
-            
-            insights = account.get_insights(params=params)
-            
+                })
+
+            all_insights_rows: List[Dict] = []
+            next_url = graph_url
+            next_params = params
+            page_index = 0
+
+            while next_url:
+                page_index += 1
+                response = requests.get(next_url, params=next_params, timeout=GRAPH_API_TIMEOUT_SECONDS)
+                if response.status_code >= 400:
+                    try:
+                        error_payload = response.json()
+                    except Exception:
+                        error_payload = {"error": {"message": response.text}}
+                    raise RuntimeError(f"Meta Insights API error: {error_payload}")
+
+                payload = response.json()
+                page_rows = payload.get("data", [])
+                all_insights_rows.extend(page_rows)
+
+                self._apply_dynamic_rate_limit(
+                    response.headers,
+                    context=f"insights account={account_id} page={page_index}",
+                )
+
+                next_url = payload.get("paging", {}).get("next")
+                # Sulla paginazione next URL i parametri sono già inclusi.
+                next_params = None
+
+            insights = all_insights_rows
             logger.info(f"Retrieved {len(insights)} insights from Meta API for account {account_id}")
             if insights and len(insights) > 0:
                 # Log first insight to see structure
                 first_insight = insights[0]
-                logger.info(f"Sample insight structure - Keys: {list(first_insight.keys())}")
-                logger.info(f"Sample insight - ad_id: {first_insight.get('ad_id')}, ad_id type: {type(first_insight.get('ad_id'))}, date: {first_insight.get('date_start')}, campaign_id: {first_insight.get('campaign_id')}")
+                logger.info(f"Sample insight structure - Keys: {list(first_insight.keys()) if isinstance(first_insight, dict) else []}")
+                logger.info(f"Sample insight - ad_id: {first_insight.get('ad_id') if isinstance(first_insight, dict) else ''}, ad_id type: {type(first_insight.get('ad_id')) if isinstance(first_insight, dict) else 'unknown'}, date: {first_insight.get('date_start') if isinstance(first_insight, dict) else ''}, campaign_id: {first_insight.get('campaign_id') if isinstance(first_insight, dict) else ''}")
                 # Log raw insight dict to see all fields
-                logger.debug(f"Raw first insight: {dict(first_insight)}")
+                logger.debug(f"Raw first insight: {dict(first_insight) if isinstance(first_insight, dict) else first_insight}")
             
             result = []
             for insight in insights:
