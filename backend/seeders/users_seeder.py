@@ -16,13 +16,6 @@ INITIAL_USERS = [
         "role": "super-admin",
         "id_sede": "DIRECT"
     },
-    # Utente viewer per test - usare impersonazione per vedere la sua vista
-    {
-        "email": "viewer-test@triboo.it",
-        "is_active": True,
-        "role": "viewer",
-        "id_sede": None
-    },
 ]
 
 
