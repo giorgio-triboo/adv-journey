@@ -1,6 +1,6 @@
 """Dashboard e Lavorazioni views"""
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session, load_only
 from sqlalchemy import func, case, and_, or_
 from database import get_db
@@ -8,6 +8,7 @@ from models import Lead, StatusCategory, TrafficPlatform, MsgTrafficMapping, Man
 from datetime import datetime, timedelta
 from collections import defaultdict
 from .common import templates
+from tasks.exports import generate_and_email_csv_task
 
 router = APIRouter(include_in_schema=False)
 
@@ -429,4 +430,33 @@ async def lavorazioni_canali(request: Request, db: Session = Depends(get_db)):
         "date_from": filters['date_from'],
         "date_to": filters['date_to'],
         "active_page": "lavorazioni_canali"
+    })
+
+
+@router.get("/api/lavorazioni/export-request")
+async def lavorazioni_export_request(request: Request):
+    """Enqueue export CSV lavorazioni e invio email al richiedente."""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Non autorizzato"}, status_code=401)
+
+    requester_email = user.get("email") or ""
+    if not requester_email:
+        return JSONResponse({"error": "Email utente non disponibile"}, status_code=400)
+
+    subsection = (request.query_params.get("subsection") or "ulixe").strip().lower()
+    if subsection not in {"ulixe", "utenti", "canali"}:
+        subsection = "ulixe"
+
+    filters = {
+        "status_category": request.query_params.get("status_category") or "",
+        "campaign_id": request.query_params.get("campaign_id") or "",
+        "date_from": request.query_params.get("date_from") or "",
+        "date_to": request.query_params.get("date_to") or "",
+    }
+
+    generate_and_email_csv_task.delay("lavorazioni", requester_email, filters, subsection)
+    return JSONResponse({
+        "ok": True,
+        "message": "Export avviato. Riceverai il CSV via email appena pronto.",
     })

@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import httpx
 import logging
 from .common import templates
+from tasks.exports import generate_and_email_csv_task
 
 logger = logging.getLogger('services.api.ui')
 
@@ -1129,8 +1130,9 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                 magellano_inviate = len([l for l in leads if l.magellano_status == 'magellano_sent'])
                 magellano_rifiutate = len([l for l in leads if l.magellano_status in ['magellano_firewall', 'magellano_refused']])
                 cpl_uscita = (total_spend_meta / magellano_inviate) if magellano_inviate > 0 else 0
-                # Percentuale scarto uscita: rifiutate / magellano_inviate * 100
-                magellano_scarto_pct_uscita = (magellano_rifiutate / magellano_inviate * 100) if magellano_inviate > 0 else 0
+                # Percentuale scarto uscita: rifiutate / (inviate + rifiutate) * 100
+                uscita_magellano_totale = magellano_inviate + magellano_rifiutate
+                magellano_scarto_pct_uscita = (magellano_rifiutate / uscita_magellano_totale * 100) if uscita_magellano_totale > 0 else 0
                 # % scarto totale: acquisto Meta -> uscita Magellano (lead perse lungo tutto il funnel)
                 scarto_totale_pct = ((total_leads - magellano_inviate) / total_leads * 100) if total_leads > 0 else 0
                 
@@ -1400,8 +1402,9 @@ async def api_marketing_campaign_adsets(campaign_id: int, request: Request, db: 
         magellano_inviate = len([l for l in leads if l.magellano_status == 'magellano_sent'])
         magellano_rifiutate = len([l for l in leads if l.magellano_status in ['magellano_firewall', 'magellano_refused']])
         cpl_uscita = (total_spend_meta / magellano_inviate) if magellano_inviate > 0 else 0
-        # Percentuale scarto uscita: rifiutate / magellano_inviate * 100
-        magellano_scarto_pct_uscita = (magellano_rifiutate / magellano_inviate * 100) if magellano_inviate > 0 else 0
+        # Percentuale scarto uscita: rifiutate / (inviate + rifiutate) * 100
+        uscita_magellano_totale = magellano_inviate + magellano_rifiutate
+        magellano_scarto_pct_uscita = (magellano_rifiutate / uscita_magellano_totale * 100) if uscita_magellano_totale > 0 else 0
         # % scarto totale: acquisto Meta -> uscita Magellano
         scarto_totale_pct = ((total_leads - magellano_inviate) / total_leads * 100) if total_leads > 0 else 0
         
@@ -1535,7 +1538,8 @@ async def api_marketing_adset_ads(adset_id: int, request: Request, db: Session =
         magellano_inviate = len([l for l in leads if l.magellano_status == 'magellano_sent'])
         magellano_rifiutate = len([l for l in leads if l.magellano_status in ['magellano_firewall', 'magellano_refused']])
         cpl_uscita = (total_spend_meta / magellano_inviate) if magellano_inviate > 0 else 0
-        magellano_scarto_pct_uscita = (magellano_rifiutate / magellano_inviate * 100) if magellano_inviate > 0 else 0
+        uscita_magellano_totale = magellano_inviate + magellano_rifiutate
+        magellano_scarto_pct_uscita = (magellano_rifiutate / uscita_magellano_totale * 100) if uscita_magellano_totale > 0 else 0
         # % scarto totale: acquisto Meta -> uscita Magellano
         scarto_totale_pct = ((total_leads - magellano_inviate) / total_leads * 100) if total_leads > 0 else 0
         
@@ -1708,7 +1712,8 @@ async def api_marketing_adsets(request: Request, db: Session = Depends(get_db)):
             magellano_inviate = len([l for l in leads if l.magellano_status == 'magellano_sent'])
             magellano_rifiutate = len([l for l in leads if l.magellano_status in ['magellano_firewall', 'magellano_refused']])
             cpl_uscita = (total_spend_meta / magellano_inviate) if magellano_inviate > 0 else 0
-            magellano_scarto_pct_uscita = (magellano_rifiutate / magellano_inviate * 100) if magellano_inviate > 0 else 0
+            uscita_magellano_totale = magellano_inviate + magellano_rifiutate
+            magellano_scarto_pct_uscita = (magellano_rifiutate / uscita_magellano_totale * 100) if uscita_magellano_totale > 0 else 0
             # % scarto totale: acquisto Meta -> uscita Magellano
             scarto_totale_pct = ((total_leads - magellano_inviate) / total_leads * 100) if total_leads > 0 else 0
             
@@ -1892,7 +1897,8 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
                 magellano_inviate = len([l for l in leads if l.magellano_status == 'magellano_sent'])
                 magellano_rifiutate = len([l for l in leads if l.magellano_status in ['magellano_firewall', 'magellano_refused']])
                 cpl_uscita = (total_spend_meta / magellano_inviate) if magellano_inviate > 0 else 0
-                magellano_scarto_pct_uscita = (magellano_rifiutate / magellano_inviate * 100) if magellano_inviate > 0 else 0
+                uscita_magellano_totale = magellano_inviate + magellano_rifiutate
+                magellano_scarto_pct_uscita = (magellano_rifiutate / uscita_magellano_totale * 100) if uscita_magellano_totale > 0 else 0
                 # % scarto totale: acquisto Meta -> uscita Magellano
                 scarto_totale_pct = ((total_leads - magellano_inviate) / total_leads * 100) if total_leads > 0 else 0
                 
@@ -1955,4 +1961,35 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
                 })
     
     return JSONResponse(result)
+
+
+@router.get("/api/marketing/export-request")
+async def marketing_export_request(request: Request, db: Session = Depends(get_db)):
+    """Enqueue export CSV marketing e invio email al richiedente."""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Non autorizzato"}, status_code=401)
+    if not db.query(User).filter(User.email == user.get("email")).first():
+        return JSONResponse({"error": "Non autorizzato"}, status_code=401)
+
+    requester_email = user.get("email") or ""
+    if not requester_email:
+        return JSONResponse({"error": "Email utente non disponibile"}, status_code=400)
+
+    filters = {
+        "account_id": request.query_params.get("account_id") or "",
+        "status": request.query_params.get("status") or "all",
+        "platform": request.query_params.get("platform") or "all",
+        "campaign_name": request.query_params.get("campaign_name") or "",
+        "adset_name": request.query_params.get("adset_name") or "",
+        "ad_name": request.query_params.get("ad_name") or "",
+        "date_from": request.query_params.get("date_from") or "",
+        "date_to": request.query_params.get("date_to") or "",
+    }
+
+    generate_and_email_csv_task.delay("marketing", requester_email, filters, "")
+    return JSONResponse({
+        "ok": True,
+        "message": "Export avviato. Riceverai il CSV via email appena pronto.",
+    })
 

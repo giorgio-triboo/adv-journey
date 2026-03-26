@@ -27,4 +27,5 @@ import tasks.sync_pipeline  # noqa: F401
 import tasks.meta_marketing  # noqa: F401
 import tasks.magellano  # noqa: F401
 import tasks.meta_datasets  # noqa: F401
+import tasks.exports  # noqa: F401
 

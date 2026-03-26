@@ -49,10 +49,16 @@
                     <input type="hidden" id="dateTo" name="date_to">
                 </div>
                 <div class="flex items-end">
-                    <button type="button" onclick="applyFilters()" 
-                            class="w-full px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
-                        Applica Filtri
-                    </button>
+                    <div class="w-full flex gap-2">
+                        <button type="button" onclick="applyFilters()" 
+                                class="w-full px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
+                            Applica Filtri
+                        </button>
+                        <button type="button" id="marketingExportButton"
+                                class="w-full px-6 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition-all">
+                            Export CSV
+                        </button>
+                    </div>
                 </div>
             </div>
             <!-- Seconda riga: Filtri per nome -->
@@ -218,6 +224,37 @@ let thresholdsConfig = {
     colori_scarto_verde: true,
     colori_scarto_rosso: true
 };
+
+async function requestMarketingExport() {
+    const btn = document.getElementById('marketingExportButton');
+    if (!btn) return;
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Export in corso...';
+    try {
+        const params = new URLSearchParams({
+            account_id: document.getElementById('accountFilter').value || '',
+            status: document.getElementById('statusFilter').value || 'all',
+            platform: document.getElementById('platformFilter').value || 'all',
+            campaign_name: document.getElementById('campaignNameFilter').value.trim(),
+            adset_name: document.getElementById('adsetNameFilter').value.trim(),
+            ad_name: document.getElementById('adNameFilter').value.trim(),
+            date_from: document.getElementById('dateFrom').value || '',
+            date_to: document.getElementById('dateTo').value || '',
+        });
+        const response = await fetch(`/api/marketing/export-request?${params.toString()}`);
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Errore avvio export');
+        }
+        alert(data.message || 'Export avviato correttamente.');
+    } catch (error) {
+        alert(error.message || 'Errore avvio export.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+    }
+}
 
 async function loadThresholds() {
     try {
@@ -1388,5 +1425,10 @@ let filterTimeout;
         });
     }
 });
+
+const marketingExportButton = document.getElementById('marketingExportButton');
+if (marketingExportButton) {
+    marketingExportButton.addEventListener('click', requestMarketingExport);
+}
 </script>
 {% endblock %}
