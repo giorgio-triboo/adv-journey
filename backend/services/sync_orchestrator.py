@@ -3,12 +3,11 @@ Orchestrator per gestire l'esecuzione sequenziale di tutti i job di sincronizzaz
 Permette di aggiungere facilmente nuove piattaforme in futuro.
 """
 from database import SessionLocal
-from models import SyncLog
+from models import SyncLog, now_rome
 from services.sync.ulixe_sync import run as ulixe_sync_job
 from services.sync.meta_marketing_sync import run as meta_marketing_sync_job
 from services.sync.meta_conversion_marker import run as meta_conversion_marker_job
 from services.sync.meta_conversion_sync import run as meta_conversion_sync_job
-from datetime import datetime
 import logging
 
 logger = logging.getLogger('services.sync_orchestrator')
@@ -53,7 +52,7 @@ class SyncOrchestrator:
         logger.info("=" * 80)
         
         db = SessionLocal()
-        sync_log = SyncLog(status="RUNNING", details={"started_at": datetime.utcnow().isoformat()})
+        sync_log = SyncLog(status="RUNNING", details={"started_at": now_rome().isoformat()})
         db.add(sync_log)
         db.commit()
         
@@ -79,7 +78,7 @@ class SyncOrchestrator:
             
             # Update sync log
             sync_log.status = "SUCCESS"
-            sync_log.completed_at = datetime.utcnow()
+            sync_log.completed_at = now_rome()
             sync_log.details = all_stats
             db.commit()
             
@@ -91,7 +90,7 @@ class SyncOrchestrator:
         except Exception as e:
             logger.error(f"❌ Sync Orchestrator failed: {e}", exc_info=True)
             sync_log.status = "ERROR"
-            sync_log.completed_at = datetime.utcnow()
+            sync_log.completed_at = now_rome()
             sync_log.details = {"error": str(e), "stats": all_stats}
             db.commit()
         finally:

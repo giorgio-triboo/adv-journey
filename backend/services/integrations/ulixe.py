@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from config import settings
+from models import now_rome
 import logging
 
 # Usa il logger configurato centralmente
@@ -55,7 +56,7 @@ class UlixeClient:
                 status=status_str,
                 category=category,
                 raw_response=status_str,
-                checked_at=datetime.utcnow()
+                checked_at=now_rome()
             )
             
         except Exception as e:
@@ -65,7 +66,7 @@ class UlixeClient:
                 status="ERROR",
                 category="unknown",
                 raw_response=str(e),
-                checked_at=datetime.utcnow()
+                checked_at=now_rome()
             )
 
     def _categorize_status(self, status: str) -> str:

@@ -5,7 +5,7 @@ Controlla stato per lead attive (non rifiutate, non completate).
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from services.integrations.ulixe import UlixeClient
-from models import Lead, StatusCategory, LeadHistory
+from models import Lead, StatusCategory, LeadHistory, now_rome
 from datetime import datetime, timedelta
 import logging
 import time
@@ -54,7 +54,7 @@ def run(db: Session = None) -> dict:
         all_leads = query.all()
         leads_to_check = []
         
-        now = datetime.utcnow()
+        now = now_rome()
         
         for lead in all_leads:
             # Skip se non ha external_user_id
@@ -132,7 +132,7 @@ def run(db: Session = None) -> dict:
                     # Aggiorna current_status e status_category (Ulixe ha priorità)
                     lead.current_status = status_info.status
                     lead.status_category = ulixe_status_category
-                    lead.updated_at = datetime.utcnow()
+                    lead.updated_at = now_rome()
                     
                     # Save history
                     history = LeadHistory(
@@ -150,7 +150,7 @@ def run(db: Session = None) -> dict:
                     # Ma aggiorna comunque status_category se necessario
                     if lead.status_category != ulixe_status_category:
                         lead.status_category = ulixe_status_category
-                    lead.updated_at = datetime.utcnow()
+                    lead.updated_at = now_rome()
                 
             except Exception as e:
                 stats["errors"] += 1

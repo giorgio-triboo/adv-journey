@@ -9,6 +9,7 @@ from facebook_business.adobjects.adset import AdSet
 from facebook_business.adobjects.ad import Ad
 from facebook_business.adobjects.adsinsights import AdsInsights
 from config import settings
+from models import now_rome
 import logging
 import time
 import traceback
@@ -739,7 +740,7 @@ class MetaMarketingService:
                     # Update existing
                     campaign_record.name = camp_data['name']
                     campaign_record.status = camp_data['status']
-                    campaign_record.updated_at = datetime.utcnow()
+                    campaign_record.updated_at = now_rome()
                     campaigns_updated += 1
                     # Commit immediato per salvare l'aggiornamento
                     try:
@@ -805,7 +806,7 @@ class MetaMarketingService:
                     logger.debug(f"[SYNC] Aggiornamento adset esistente: {adset_data['adset_id']}")
                     adset_record.name = adset_data['name']
                     adset_record.status = adset_data['status']
-                    adset_record.updated_at = datetime.utcnow()
+                    adset_record.updated_at = now_rome()
                     campaign_adsets_updated += 1
                     # Commit immediato per salvare l'aggiornamento
                     try:
@@ -856,7 +857,7 @@ class MetaMarketingService:
                         # Aggiorna anche creative_thumbnail_url se disponibile
                         if ad_data.get('creative_thumbnail_url'):
                             ad_record.creative_thumbnail_url = ad_data.get('creative_thumbnail_url', '')
-                        ad_record.updated_at = datetime.utcnow()
+                        ad_record.updated_at = now_rome()
                         ads_updated += 1
                 
                 # Commit immediato per salvare gli ads
