@@ -10,12 +10,70 @@ from typing import List
 from urllib.parse import urlparse
 import httpx
 import logging
+import time
+import hashlib
+from threading import Lock
 from .common import templates
 from tasks.exports import generate_and_email_csv_task
 
 logger = logging.getLogger('services.api.ui')
 
 router = APIRouter(include_in_schema=False)
+
+# Cache in-memory per immagini proxy (riduce richieste duplicate a Meta/CDN)
+PROXY_IMAGE_CACHE_TTL_SECONDS = 1800  # 30 minuti
+PROXY_IMAGE_CACHE_MAX_ITEMS = 500
+_proxy_image_cache: dict[int, dict] = {}
+_proxy_image_cache_lock = Lock()
+
+
+def _cleanup_proxy_image_cache_if_needed():
+    now_ts = time.time()
+    expired_keys = []
+    for key, item in _proxy_image_cache.items():
+        expires_at = float(item.get("expires_at", 0))
+        if expires_at <= now_ts:
+            expired_keys.append(key)
+    for key in expired_keys:
+        _proxy_image_cache.pop(key, None)
+
+    if len(_proxy_image_cache) <= PROXY_IMAGE_CACHE_MAX_ITEMS:
+        return
+
+    # Rimuove gli elementi meno recentemente usati.
+    sorted_items = sorted(
+        _proxy_image_cache.items(),
+        key=lambda x: float(x[1].get("last_access", 0)),
+    )
+    to_remove = len(_proxy_image_cache) - PROXY_IMAGE_CACHE_MAX_ITEMS
+    for key, _ in sorted_items[:to_remove]:
+        _proxy_image_cache.pop(key, None)
+
+
+def _get_cached_proxy_image(ad_id: int):
+    now_ts = time.time()
+    with _proxy_image_cache_lock:
+        item = _proxy_image_cache.get(ad_id)
+        if not item:
+            return None
+        if float(item.get("expires_at", 0)) <= now_ts:
+            _proxy_image_cache.pop(ad_id, None)
+            return None
+        item["last_access"] = now_ts
+        return item
+
+
+def _set_cached_proxy_image(ad_id: int, image_bytes: bytes, content_type: str, etag: str):
+    now_ts = time.time()
+    with _proxy_image_cache_lock:
+        _proxy_image_cache[ad_id] = {
+            "content": image_bytes,
+            "content_type": content_type,
+            "etag": etag,
+            "expires_at": now_ts + PROXY_IMAGE_CACHE_TTL_SECONDS,
+            "last_access": now_ts,
+        }
+        _cleanup_proxy_image_cache_if_needed()
 
 
 def _get_mag_to_pay(db: Session) -> dict:
@@ -958,6 +1016,26 @@ async def proxy_creative_image(request: Request, db: Session = Depends(get_db)):
     except ValueError:
         return Response(status_code=400)
 
+    cached_image = _get_cached_proxy_image(ad_id_int)
+    if cached_image:
+        etag = cached_image.get("etag", "")
+        if request.headers.get("if-none-match") == etag:
+            return Response(
+                status_code=304,
+                headers={
+                    "ETag": etag,
+                    "Cache-Control": "private, max-age=300",
+                },
+            )
+        return Response(
+            content=cached_image.get("content", b""),
+            media_type=cached_image.get("content_type", "image/jpeg"),
+            headers={
+                "ETag": etag,
+                "Cache-Control": "private, max-age=300",
+            },
+        )
+
     ad = db.query(MetaAd).filter(MetaAd.id == ad_id_int).first()
     if not ad or not ad.creative_id:
         return Response(status_code=404)
@@ -986,7 +1064,30 @@ async def proxy_creative_image(request: Request, db: Session = Depends(get_db)):
             r2 = await client.get(thumbnail_url, headers=headers, follow_redirects=True)
             r2.raise_for_status()
             content_type = r2.headers.get("content-type", "image/jpeg")
-            return Response(content=r2.content, media_type=content_type)
+            image_bytes = r2.content
+            etag = hashlib.md5(image_bytes).hexdigest()
+            _set_cached_proxy_image(
+                ad_id=ad_id_int,
+                image_bytes=image_bytes,
+                content_type=content_type,
+                etag=etag,
+            )
+            if request.headers.get("if-none-match") == etag:
+                return Response(
+                    status_code=304,
+                    headers={
+                        "ETag": etag,
+                        "Cache-Control": "private, max-age=300",
+                    },
+                )
+            return Response(
+                content=image_bytes,
+                media_type=content_type,
+                headers={
+                    "ETag": etag,
+                    "Cache-Control": "private, max-age=300",
+                },
+            )
     except httpx.HTTPStatusError as e:
         logger.debug(f"Proxy image HTTP error: {e}")
         return Response(status_code=502)

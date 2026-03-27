@@ -214,6 +214,7 @@ let campaignsData = [];
 let accountsData = [];
 let adsetsData = {}; // campaignId -> adsets array
 let adsData = {}; // adsetId -> ads array
+let creativeImageObserver = null;
 let thresholdsConfig = {
     margine_rosso_fino: 0,
     margine_verde_da: 15,
@@ -224,6 +225,38 @@ let thresholdsConfig = {
     colori_scarto_verde: true,
     colori_scarto_rosso: true
 };
+
+function getCreativeImageObserver() {
+    if (creativeImageObserver) {
+        return creativeImageObserver;
+    }
+
+    creativeImageObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+            if (!entry.isIntersecting) {
+                return;
+            }
+            const img = entry.target;
+            const realSrc = img.getAttribute('data-src');
+            if (realSrc && !img.getAttribute('src')) {
+                img.setAttribute('src', realSrc);
+            }
+            observer.unobserve(img);
+        });
+    }, {
+        root: null,
+        rootMargin: '200px 0px',
+        threshold: 0.01
+    });
+
+    return creativeImageObserver;
+}
+
+function observeLazyCreativeImages(container) {
+    const observer = getCreativeImageObserver();
+    const lazyImages = container.querySelectorAll('img.lazy-creative-image[data-src]');
+    lazyImages.forEach(img => observer.observe(img));
+}
 
 async function requestMarketingExport() {
     const btn = document.getElementById('marketingExportButton');
@@ -906,6 +939,7 @@ function displayAds(adsetId, ads) {
         const adRow = createAdRow(ad);
         container.appendChild(adRow);
     });
+    observeLazyCreativeImages(container);
 }
 
 function createAdRow(ad) {
@@ -931,7 +965,7 @@ function createAdRow(ad) {
     row.innerHTML = `
         <div class="flex items-center justify-between p-4 transition-colors">
             <div class="flex items-center gap-3 flex-1 pl-8">
-                ${(ad.creative_id && ad.id) ? `<img src="/api/marketing/proxy-image?ad_id=${ad.id}" alt="Creative" class="w-16 h-16 object-cover rounded border border-neutral-200" onerror="this.style.display='none'">` : ''}
+                ${(ad.creative_id && ad.id) ? `<div class="w-16 h-16 rounded border border-neutral-200 bg-neutral-100 overflow-hidden shrink-0"><img data-src="/api/marketing/proxy-image?ad_id=${ad.id}" alt="Creative" loading="lazy" class="lazy-creative-image w-16 h-16 object-cover" onerror="this.closest('div').style.display='none'"></div>` : ''}
                 <div class="flex-1">
                     <div class="font-medium text-neutral-700">${escapeHtml(ad.name)}</div>
                     <div class="text-sm text-neutral-500 flex items-center gap-2">
