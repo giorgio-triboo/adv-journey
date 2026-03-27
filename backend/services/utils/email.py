@@ -27,6 +27,11 @@ class EmailService:
     def is_configured(self) -> bool:
         """Verifica se SMTP è configurato"""
         return bool(self.smtp_host and self.smtp_user and self.smtp_password)
+
+    def _with_current_date_in_subject(self, subject: str) -> str:
+        """Aggiunge la data corrente all'oggetto email per distinguere gli alert."""
+        current_date = datetime.now().strftime('%d/%m/%Y')
+        return f"{subject} - {current_date}"
     
     def send_alert(
         self,
@@ -60,7 +65,8 @@ class EmailService:
             msg = MIMEMultipart('alternative')
             msg['From'] = self.smtp_from
             msg['To'] = ', '.join(recipients)
-            msg['Subject'] = subject
+            final_subject = self._with_current_date_in_subject(subject)
+            msg['Subject'] = final_subject
             
             # Aggiungi corpo testo (se non fornito, genera da HTML)
             if body_text:
@@ -84,7 +90,7 @@ class EmailService:
                 
                 server.send_message(msg)
             
-            logger.info(f"Email inviata con successo a {len(recipients)} destinatari: {subject}")
+            logger.info(f"Email inviata con successo a {len(recipients)} destinatari: {final_subject}")
             return True
             
         except Exception as e:
