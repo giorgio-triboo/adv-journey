@@ -169,6 +169,9 @@ def magellano_export_fetch_task(
         try:
             with sync_playwright() as p:
                 for campaign in campaigns:
+                    camp_key = str(campaign)
+                    if camp_key not in stats["per_campaign"]:
+                        stats["per_campaign"][camp_key] = {"new": 0, "updated": 0}
                     logger.info(
                         "Checking export for campaign %s (%s - %s)",
                         campaign,
@@ -183,10 +186,15 @@ def magellano_export_fetch_task(
                         password_date=password_date,
                         download_dir=temp_dir,
                     )
-                    if not leads:
+                    if leads is None:
                         stats["failed_campaigns"].append(str(campaign))
                         stats["total_errors"] += 1
                         continue
+                    if len(leads) == 0:
+                        logger.info(
+                            "Export campagna %s processato correttamente: 0 lead presenti",
+                            campaign,
+                        )
                     all_leads.extend(leads)
         finally:
             try:
@@ -194,7 +202,7 @@ def magellano_export_fetch_task(
             except Exception:
                 logger.warning("Impossibile rimuovere la cartella temporanea %s", temp_dir, exc_info=True)
 
-        if not all_leads:
+        if not all_leads and stats["failed_campaigns"]:
             # Nessun export pronto: job in errore
             status_str = "ERROR"
             if job:
