@@ -3,87 +3,89 @@
 {% block content %}
 <div class="animate-fadeInUp">
     <div class="mb-8">
-        <h1 class="text-3xl font-bold gradient-text">Marketing Analysis</h1>
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h1 class="text-3xl font-bold gradient-text">Marketing Analysis</h1>
+            <button type="button" id="marketingAnalysisExportButton"
+                    class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-2.5 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition-all active:scale-95 shadow-sm">
+                Export CSV
+            </button>
+        </div>
         <p class="text-neutral-500 mt-2">
             Analisi avanzata delle performance ADV con filtri e grafici di sintesi. I grafici sono una prima bozza e verranno raffinati in seguito.
         </p>
     </div>
 
-    <!-- Filtri -->
+    <!-- Filtri: una riga su lg+; a capo su schermi piccoli -->
     <div class="glass-card mb-6 p-4 sticky top-4 z-20 bg-white/90 backdrop-blur border border-neutral-200">
-        <form method="GET" class="grid grid-cols-1 sm:grid-cols-6 gap-4" id="analysisFiltersForm">
-            <div>
-                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Account</label>
-                <select name="account_id" id="accountFilter"
-                        class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
-                    <option value="">Tutti</option>
-                    {% for account in accounts %}
-                    <option value="{{ account.account_id }}" {% if selected_account_id == account.account_id %}selected{% endif %}>
-                        {{ account.name }}
-                    </option>
-                    {% endfor %}
-                </select>
+        <form method="GET" id="analysisFiltersForm">
+            <div class="hidden" aria-hidden="true">
+                <input type="hidden" name="tab" id="analysisActiveTab" value="{{ analysis_tab|default('analysis') }}">
             </div>
-
-            <div>
-                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Campagna</label>
-                <select name="campaign_id" id="campaignFilter"
-                        class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
-                    <option value="">Tutte</option>
-                    {% for campaign in campaigns %}
-                    <option value="{{ campaign.campaign_id }}"
-                            data-account-id="{{ campaign.account.account_id if campaign.account else '' }}"
-                            {% if selected_campaign_id == campaign.campaign_id %}selected{% endif %}>
-                        {{ campaign.name }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div>
-                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">AdSet</label>
-                <select name="adset_id" id="adsetFilter"
-                        class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
-                    <option value="">Tutti</option>
-                    {% for adset in adsets %}
-                    <option value="{{ adset.id }}"
-                            data-account-id="{{ adset.campaign.account.account_id if adset.campaign and adset.campaign.account else '' }}"
-                            data-campaign-id="{{ adset.campaign.campaign_id if adset.campaign else '' }}"
-                            {% if selected_adset_id == adset.id %}selected{% endif %}>
-                        {{ adset.name }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <!-- Date range con calendario avanzato -->
-            <div class="sm:col-span-2">
-                <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Periodo</label>
-                <div class="flex flex-col sm:flex-row sm:items-center gap-3">
-                    <div class="flex-1">
-                        <input type="text" id="analysisDateRange"
-                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
-                               placeholder="Seleziona intervallo">
-                        <!-- hidden fields usati dal backend -->
-                        <input type="hidden" name="date_from" id="analysisDateFrom" value="{{ date_from }}">
-                        <input type="hidden" name="date_to" id="analysisDateTo" value="{{ date_to }}">
-                    </div>
+            <div class="flex flex-col gap-3 lg:flex-row lg:flex-nowrap lg:items-end lg:gap-2 lg:w-full">
+                <div class="w-full min-w-0 shrink-0 lg:w-[13.5rem] lg:flex-none">
+                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Periodo</label>
+                    <input type="text" id="analysisDateRange"
+                           class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+                           placeholder="Intervallo date">
+                    <input type="hidden" name="date_from" id="analysisDateFrom" value="{{ date_from }}">
+                    <input type="hidden" name="date_to" id="analysisDateTo" value="{{ date_to }}">
                 </div>
-            </div>
-
-            <div class="flex items-end gap-2 sm:justify-end">
-                <button type="submit"
-                        class="w-full px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
-                    Applica Filtri
-                </button>
-                <button type="button" id="resetFiltersButton"
-                        class="w-full whitespace-nowrap px-6 py-2 border border-neutral-300 text-neutral-700 font-semibold rounded-lg hover:bg-neutral-50 transition-all active:scale-95">
-                    Azzera filtri
-                </button>
+                <div class="w-full min-w-0 lg:w-[10rem] lg:flex-none">
+                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1" for="analysisCampaignName">Campagna</label>
+                    <input type="text" name="campaign_name" id="analysisCampaignName" value="{{ selected_campaign_name|default('', true) }}"
+                           autocomplete="off" placeholder="Nome campagna…"
+                           class="w-full min-w-0 px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div class="w-full min-w-0 lg:w-[12.5rem] lg:flex-none">
+                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1" for="analysisAdsetName">AdSet</label>
+                    <input type="text" name="adset_name" id="analysisAdsetName" value="{{ selected_adset_name|default('', true) }}"
+                           autocomplete="off" placeholder="Nome ad set…"
+                           class="w-full min-w-0 px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div class="w-full min-w-0 lg:w-[12.5rem] lg:flex-none">
+                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1" for="analysisCreativeName">Creatività</label>
+                    <input type="text" name="creative_name" id="analysisCreativeName" value="{{ selected_creative_name|default('', true) }}"
+                           autocomplete="off" placeholder="Nome inserzione…"
+                           class="w-full min-w-0 px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div class="flex flex-col sm:flex-row gap-2 w-full lg:w-auto lg:shrink-0 lg:pb-0 lg:ml-auto">
+                    <button type="submit"
+                            class="w-full sm:flex-1 lg:w-auto whitespace-nowrap px-4 py-2 text-sm bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
+                        Applica Filtri
+                    </button>
+                    <a href="/marketing/analysis?tab={{ analysis_tab|default('analysis') }}"
+                       class="w-full sm:flex-1 lg:w-auto whitespace-nowrap text-center px-4 py-2 text-sm border border-neutral-300 bg-white text-neutral-800 font-semibold rounded-lg hover:bg-neutral-50 transition-all active:scale-95">
+                        Azzera filtri
+                    </a>
+                </div>
             </div>
         </form>
     </div>
 
+    <div class="flex flex-wrap gap-2 mb-6" role="tablist" aria-label="Sezioni Marketing Analysis">
+        <button type="button" id="tabBtnAnalysis" role="tab" data-analysis-tab="analysis"
+                class="px-4 py-2 rounded-lg font-medium transition-all {% if (analysis_tab|default('analysis')) == 'analysis' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
+                aria-selected="{{ 'true' if (analysis_tab|default('analysis')) == 'analysis' else 'false' }}">
+            Analisi
+        </button>
+        <button type="button" id="tabBtnBreakdown" role="tab" data-analysis-tab="breakdown"
+                class="px-4 py-2 rounded-lg font-medium transition-all {% if (analysis_tab|default('analysis')) == 'breakdown' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
+                aria-selected="{{ 'true' if (analysis_tab|default('analysis')) == 'breakdown' else 'false' }}">
+            Breakdown
+        </button>
+        <button type="button" id="tabBtnPlacementCreative" role="tab" data-analysis-tab="placement_creative"
+                class="px-4 py-2 rounded-lg font-medium transition-all {% if (analysis_tab|default('analysis')) == 'placement_creative' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
+                aria-selected="{{ 'true' if (analysis_tab|default('analysis')) == 'placement_creative' else 'false' }}">
+            Creatività per posizionamento
+        </button>
+        <button type="button" id="tabBtnLeadLavorazioni" role="tab" data-analysis-tab="lead_wip"
+                class="px-4 py-2 rounded-lg font-medium transition-all {% if (analysis_tab|default('analysis')) == 'lead_wip' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
+                aria-selected="{{ 'true' if (analysis_tab|default('analysis')) == 'lead_wip' else 'false' }}">
+            Lavorazioni lead
+        </button>
+    </div>
+
+    <div id="panelAnalysis" class="{% if (analysis_tab|default('analysis')) != 'analysis' %}hidden{% endif %}">
     <!-- KPI Cards (nascoste, sostituite dalle card sottostanti) -->
     <div class="hidden">
         <!-- Speso -->
@@ -305,313 +307,716 @@
             {% endif %}
         </div>
     </div>
+    </div>
 
-    <!-- Breakdown per piattaforma: Facebook vs Instagram -->
-    <div class="mt-10">
-        <h2 class="text-lg font-semibold text-neutral-900 mb-4">Breakdown per piattaforma</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+    <div id="panelBreakdown" class="{% if (analysis_tab|default('analysis')) != 'breakdown' %}hidden{% endif %} mt-2">
+    <!-- Breakdown: una card per piattaforma (totali Meta + tabella posizionamenti) -->
+    <div class="mt-6">
+        {% set fb = platform_totals.facebook if platform_totals is defined and platform_totals.facebook else {} %}
+        {% set ig = platform_totals.instagram if platform_totals is defined and platform_totals.instagram else {} %}
+        {% set fb_rows = placement_insights_by_platform.facebook if placement_insights_by_platform and placement_insights_by_platform.facebook else [] %}
+        {% set ig_rows = placement_insights_by_platform.instagram if placement_insights_by_platform and placement_insights_by_platform.instagram else [] %}
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <!-- Facebook -->
-            <div class="glass-card p-6 bg-white border border-neutral-200">
-                <div class="flex items-center justify-between mb-4">
+            <div class="glass-card p-6 bg-white border border-neutral-200 rounded-xl shadow-sm">
+                <h3 class="text-xl font-bold text-neutral-900 tracking-tight">Facebook</h3>
+
+                <div class="mt-6 flex flex-wrap gap-8 border-b border-neutral-100 pb-6">
                     <div>
-                        <p class="text-xs font-semibold text-neutral-500 uppercase">Facebook</p>
-                        <p class="text-sm text-neutral-500">Solo traffico con publisher_platform = facebook</p>
-                    </div>
-                </div>
-                {% set fb = platform_totals.facebook if platform_totals is defined and platform_totals.facebook else {} %}
-                <div class="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Speso</p>
-                        <p class="text-xl font-bold text-neutral-900 mt-1">
+                        <p class="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Speso</p>
+                        <p class="text-2xl font-bold text-neutral-900 mt-1">
                             € {{ "{:,.2f}".format(fb.total_spend or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
                         </p>
                     </div>
                     <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Lead Meta</p>
-                        <p class="text-xl font-bold text-neutral-900 mt-1">
+                        <p class="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Lead Meta</p>
+                        <p class="text-2xl font-bold text-neutral-900 mt-1">
                             {{ "{:,}".format(fb.total_conversions or 0)|replace(',', '.') }}
                         </p>
                     </div>
                     <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">CPL medio</p>
-                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                        <p class="text-xs font-semibold text-neutral-500 uppercase tracking-wide">CPL medio</p>
+                        <p class="text-2xl font-bold text-neutral-900 mt-1">
                             € {{ "{:,.2f}".format(fb.global_cpl or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
                         </p>
                     </div>
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Lead entrate Magellano</p>
-                        <p class="text-lg font-bold text-neutral-900 mt-1">
-                            {{ "{:,}".format(fb.total_magellano_entrate or 0)|replace(',', '.') }}
-                        </p>
+                </div>
+
+                {% if placement_cpl_by_platform and placement_cpl_by_platform.facebook %}
+                <div class="mt-6 pt-6 border-t border-neutral-100 pb-6 border-b border-neutral-100">
+                    <p class="text-sm font-semibold text-neutral-900">Andamento giornaliero per posizionamento</p>
+                    <p class="text-xs text-neutral-500 mt-1 mb-3">
+                        <span class="font-medium text-neutral-700">Tutti i posizionamenti</span>: scegli metrica accanto; una linea per posizionamento.
+                        <span class="font-medium text-neutral-700">Un posizionamento</span>: grafico con speso, lead e CPL (assi separati).
+                    </p>
+                    <div class="flex flex-wrap gap-4 sm:gap-6 items-end mb-2">
+                        <div class="shrink-0">
+                            <label for="placementBreakdownChartMetricFacebook" class="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Vista grafico posizionamenti</label>
+                            <select id="placementBreakdownChartMetricFacebook" class="border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white text-neutral-900 min-w-[220px] shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+                                <option value="cpl">CPL giornaliero</option>
+                                <option value="spend">Speso giornaliero (€)</option>
+                                <option value="leads">Lead Meta giornalieri</option>
+                            </select>
+                        </div>
+                        <div class="shrink-0">
+                            <label for="placementIsolateFacebook" class="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Posizionamento</label>
+                            <select id="placementIsolateFacebook" class="border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white text-neutral-900 min-w-[220px] shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+                                <option value="">Tutti i posizionamenti</option>
+                                {% for p in placement_cpl_by_platform.facebook.placements %}
+                                <option value="{{ p.position }}">{{ p.position }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Inviate WS</p>
-                        <p class="text-lg font-bold text-neutral-900 mt-1">
-                            {{ "{:,}".format(fb.total_magellano_inviate or 0)|replace(',', '.') }}
-                        </p>
+                    <p class="text-xs text-neutral-500 mb-3 min-h-[2.5rem]" id="placementBreakdownChartHintFacebook"></p>
+                    <div class="h-72">
+                        <canvas id="placementCplFacebook"></canvas>
                     </div>
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Approvate Ulixe</p>
-                        <p class="text-lg font-bold text-neutral-900 mt-1">
-                            {{ "{:,}".format(fb.total_ulixe_approvate or 0)|replace(',', '.') }}
-                        </p>
+                </div>
+                {% endif %}
+
+                <div class="mt-5">
+                    <p class="text-xs font-semibold text-neutral-600 uppercase mb-3">Posizionamenti</p>
+                    {% if fb_rows %}
+                    <div class="overflow-x-auto rounded-lg border border-neutral-100">
+                        <table class="min-w-full text-sm">
+                            <thead>
+                                <tr class="bg-neutral-50 text-neutral-600 text-xs uppercase tracking-wide">
+                                    <th class="text-left py-2.5 px-3 font-semibold">Posizionamento</th>
+                                    <th class="text-right py-2.5 px-3 font-semibold">Lead</th>
+                                    <th class="text-right py-2.5 px-3 font-semibold">CPL</th>
+                                    <th class="text-right py-2.5 px-3 font-semibold">Speso</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in fb_rows %}
+                                <tr class="border-t border-neutral-100 hover:bg-neutral-50/80">
+                                    <td class="py-2.5 px-3 text-neutral-800 font-medium">{{ row.position }}</td>
+                                    <td class="py-2.5 px-3 text-right text-neutral-900 tabular-nums">
+                                        {{ "{:,}".format(row.total_conversions)|replace(',', '.') }}
+                                    </td>
+                                    <td class="py-2.5 px-3 text-right font-semibold tabular-nums {% if row.cpl <= 5 %}text-green-600{% elif row.cpl <= 10 %}text-orange-500{% else %}text-red-600{% endif %}">
+                                        € {{ "{:,.2f}".format(row.cpl)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                    </td>
+                                    <td class="py-2.5 px-3 text-right text-neutral-900 tabular-nums">
+                                        € {{ "{:,.2f}".format(row.total_spend)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Ricavo</p>
-                        <p class="text-lg font-bold text-neutral-900 mt-1">
-                            € {{ "{:,.2f}".format(fb.total_ricavo or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
-                        </p>
-                    </div>
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Margine</p>
-                        <p class="text-lg font-bold {% if fb.total_margine_pct is not none %}{% if fb.total_margine_pct <= 0 %}text-red-600{% elif fb.total_margine_pct >= 15 %}text-green-600{% else %}text-orange-500{% endif %}{% else %}text-neutral-700{% endif %} mt-1">
-                            {% if fb.total_margine_pct is not none %}{{ (fb.total_margine_pct)|string|replace('.', ',') }}%{% else %}N/D{% endif %}
-                        </p>
-                    </div>
+                    {% else %}
+                    <p class="text-sm text-neutral-400 py-4">Nessun posizionamento nel periodo / filtri selezionati.</p>
+                    {% endif %}
                 </div>
             </div>
 
             <!-- Instagram -->
-            <div class="glass-card p-6 bg-white border border-neutral-200">
-                <div class="flex items-center justify-between mb-4">
+            <div class="glass-card p-6 bg-white border border-neutral-200 rounded-xl shadow-sm">
+                <h3 class="text-xl font-bold text-neutral-900 tracking-tight">Instagram</h3>
+
+                <div class="mt-6 flex flex-wrap gap-8 border-b border-neutral-100 pb-6">
                     <div>
-                        <p class="text-xs font-semibold text-neutral-500 uppercase">Instagram</p>
-                        <p class="text-sm text-neutral-500">Solo traffico con publisher_platform = instagram</p>
-                    </div>
-                </div>
-                {% set ig = platform_totals.instagram if platform_totals is defined and platform_totals.instagram else {} %}
-                <div class="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Speso</p>
-                        <p class="text-xl font-bold text-neutral-900 mt-1">
+                        <p class="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Speso</p>
+                        <p class="text-2xl font-bold text-neutral-900 mt-1">
                             € {{ "{:,.2f}".format(ig.total_spend or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
                         </p>
                     </div>
                     <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Lead Meta</p>
-                        <p class="text-xl font-bold text-neutral-900 mt-1">
+                        <p class="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Lead Meta</p>
+                        <p class="text-2xl font-bold text-neutral-900 mt-1">
                             {{ "{:,}".format(ig.total_conversions or 0)|replace(',', '.') }}
                         </p>
                     </div>
                     <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">CPL medio</p>
-                        <p class="text-lg font-bold text-neutral-900 mt-1">
+                        <p class="text-xs font-semibold text-neutral-500 uppercase tracking-wide">CPL medio</p>
+                        <p class="text-2xl font-bold text-neutral-900 mt-1">
                             € {{ "{:,.2f}".format(ig.global_cpl or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
                         </p>
                     </div>
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Lead entrate Magellano</p>
-                        <p class="text-lg font-bold text-neutral-900 mt-1">
-                            {{ "{:,}".format(ig.total_magellano_entrate or 0)|replace(',', '.') }}
-                        </p>
+                </div>
+
+                {% if placement_cpl_by_platform and placement_cpl_by_platform.instagram %}
+                <div class="mt-6 pt-6 border-t border-neutral-100 pb-6 border-b border-neutral-100">
+                    <p class="text-sm font-semibold text-neutral-900">Andamento giornaliero per posizionamento</p>
+                    <p class="text-xs text-neutral-500 mt-1 mb-3">
+                        <span class="font-medium text-neutral-700">Tutti i posizionamenti</span>: scegli metrica accanto; una linea per posizionamento.
+                        <span class="font-medium text-neutral-700">Un posizionamento</span>: grafico con speso, lead e CPL (assi separati).
+                    </p>
+                    <div class="flex flex-wrap gap-4 sm:gap-6 items-end mb-2">
+                        <div class="shrink-0">
+                            <label for="placementBreakdownChartMetricInstagram" class="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Vista grafico posizionamenti</label>
+                            <select id="placementBreakdownChartMetricInstagram" class="border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white text-neutral-900 min-w-[220px] shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+                                <option value="cpl">CPL giornaliero</option>
+                                <option value="spend">Speso giornaliero (€)</option>
+                                <option value="leads">Lead Meta giornalieri</option>
+                            </select>
+                        </div>
+                        <div class="shrink-0">
+                            <label for="placementIsolateInstagram" class="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Posizionamento</label>
+                            <select id="placementIsolateInstagram" class="border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white text-neutral-900 min-w-[220px] shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+                                <option value="">Tutti i posizionamenti</option>
+                                {% for p in placement_cpl_by_platform.instagram.placements %}
+                                <option value="{{ p.position }}">{{ p.position }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Inviate WS</p>
-                        <p class="text-lg font-bold text-neutral-900 mt-1">
-                            {{ "{:,}".format(ig.total_magellano_inviate or 0)|replace(',', '.') }}
-                        </p>
+                    <p class="text-xs text-neutral-500 mb-3 min-h-[2.5rem]" id="placementBreakdownChartHintInstagram"></p>
+                    <div class="h-72">
+                        <canvas id="placementCplInstagram"></canvas>
                     </div>
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Approvate Ulixe</p>
-                        <p class="text-lg font-bold text-neutral-900 mt-1">
-                            {{ "{:,}".format(ig.total_ulixe_approvate or 0)|replace(',', '.') }}
-                        </p>
+                </div>
+                {% endif %}
+
+                <div class="mt-5">
+                    <p class="text-xs font-semibold text-neutral-600 uppercase mb-3">Posizionamenti</p>
+                    {% if ig_rows %}
+                    <div class="overflow-x-auto rounded-lg border border-neutral-100">
+                        <table class="min-w-full text-sm">
+                            <thead>
+                                <tr class="bg-neutral-50 text-neutral-600 text-xs uppercase tracking-wide">
+                                    <th class="text-left py-2.5 px-3 font-semibold">Posizionamento</th>
+                                    <th class="text-right py-2.5 px-3 font-semibold">Lead</th>
+                                    <th class="text-right py-2.5 px-3 font-semibold">CPL</th>
+                                    <th class="text-right py-2.5 px-3 font-semibold">Speso</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in ig_rows %}
+                                <tr class="border-t border-neutral-100 hover:bg-neutral-50/80">
+                                    <td class="py-2.5 px-3 text-neutral-800 font-medium">{{ row.position }}</td>
+                                    <td class="py-2.5 px-3 text-right text-neutral-900 tabular-nums">
+                                        {{ "{:,}".format(row.total_conversions)|replace(',', '.') }}
+                                    </td>
+                                    <td class="py-2.5 px-3 text-right font-semibold tabular-nums {% if row.cpl <= 5 %}text-green-600{% elif row.cpl <= 10 %}text-orange-500{% else %}text-red-600{% endif %}">
+                                        € {{ "{:,.2f}".format(row.cpl)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                    </td>
+                                    <td class="py-2.5 px-3 text-right text-neutral-900 tabular-nums">
+                                        € {{ "{:,.2f}".format(row.total_spend)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Ricavo</p>
-                        <p class="text-lg font-bold text-neutral-900 mt-1">
-                            € {{ "{:,.2f}".format(ig.total_ricavo or 0)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
-                        </p>
-                    </div>
-                    <div>
-                        <p class="text-xs font-medium text-neutral-500 uppercase">Margine</p>
-                        <p class="text-lg font-bold {% if ig.total_margine_pct is not none %}{% if ig.total_margine_pct <= 0 %}text-red-600{% elif ig.total_margine_pct >= 15 %}text-green-600{% else %}text-orange-500{% endif %}{% else %}text-neutral-700{% endif %} mt-1">
-                            {% if ig.total_margine_pct is not none %}{{ (ig.total_margine_pct)|string|replace('.', ',') }}%{% else %}N/D{% endif %}
-                        </p>
-                    </div>
+                    {% else %}
+                    <p class="text-sm text-neutral-400 py-4">Nessun posizionamento nel periodo / filtri selezionati.</p>
+                    {% endif %}
                 </div>
             </div>
         </div>
-
-        <!-- TODO (estendibile): grafici per piattaforma -->
+    </div>
     </div>
 
-    <!-- Focus posizionamenti (platform_position) per piattaforma -->
-    <div class="mt-10">
-        <h2 class="text-lg font-semibold text-neutral-900 mb-4">Focus posizionamenti</h2>
-        <p class="text-sm text-neutral-500 mb-4">
-            Posizionamenti Meta (platform_position) per Facebook e Instagram con Speso, Lead e CPL,
-            nel periodo selezionato e con gli stessi filtri (account/campagna/adset).
-        </p>
+    <div id="panelPlacementCreative" class="{% if (analysis_tab|default('analysis')) != 'placement_creative' %}hidden{% endif %} mt-2">
+        <div class="mt-6">
+            {% set pc_fb = placement_creative_by_platform.facebook if placement_creative_by_platform is defined and placement_creative_by_platform.facebook else [] %}
+            {% set pc_ig = placement_creative_by_platform.instagram if placement_creative_by_platform is defined and placement_creative_by_platform.instagram else [] %}
+            {% set pc_pos_fb = selected_pc_position_facebook|default('') %}
+            {% set pc_pos_ig = selected_pc_position_instagram|default('') %}
+            {# Posizionamento: solo aggregato per placement. Con AdSet (nome o PK) e "tutti i posizionamenti" → colonna Creatività. #}
+            {% set pc_show_pos_fb = not pc_pos_fb and not placement_creative_expand_by_ad %}
+            {% set pc_show_pos_ig = not pc_pos_ig and not placement_creative_expand_by_ad %}
 
-        {% if placement_insights_by_platform and (placement_insights_by_platform.facebook or placement_insights_by_platform.instagram) %}
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <!-- Facebook placements -->
-            <div class="glass-card p-6 bg-white border border-neutral-200">
-                <div class="flex items-center justify-between mb-4">
-                    <div>
-                        <p class="text-xs font-semibold text-neutral-500 uppercase">Facebook - Posizionamenti</p>
-                        <p class="text-xs text-neutral-500">publisher_platform = facebook, breakdown per platform_position</p>
-                    </div>
-                </div>
-                {% if placement_insights_by_platform.facebook %}
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-xs">
-                        <thead>
-                            <tr class="border-b border-neutral-200 text-neutral-500">
-                                <th class="text-left py-2 pr-3 font-semibold">Posizionamento</th>
-                                <th class="text-right py-2 pr-3 font-semibold">Speso</th>
-                                <th class="text-right py-2 pr-3 font-semibold">Lead</th>
-                                <th class="text-right py-2 font-semibold">CPL</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in placement_insights_by_platform.facebook %}
-                            <tr class="border-b border-neutral-100 hover:bg-neutral-50">
-                                <td class="py-2 pr-3 align-top text-neutral-800">{{ row.position }}</td>
-                                <td class="py-2 pr-3 align-top text-right text-neutral-900">
-                                    € {{ "{:,.2f}".format(row.total_spend)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
-                                </td>
-                                <td class="py-2 pr-3 align-top text-right text-neutral-900">
-                                    {{ "{:,}".format(row.total_conversions)|replace(',', '.') }}
-                                </td>
-                                <td class="py-2 align-top text-right font-semibold {% if row.cpl <= 5 %}text-green-600{% elif row.cpl <= 10 %}text-orange-500{% else %}text-red-600{% endif %}">
-                                    € {{ "{:,.2f}".format(row.cpl)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
-                                </td>
-                            </tr>
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <div class="glass-card p-6 bg-white border border-neutral-200 rounded-xl shadow-sm">
+                    <h3 class="text-xl font-bold text-neutral-900 tracking-tight">Facebook</h3>
+                    <div class="mt-4">
+                        <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1" for="pcPositionFacebookFilter">Posizionamento</label>
+                        <select name="pc_position_facebook" id="pcPositionFacebookFilter" form="analysisFiltersForm"
+                                class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                onchange="var f=this.form; if (f.requestSubmit) { f.requestSubmit(); } else { f.submit(); }">
+                            <option value="" {% if not pc_pos_fb %}selected{% endif %}>Tutti i posizionamenti</option>
+                            {% for opt in (placement_position_options_facebook or []) %}
+                            <option value="{{ opt.value }}" {% if pc_pos_fb == opt.value %}selected{% endif %}>{{ opt.label }}</option>
                             {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <p class="text-xs text-neutral-400">Nessun posizionamento Facebook nel periodo/filtri selezionati.</p>
-                {% endif %}
-            </div>
-
-            <!-- Instagram placements -->
-            <div class="glass-card p-6 bg-white border border-neutral-200">
-                <div class="flex items-center justify-between mb-4">
-                    <div>
-                        <p class="text-xs font-semibold text-neutral-500 uppercase">Instagram - Posizionamenti</p>
-                        <p class="text-xs text-neutral-500">publisher_platform = instagram, breakdown per platform_position</p>
+                        </select>
                     </div>
+                    {% if pc_fb %}
+                    <div class="mt-6 overflow-x-auto rounded-lg border border-neutral-100">
+                        <table class="min-w-full text-sm js-pc-sort-table">
+                            <thead>
+                                <tr class="bg-neutral-50 text-neutral-600 text-xs uppercase tracking-wide">
+                                    {% if pc_show_pos_fb %}
+                                    <th scope="col" data-pc-sort="text" title="Ordina" class="text-left py-2.5 px-3 font-semibold cursor-pointer hover:bg-neutral-100/90 transition-colors select-none">Posizionamento<span class="pc-sort-ind text-neutral-400 font-normal not-italic" aria-hidden="true"></span></th>
+                                    {% endif %}
+                                    {% if not pc_show_pos_fb %}
+                                    <th scope="col" data-pc-sort="text" title="Ordina" class="text-left py-2.5 px-3 font-semibold cursor-pointer hover:bg-neutral-100/90 transition-colors select-none">Creatività<span class="pc-sort-ind text-neutral-400 font-normal not-italic" aria-hidden="true"></span></th>
+                                    {% endif %}
+                                    <th scope="col" data-pc-sort="lead" title="Ordina" class="text-right py-2.5 px-3 font-semibold cursor-pointer hover:bg-neutral-100/90 transition-colors select-none">Lead<span class="pc-sort-ind text-neutral-400 font-normal not-italic" aria-hidden="true"></span></th>
+                                    <th scope="col" data-pc-sort="cpl" title="Ordina" class="text-right py-2.5 px-3 font-semibold cursor-pointer hover:bg-neutral-100/90 transition-colors select-none">CPL<span class="pc-sort-ind text-neutral-400 font-normal not-italic" aria-hidden="true"></span></th>
+                                    <th scope="col" data-pc-sort="spend" title="Ordina" class="text-right py-2.5 px-3 font-semibold cursor-pointer hover:bg-neutral-100/90 transition-colors select-none">Speso<span class="pc-sort-ind text-neutral-400 font-normal not-italic" aria-hidden="true"></span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in pc_fb %}
+                                <tr class="border-t border-neutral-100 hover:bg-neutral-50/80"
+                                    data-pc-lead="{{ row.total_conversions }}"
+                                    data-pc-cpl="{{ '%.4f'|format(row.cpl) }}"
+                                    data-pc-spend="{{ '%.4f'|format(row.total_spend) }}"
+                                    data-pc-text="{% if pc_show_pos_fb %}{{ row.position|e }}{% else %}{{ row.ad_name|e }}{% endif %}">
+                                    {% if pc_show_pos_fb %}
+                                    <td class="py-2.5 px-3 text-neutral-800 font-medium whitespace-nowrap">{{ row.position }}</td>
+                                    {% endif %}
+                                    {% if not pc_show_pos_fb %}
+                                    <td class="py-2.5 px-3 text-neutral-800">
+                                        <div class="flex items-center gap-2 min-w-[12rem] max-w-[20rem]">
+                                            {% if row.show_thumbnail %}
+                                            <div class="w-10 h-10 rounded border border-neutral-200 bg-neutral-100 overflow-hidden shrink-0">
+                                                <img src="/api/marketing/proxy-image?ad_id={{ row.internal_ad_id }}" alt="" class="w-10 h-10 object-cover" loading="lazy" onerror="this.closest('div').style.display='none'">
+                                            </div>
+                                            {% endif %}
+                                            <span class="break-words">{{ row.ad_name }}</span>
+                                        </div>
+                                    </td>
+                                    {% endif %}
+                                    <td class="py-2.5 px-3 text-right text-neutral-900 tabular-nums">
+                                        {{ "{:,}".format(row.total_conversions)|replace(',', '.') }}
+                                    </td>
+                                    <td class="py-2.5 px-3 text-right font-semibold tabular-nums {% if row.cpl <= 5 %}text-green-600{% elif row.cpl <= 10 %}text-orange-500{% else %}text-red-600{% endif %}">
+                                        € {{ "{:,.2f}".format(row.cpl)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                    </td>
+                                    <td class="py-2.5 px-3 text-right text-neutral-900 tabular-nums">
+                                        € {{ "{:,.2f}".format(row.total_spend)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-sm text-neutral-400 py-4 mt-6">Nessuna riga nel periodo / filtri selezionati.</p>
+                    {% endif %}
                 </div>
-                {% if placement_insights_by_platform.instagram %}
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-xs">
-                        <thead>
-                            <tr class="border-b border-neutral-200 text-neutral-500">
-                                <th class="text-left py-2 pr-3 font-semibold">Posizionamento</th>
-                                <th class="text-right py-2 pr-3 font-semibold">Speso</th>
-                                <th class="text-right py-2 pr-3 font-semibold">Lead</th>
-                                <th class="text-right py-2 font-semibold">CPL</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in placement_insights_by_platform.instagram %}
-                            <tr class="border-b border-neutral-100 hover:bg-neutral-50">
-                                <td class="py-2 pr-3 align-top text-neutral-800">{{ row.position }}</td>
-                                <td class="py-2 pr-3 align-top text-right text-neutral-900">
-                                    € {{ "{:,.2f}".format(row.total_spend)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
-                                </td>
-                                <td class="py-2 pr-3 align-top text-right text-neutral-900">
-                                    {{ "{:,}".format(row.total_conversions)|replace(',', '.') }}
-                                </td>
-                                <td class="py-2 align-top text-right font-semibold {% if row.cpl <= 5 %}text-green-600{% elif row.cpl <= 10 %}text-orange-500{% else %}text-red-600{% endif %}">
-                                    € {{ "{:,.2f}".format(row.cpl)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
-                                </td>
-                            </tr>
+                <div class="glass-card p-6 bg-white border border-neutral-200 rounded-xl shadow-sm">
+                    <h3 class="text-xl font-bold text-neutral-900 tracking-tight">Instagram</h3>
+                    <div class="mt-4">
+                        <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1" for="pcPositionInstagramFilter">Posizionamento</label>
+                        <select name="pc_position_instagram" id="pcPositionInstagramFilter" form="analysisFiltersForm"
+                                class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                onchange="var f=this.form; if (f.requestSubmit) { f.requestSubmit(); } else { f.submit(); }">
+                            <option value="" {% if not pc_pos_ig %}selected{% endif %}>Tutti i posizionamenti</option>
+                            {% for opt in (placement_position_options_instagram or []) %}
+                            <option value="{{ opt.value }}" {% if pc_pos_ig == opt.value %}selected{% endif %}>{{ opt.label }}</option>
                             {% endfor %}
-                        </tbody>
-                    </table>
+                        </select>
+                    </div>
+                    {% if pc_ig %}
+                    <div class="mt-6 overflow-x-auto rounded-lg border border-neutral-100">
+                        <table class="min-w-full text-sm js-pc-sort-table">
+                            <thead>
+                                <tr class="bg-neutral-50 text-neutral-600 text-xs uppercase tracking-wide">
+                                    {% if pc_show_pos_ig %}
+                                    <th scope="col" data-pc-sort="text" title="Ordina" class="text-left py-2.5 px-3 font-semibold cursor-pointer hover:bg-neutral-100/90 transition-colors select-none">Posizionamento<span class="pc-sort-ind text-neutral-400 font-normal not-italic" aria-hidden="true"></span></th>
+                                    {% endif %}
+                                    {% if not pc_show_pos_ig %}
+                                    <th scope="col" data-pc-sort="text" title="Ordina" class="text-left py-2.5 px-3 font-semibold cursor-pointer hover:bg-neutral-100/90 transition-colors select-none">Creatività<span class="pc-sort-ind text-neutral-400 font-normal not-italic" aria-hidden="true"></span></th>
+                                    {% endif %}
+                                    <th scope="col" data-pc-sort="lead" title="Ordina" class="text-right py-2.5 px-3 font-semibold cursor-pointer hover:bg-neutral-100/90 transition-colors select-none">Lead<span class="pc-sort-ind text-neutral-400 font-normal not-italic" aria-hidden="true"></span></th>
+                                    <th scope="col" data-pc-sort="cpl" title="Ordina" class="text-right py-2.5 px-3 font-semibold cursor-pointer hover:bg-neutral-100/90 transition-colors select-none">CPL<span class="pc-sort-ind text-neutral-400 font-normal not-italic" aria-hidden="true"></span></th>
+                                    <th scope="col" data-pc-sort="spend" title="Ordina" class="text-right py-2.5 px-3 font-semibold cursor-pointer hover:bg-neutral-100/90 transition-colors select-none">Speso<span class="pc-sort-ind text-neutral-400 font-normal not-italic" aria-hidden="true"></span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in pc_ig %}
+                                <tr class="border-t border-neutral-100 hover:bg-neutral-50/80"
+                                    data-pc-lead="{{ row.total_conversions }}"
+                                    data-pc-cpl="{{ '%.4f'|format(row.cpl) }}"
+                                    data-pc-spend="{{ '%.4f'|format(row.total_spend) }}"
+                                    data-pc-text="{% if pc_show_pos_ig %}{{ row.position|e }}{% else %}{{ row.ad_name|e }}{% endif %}">
+                                    {% if pc_show_pos_ig %}
+                                    <td class="py-2.5 px-3 text-neutral-800 font-medium whitespace-nowrap">{{ row.position }}</td>
+                                    {% endif %}
+                                    {% if not pc_show_pos_ig %}
+                                    <td class="py-2.5 px-3 text-neutral-800">
+                                        <div class="flex items-center gap-2 min-w-[12rem] max-w-[20rem]">
+                                            {% if row.show_thumbnail %}
+                                            <div class="w-10 h-10 rounded border border-neutral-200 bg-neutral-100 overflow-hidden shrink-0">
+                                                <img src="/api/marketing/proxy-image?ad_id={{ row.internal_ad_id }}" alt="" class="w-10 h-10 object-cover" loading="lazy" onerror="this.closest('div').style.display='none'">
+                                            </div>
+                                            {% endif %}
+                                            <span class="break-words">{{ row.ad_name }}</span>
+                                        </div>
+                                    </td>
+                                    {% endif %}
+                                    <td class="py-2.5 px-3 text-right text-neutral-900 tabular-nums">
+                                        {{ "{:,}".format(row.total_conversions)|replace(',', '.') }}
+                                    </td>
+                                    <td class="py-2.5 px-3 text-right font-semibold tabular-nums {% if row.cpl <= 5 %}text-green-600{% elif row.cpl <= 10 %}text-orange-500{% else %}text-red-600{% endif %}">
+                                        € {{ "{:,.2f}".format(row.cpl)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                    </td>
+                                    <td class="py-2.5 px-3 text-right text-neutral-900 tabular-nums">
+                                        € {{ "{:,.2f}".format(row.total_spend)|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-sm text-neutral-400 py-4 mt-6">Nessuna riga nel periodo / filtri selezionati.</p>
+                    {% endif %}
                 </div>
-                {% else %}
-                <p class="text-xs text-neutral-400">Nessun posizionamento Instagram nel periodo/filtri selezionati.</p>
-                {% endif %}
             </div>
         </div>
-        {% else %}
-        <div class="h-40 rounded-xl bg-gradient-to-br from-slate-50 via-white to-sky-50 border border-dashed border-slate-200 flex items-center justify-center">
-            <div class="text-center">
-                <p class="text-sm font-semibold text-neutral-500">Nessuna creatività disponibile per il periodo selezionato</p>
-                <p class="text-xs text-neutral-400 mt-1">Prova ad ampliare l'intervallo date o a modificare i filtri.</p>
+    </div>
+
+    <div id="panelLeadLavorazioni" class="{% if (analysis_tab|default('analysis')) != 'lead_wip' %}hidden{% endif %} mt-2">
+        <div class="glass-card p-6 bg-white border border-neutral-200 rounded-xl shadow-sm">
+            <h2 class="text-lg font-semibold text-neutral-900">Lavorazioni lead</h2>
+
+            <div id="leadLavorazioniSankeyIntro" class="mt-8 rounded-xl border border-dashed border-neutral-200 bg-neutral-50/60 py-12 text-center px-4">
+                <p class="text-sm text-neutral-600" id="leadLavorazioniSankeyIntroText">Caricamento diagramma…</p>
             </div>
+            <div id="leadLavorazioniSankeyNoData" class="hidden mt-8 rounded-xl border border-dashed border-amber-200/80 bg-amber-50/50 py-12 text-center px-4">
+                <p class="text-sm font-medium text-neutral-700">Nessuna lead nel periodo per i filtri scelti</p>
+                <p class="text-xs text-neutral-500 mt-2">Solo lead con data iscrizione Magellano nel range date dei filtri superiori.</p>
+            </div>
+            <p id="leadLavorazioniSankeyError" class="hidden mt-4 text-sm text-red-600"></p>
+
+            <div id="leadLavorazioniSankeyWrap" class="hidden mt-6">
+                <div id="leadLavorazioniSankey" class="w-full h-[min(520px,70vh)] min-h-[360px]"></div>
+                <p id="leadLavorazioniSankeyMeta" class="text-xs text-neutral-400 mt-3"></p>
+                <div id="leadLavorazioniSankeyExitDetail" class="hidden mt-4 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+                    <p class="text-sm font-semibold text-neutral-900" id="leadLavorazioniSankeyExitTitle"></p>
+                    <p class="text-xs text-neutral-500 mt-1">Ripartizione per campagna Meta (click su un nodo «Uscite Magellano …» o «Doppioni Magellano · Stima»).</p>
+                    <div class="mt-3 max-h-56 overflow-y-auto border border-neutral-100 rounded-md">
+                        <table class="w-full text-xs text-left">
+                            <thead class="sticky top-0 bg-neutral-50 text-neutral-600 border-b border-neutral-200">
+                                <tr>
+                                    <th class="px-3 py-2 font-medium">Campagna Meta</th>
+                                    <th class="px-3 py-2 font-medium text-right w-24">Lead</th>
+                                    <th class="px-3 py-2 font-medium text-right w-20">%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="leadLavorazioniSankeyExitTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="leadLavorazioniChartsArea" class="mt-10 pt-8 border-t border-neutral-200 hidden">
+                <div>
+                    <h3 class="text-base font-semibold text-neutral-900">Andamento giornaliero</h3>
+                    <div id="leadLavorazioniDailyEmpty" class="hidden mt-4 text-sm text-neutral-500">Nessuna lead nel periodo.</div>
+                    <div class="mt-4 h-80 relative w-full min-h-[240px]">
+                        <canvas id="leadLavorazioniDailyCanvas"></canvas>
+                    </div>
+                </div>
+                <div class="mt-10 pt-8 border-t border-neutral-200">
+                    <div class="flex flex-wrap items-end gap-4 justify-between">
+                        <div>
+                            <h3 class="text-base font-semibold text-neutral-900">Heatmap giorno × campagna Meta</h3>
+                        </div>
+                        <label class="flex flex-col gap-1 text-xs text-neutral-600 min-w-[240px]">
+                            <span class="font-medium text-neutral-700">Stato lavorazione</span>
+                            <select id="leadLavorazioniHeatmapLavorazione" class="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-800">
+                                <option value="all">Tutti</option>
+                                {% if lavorazione_filter_ui and lavorazione_filter_ui.options %}
+                                <optgroup label="{{ lavorazione_filter_ui.optgroup_label | default('Magellano', true) }}">
+                                    {% for o in lavorazione_filter_ui.options %}
+                                    <option value="{{ o.value }}">{{ o.label }}</option>
+                                    {% endfor %}
+                                </optgroup>
+                                {% endif %}
+                            </select>
+                        </label>
+                    </div>
+                    <p id="leadLavorazioniHeatmapEmpty" class="hidden mt-4 text-sm text-neutral-500">Nessun dato per il filtro scelto.</p>
+                    <div class="mt-4 w-full flex justify-center">
+                        <div id="leadLavorazioniHeatmap" class="w-full max-w-6xl min-h-[320px] h-[min(520px,60vh)]"></div>
+                    </div>
+                </div>
+            </div>
+            <p id="leadLavorazioniChartsError" class="hidden mt-4 text-sm text-red-600"></p>
         </div>
-        {% endif %}
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+{% if placement_cpl_by_platform and (placement_cpl_by_platform.facebook or placement_cpl_by_platform.instagram) %}
+<script type="application/json" id="placementCplByPlatformJson">{{ placement_cpl_by_platform | tojson }}</script>
+{% endif %}
 <script>
 (function () {
-    // Filtri dinamici Account -> Campagna -> AdSet + azzera filtri + preserva scroll
+    function pcSortParseVal(tr, key) {
+        if (key === 'text') {
+            return (tr.getAttribute('data-pc-text') || '').toLowerCase();
+        }
+        return parseFloat(tr.getAttribute('data-pc-' + key) || '0') || 0;
+    }
+
+    function pcSortClearIndicators(table) {
+        table.querySelectorAll('th[data-pc-sort] .pc-sort-ind').forEach(function (el) {
+            el.textContent = '';
+        });
+    }
+
+    function pcSortBindTable(table) {
+        if (!table || table.getAttribute('data-pc-sort-init') === '1') {
+            return;
+        }
+        table.setAttribute('data-pc-sort-init', '1');
+        var thead = table.querySelector('thead');
+        var tbody = table.querySelector('tbody');
+        if (!thead || !tbody) {
+            return;
+        }
+        thead.addEventListener('click', function (ev) {
+            var th = ev.target.closest('th[data-pc-sort]');
+            if (!th || !table.contains(th)) {
+                return;
+            }
+            var sortKey = th.getAttribute('data-pc-sort');
+            var prevKey = table.getAttribute('data-sort-key') || '';
+            var prevDir = table.getAttribute('data-sort-dir') || '';
+            var dir;
+            if (prevKey === sortKey) {
+                dir = prevDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                dir = sortKey === 'text' ? 'asc' : 'desc';
+            }
+            table.setAttribute('data-sort-key', sortKey);
+            table.setAttribute('data-sort-dir', dir);
+            pcSortClearIndicators(table);
+            var ind = th.querySelector('.pc-sort-ind');
+            if (ind) {
+                ind.textContent = dir === 'asc' ? ' \u25B2' : ' \u25BC';
+            }
+            var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+            rows.sort(function (a, b) {
+                var va = pcSortParseVal(a, sortKey);
+                var vb = pcSortParseVal(b, sortKey);
+                var cmp;
+                if (sortKey === 'text') {
+                    cmp = va < vb ? -1 : va > vb ? 1 : 0;
+                } else {
+                    cmp = va - vb;
+                }
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            rows.forEach(function (r) {
+                tbody.appendChild(r);
+            });
+        });
+    }
+
+    function pcSortInitAll() {
+        document.querySelectorAll('table.js-pc-sort-table').forEach(pcSortBindTable);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', pcSortInitAll);
+    } else {
+        pcSortInitAll();
+    }
+})();
+</script>
+<script>
+(function () {
+    var placementBreakdownChartsInitialized = false;
+
+    function initPlacementBreakdownChartsOnce() {
+        if (placementBreakdownChartsInitialized) {
+            return;
+        }
+        placementBreakdownChartsInitialized = true;
+        if (typeof setupPlacementBreakdownCharts === 'function') {
+            setupPlacementBreakdownCharts();
+        }
+    }
+
+    function resizePlacementBreakdownCharts() {
+        if (typeof Chart === 'undefined' || typeof Chart.getChart !== 'function') {
+            return;
+        }
+        ['placementCplFacebook', 'placementCplInstagram'].forEach(function (canvasId) {
+            const el = document.getElementById(canvasId);
+            if (!el) {
+                return;
+            }
+            const ch = Chart.getChart(el);
+            if (ch) {
+                ch.resize();
+            }
+        });
+    }
+
+    function formatIntItStatic(value) {
+        return Number(value || 0).toLocaleString('it-IT');
+    }
+
+    function escapeHtmlSankey(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function sumExitBreakdownRows(rows) {
+        return (rows || []).reduce(function (acc, r) {
+            return acc + (Number(r.count) || 0);
+        }, 0);
+    }
+
+    function sankeyNodeShowsMetaProvenance(name) {
+        if (!name) {
+            return false;
+        }
+        if (name.indexOf('Uscite Magellano') === 0) {
+            return true;
+        }
+        return name === 'Doppioni Magellano · Stima';
+    }
+
+    function renderLeadLavorazioniSankeyFromFetch(data) {
+        const dom = document.getElementById('leadLavorazioniSankey');
+        const wrap = document.getElementById('leadLavorazioniSankeyWrap');
+        const intro = document.getElementById('leadLavorazioniSankeyIntro');
+        const noData = document.getElementById('leadLavorazioniSankeyNoData');
+        const meta = document.getElementById('leadLavorazioniSankeyMeta');
+        const errEl = document.getElementById('leadLavorazioniSankeyError');
+        if (errEl) {
+            errEl.classList.add('hidden');
+            errEl.textContent = '';
+        }
+        if (!dom || !wrap || !intro || !noData) {
+            return;
+        }
+        if (window.__leadLavorazioniSankeyChart) {
+            window.__leadLavorazioniSankeyChart.dispose();
+            window.__leadLavorazioniSankeyChart = null;
+        }
+        const total = (data && data.total_leads) || 0;
+        const links = (data && data.links) || [];
+        const exitMetaBreakdown = (data && data.exit_meta_breakdown) || {};
+        const exitDetail = document.getElementById('leadLavorazioniSankeyExitDetail');
+        const exitTitle = document.getElementById('leadLavorazioniSankeyExitTitle');
+        const exitTbody = document.getElementById('leadLavorazioniSankeyExitTbody');
+        if (exitDetail) {
+            exitDetail.classList.add('hidden');
+        }
+        if (exitTbody) {
+            exitTbody.innerHTML = '';
+        }
+        intro.classList.add('hidden');
+        if (!links.length) {
+            noData.classList.remove('hidden');
+            wrap.classList.add('hidden');
+            if (meta) {
+                meta.textContent = '';
+            }
+            return;
+        }
+        noData.classList.add('hidden');
+        wrap.classList.remove('hidden');
+        if (typeof echarts === 'undefined') {
+            return;
+        }
+        window.__leadLavorazioniSankeyChart = echarts.init(dom);
+        window.__leadLavorazioniSankeyChart.setOption({
+            tooltip: {
+                trigger: 'item',
+                formatter: function (p) {
+                    if (p.dataType === 'edge') {
+                        return (p.data.source || '') + ' → ' + (p.data.target || '') + '<br/>Lead: ' + formatIntItStatic(p.data.value || 0);
+                    }
+                    const name = p.name || '';
+                    let html = escapeHtmlSankey(name);
+                    const nodeVal = p.value != null ? p.value : null;
+                    const flowLabel = (name === 'Doppioni Magellano · Stima') ? 'Stima doppioni' : 'Lead';
+                    if (nodeVal != null) {
+                        html += '<br/>' + flowLabel + ': ' + formatIntItStatic(nodeVal);
+                    }
+                    if (sankeyNodeShowsMetaProvenance(name)) {
+                        const rows = exitMetaBreakdown[name] || [];
+                        const subtotal = sumExitBreakdownRows(rows);
+                        if (subtotal > 0) {
+                            if (nodeVal == null) {
+                                html += '<br/>' + flowLabel + ': ' + formatIntItStatic(subtotal);
+                            }
+                            html += '<br/><br/><strong>Provenienza Meta</strong>';
+                            const maxLines = 14;
+                            for (let i = 0; i < rows.length && i < maxLines; i++) {
+                                const r = rows[i];
+                                const pct = subtotal ? ((Number(r.count) / subtotal) * 100).toFixed(1).replace('.', ',') : '0,0';
+                                html += '<br/>' + formatIntItStatic(r.count) + ' (' + pct + '%) · ' + escapeHtmlSankey(r.meta_node || '');
+                            }
+                            if (rows.length > maxLines) {
+                                html += '<br/>… +' + formatIntItStatic(rows.length - maxLines) + ' altre righe (tabella sotto al click)';
+                            }
+                        }
+                    }
+                    return html;
+                }
+            },
+            series: [{
+                type: 'sankey',
+                nodeAlign: 'justify',
+                emphasis: { focus: 'adjacency' },
+                data: data.nodes || [],
+                links: links,
+                lineStyle: { color: 'gradient', curveness: 0.5 },
+                label: { fontSize: 11, color: '#404040' }
+            }]
+        });
+        window.__leadLavorazioniSankeyChart.off('click');
+        window.__leadLavorazioniSankeyChart.on('click', function (params) {
+            if (!exitDetail || !exitTitle || !exitTbody) {
+                return;
+            }
+            if (params.dataType === 'node' && params.name && sankeyNodeShowsMetaProvenance(params.name)) {
+                const rows = exitMetaBreakdown[params.name] || [];
+                const subtotal = sumExitBreakdownRows(rows);
+                exitTitle.textContent = params.name;
+                exitTbody.innerHTML = '';
+                rows.forEach(function (r) {
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b border-neutral-100 last:border-0';
+                    const pct = subtotal ? ((Number(r.count) / subtotal) * 100).toFixed(1).replace('.', ',') : '0,0';
+                    tr.innerHTML =
+                        '<td class="px-3 py-1.5 text-neutral-800">' + escapeHtmlSankey(r.meta_node || '') + '</td>' +
+                        '<td class="px-3 py-1.5 text-right tabular-nums text-neutral-700">' + formatIntItStatic(r.count) + '</td>' +
+                        '<td class="px-3 py-1.5 text-right tabular-nums text-neutral-500">' + pct + '</td>';
+                    exitTbody.appendChild(tr);
+                });
+                if (!rows.length) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = '<td class="px-3 py-2 text-neutral-500" colspan="3">Nessuna ripartizione disponibile.</td>';
+                    exitTbody.appendChild(tr);
+                }
+                exitDetail.classList.remove('hidden');
+            } else {
+                exitDetail.classList.add('hidden');
+            }
+        });
+        if (meta) {
+            let line = 'Totale lead nel flusso: ' + formatIntItStatic(total);
+            const td = (data && data.total_doppioni_stima) || 0;
+            if (td > 0) {
+                line += ' · Doppioni (stima Meta): ' + formatIntItStatic(td);
+            }
+            meta.textContent = line;
+        }
+    }
+
+    function resizeLeadLavorazioniSubcharts() {
+        if (window.__leadLavorazioniDailyChart) {
+            window.__leadLavorazioniDailyChart.resize();
+        }
+        if (window.__leadLavorazioniHeatmapChart) {
+            window.__leadLavorazioniHeatmapChart.resize();
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
-        const accountSelect = document.getElementById('accountFilter');
-        const campaignSelect = document.getElementById('campaignFilter');
-        const adsetSelect = document.getElementById('adsetFilter');
-        const resetButton = document.getElementById('resetFiltersButton');
         const filtersForm = document.getElementById('analysisFiltersForm');
         const scrollStorageKey = 'marketingAnalysisScrollY';
-
-        if (accountSelect && campaignSelect && adsetSelect) {
-            const campaignOptions = Array.from(campaignSelect.options);
-            const adsetOptions = Array.from(adsetSelect.options);
-
-            function filterCampaigns() {
-                const selectedAccount = accountSelect.value;
-                campaignSelect.value = '';
-
-                campaignSelect.innerHTML = '';
-                const allOpt = document.createElement('option');
-                allOpt.value = '';
-                allOpt.textContent = 'Tutte';
-                campaignSelect.appendChild(allOpt);
-
-                campaignOptions.slice(1).forEach(opt => {
-                    const accId = opt.dataset.accountId || '';
-                    if (!selectedAccount || accId === selectedAccount) {
-                        campaignSelect.appendChild(opt);
-                    }
-                });
-
-                filterAdsets();
-            }
-
-            function filterAdsets() {
-                const selectedAccount = accountSelect.value;
-                const selectedCampaign = campaignSelect.value;
-                const prevSelectedAdset = adsetSelect.value;
-
-                adsetSelect.innerHTML = '';
-                const allOpt = document.createElement('option');
-                allOpt.value = '';
-                allOpt.textContent = 'Tutti';
-                adsetSelect.appendChild(allOpt);
-
-                adsetOptions.slice(1).forEach(opt => {
-                    const accId = opt.dataset.accountId || '';
-                    const campId = opt.dataset.campaignId || '';
-                    if (
-                        (!selectedAccount || accId === selectedAccount) &&
-                        (!selectedCampaign || campId === selectedCampaign)
-                    ) {
-                        adsetSelect.appendChild(opt);
-                    }
-                });
-
-                if (prevSelectedAdset) {
-                    const exists = Array.from(adsetSelect.options).some(o => o.value === prevSelectedAdset);
-                    if (exists) {
-                        adsetSelect.value = prevSelectedAdset;
-                    }
-                }
-            }
-
-            accountSelect.addEventListener('change', filterCampaigns);
-            campaignSelect.addEventListener('change', filterAdsets);
-
-            filterCampaigns();
-        }
 
         // Ripristina posizione scroll dopo il refresh
         const savedScroll = sessionStorage.getItem(scrollStorageKey);
@@ -630,20 +1035,37 @@
             });
         }
 
-        if (resetButton && filtersForm) {
-            resetButton.addEventListener('click', function () {
-                if (accountSelect) accountSelect.value = '';
-                if (campaignSelect) campaignSelect.value = '';
-                if (adsetSelect) adsetSelect.value = '';
-
-                const hiddenFrom = document.getElementById('analysisDateFrom');
-                const hiddenTo = document.getElementById('analysisDateTo');
-                if (hiddenFrom && hiddenTo) {
-                    hiddenFrom.value = '';
-                    hiddenTo.value = '';
+        const analysisExportBtn = document.getElementById('marketingAnalysisExportButton');
+        if (analysisExportBtn) {
+            analysisExportBtn.addEventListener('click', async function () {
+                const originalLabel = analysisExportBtn.textContent;
+                analysisExportBtn.disabled = true;
+                analysisExportBtn.textContent = 'Export in corso...';
+                try {
+                    const hf = document.getElementById('analysisDateFrom');
+                    const ht = document.getElementById('analysisDateTo');
+                    const cnEl = document.getElementById('analysisCampaignName');
+                    const anEl = document.getElementById('analysisAdsetName');
+                    const crEl = document.getElementById('analysisCreativeName');
+                    const params = new URLSearchParams({
+                        campaign_name: (cnEl && cnEl.value.trim()) || '',
+                        adset_name: (anEl && anEl.value.trim()) || '',
+                        creative_name: (crEl && crEl.value.trim()) || '',
+                        date_from: (hf && hf.value) || '',
+                        date_to: (ht && ht.value) || '',
+                    });
+                    const response = await fetch('/api/marketing/analysis-export-request?' + params.toString());
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Errore avvio export');
+                    }
+                    alert(data.message || 'Export avviato correttamente.');
+                } catch (err) {
+                    alert(err.message || 'Errore avvio export.');
+                } finally {
+                    analysisExportBtn.disabled = false;
+                    analysisExportBtn.textContent = originalLabel;
                 }
-
-                filtersForm.submit();
             });
         }
 
@@ -705,6 +1127,451 @@
                 }
             });
         }
+
+        const tabActiveCls = 'px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white shadow-sm transition-all';
+        const tabInactiveCls = 'px-4 py-2 rounded-lg font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-all';
+
+        function showMarketingAnalysisTab(which) {
+            const panelA = document.getElementById('panelAnalysis');
+            const panelB = document.getElementById('panelBreakdown');
+            const panelPc = document.getElementById('panelPlacementCreative');
+            const panelL = document.getElementById('panelLeadLavorazioni');
+            const hiddenInput = document.getElementById('analysisActiveTab');
+            if (hiddenInput) {
+                hiddenInput.value = which;
+            }
+            if (panelA) {
+                panelA.classList.toggle('hidden', which !== 'analysis');
+            }
+            if (panelB) {
+                panelB.classList.toggle('hidden', which !== 'breakdown');
+            }
+            if (panelPc) {
+                panelPc.classList.toggle('hidden', which !== 'placement_creative');
+            }
+            if (panelL) {
+                panelL.classList.toggle('hidden', which !== 'lead_wip');
+            }
+            [['tabBtnAnalysis', 'analysis'], ['tabBtnBreakdown', 'breakdown'], ['tabBtnPlacementCreative', 'placement_creative'], ['tabBtnLeadLavorazioni', 'lead_wip']].forEach(function (pair) {
+                const btn = document.getElementById(pair[0]);
+                if (!btn) {
+                    return;
+                }
+                const on = which === pair[1];
+                btn.setAttribute('aria-selected', on ? 'true' : 'false');
+                btn.className = on ? tabActiveCls : tabInactiveCls;
+            });
+            if (which === 'breakdown') {
+                initPlacementBreakdownChartsOnce();
+                requestAnimationFrame(function () {
+                    resizePlacementBreakdownCharts();
+                });
+            }
+            if (which === 'lead_wip') {
+                fetchLeadLavorazioniSankey();
+            }
+        }
+
+        [['tabBtnAnalysis', 'analysis'], ['tabBtnBreakdown', 'breakdown'], ['tabBtnPlacementCreative', 'placement_creative'], ['tabBtnLeadLavorazioni', 'lead_wip']].forEach(function (pair) {
+            const b = document.getElementById(pair[0]);
+            if (b) {
+                b.addEventListener('click', function () {
+                    showMarketingAnalysisTab(pair[1]);
+                });
+            }
+        });
+
+        const initialAnalysisTab = (document.getElementById('analysisActiveTab') || {}).value || 'analysis';
+        if (initialAnalysisTab === 'breakdown') {
+            initPlacementBreakdownChartsOnce();
+            requestAnimationFrame(resizePlacementBreakdownCharts);
+        }
+
+        function getSankeyDateParams() {
+            const hf = document.getElementById('analysisDateFrom');
+            const ht = document.getElementById('analysisDateTo');
+            return {
+                from: (hf && hf.value) || '',
+                to: (ht && ht.value) || ''
+            };
+        }
+
+        function formatLavorazioniDayLabelIt(iso) {
+            if (!iso || iso.length < 10) {
+                return iso || '';
+            }
+            const p = iso.slice(0, 10).split('-');
+            const y = parseInt(p[0], 10);
+            const m = parseInt(p[1], 10) - 1;
+            const dayNum = parseInt(p[2], 10);
+            const d = new Date(y, m, dayNum);
+            const wk = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'][d.getDay()];
+            return wk + ' ' + p[2] + '/' + p[1];
+        }
+
+        function buildLavorazioniQueryParamsString() {
+            const cnEl = document.getElementById('analysisCampaignName');
+            const anEl = document.getElementById('analysisAdsetName');
+            const crEl = document.getElementById('analysisCreativeName');
+            const d = getSankeyDateParams();
+            const params = new URLSearchParams();
+            if (d.from) {
+                params.set('date_from', d.from);
+            }
+            if (d.to) {
+                params.set('date_to', d.to);
+            }
+            if (cnEl && cnEl.value.trim()) {
+                params.set('campaign_name', cnEl.value.trim());
+            }
+            if (anEl && anEl.value.trim()) {
+                params.set('adset_name', anEl.value.trim());
+            }
+            if (crEl && crEl.value.trim()) {
+                params.set('creative_name', crEl.value.trim());
+            }
+            return params.toString();
+        }
+
+        function renderLeadLavorazioniDailyFromFetch(payload) {
+            const empty = document.getElementById('leadLavorazioniDailyEmpty');
+            const canvas = document.getElementById('leadLavorazioniDailyCanvas');
+            if (window.__leadLavorazioniDailyChart) {
+                window.__leadLavorazioniDailyChart.destroy();
+                window.__leadLavorazioniDailyChart = null;
+            }
+            const labels = payload.labels || [];
+            const total = payload.total_leads != null ? payload.total_leads : 0;
+            if (!labels.length || total < 1) {
+                if (empty) {
+                    empty.classList.remove('hidden');
+                }
+                return;
+            }
+            if (empty) {
+                empty.classList.add('hidden');
+            }
+            if (!canvas || typeof Chart === 'undefined') {
+                return;
+            }
+            const dayLabels = labels.map(function (iso) {
+                return formatLavorazioniDayLabelIt(iso);
+            });
+            const pointR = labels.length > 36 ? 0 : 2;
+            const datasets = (payload.datasets || []).map(function (ds) {
+                const lineCol = ds.borderColor || ds.backgroundColor || '#64748b';
+                const bg = (ds.backgroundColor && String(ds.backgroundColor)) || (lineCol + '26');
+                const row = {
+                    label: ds.label,
+                    data: ds.data,
+                    borderColor: lineCol,
+                    backgroundColor: bg,
+                    fill: false,
+                    tension: 0.25,
+                    pointRadius: pointR,
+                    pointHoverRadius: 4,
+                    borderWidth: 2
+                };
+                if (ds.borderDash && ds.borderDash.length) {
+                    row.borderDash = ds.borderDash;
+                }
+                return row;
+            });
+            window.__leadLavorazioniDailyChart = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: { labels: dayLabels, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: {
+                            ticks: {
+                                maxRotation: labels.length > 16 ? 50 : 0,
+                                minRotation: labels.length > 16 ? 35 : 0,
+                                fontSize: 10
+                            }
+                        },
+                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                    },
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+                        tooltip: {
+                            callbacks: {
+                                footer: function (items) {
+                                    var s = 0;
+                                    items.forEach(function (it) {
+                                        s += Number(it.parsed.y) || 0;
+                                    });
+                                    return 'Somma linee (stesso lead può essere in più serie): ' + formatIntItStatic(s);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function applyLavorazioneFilterUiFromPayload(ui) {
+            if (!ui || !ui.options || !ui.options.length) {
+                return;
+            }
+            const sel = document.getElementById('leadLavorazioniHeatmapLavorazione');
+            if (!sel) {
+                return;
+            }
+            const prev = sel.value;
+            sel.textContent = '';
+            const optAll = document.createElement('option');
+            optAll.value = 'all';
+            optAll.textContent = 'Tutti';
+            sel.appendChild(optAll);
+            const og = document.createElement('optgroup');
+            og.label = ui.optgroup_label || 'Magellano';
+            ui.options.forEach(function (o) {
+                const op = document.createElement('option');
+                op.value = o.value;
+                op.textContent = o.label;
+                og.appendChild(op);
+            });
+            sel.appendChild(og);
+            let ok = false;
+            for (let i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value === prev) {
+                    ok = true;
+                    break;
+                }
+            }
+            sel.value = ok ? prev : 'all';
+        }
+
+        function renderLeadLavorazioniHeatmapFromFetch(payload) {
+            const dom = document.getElementById('leadLavorazioniHeatmap');
+            const emptyEl = document.getElementById('leadLavorazioniHeatmapEmpty');
+            if (window.__leadLavorazioniHeatmapChart) {
+                window.__leadLavorazioniHeatmapChart.dispose();
+                window.__leadLavorazioniHeatmapChart = null;
+            }
+            if (!dom || typeof echarts === 'undefined') {
+                return;
+            }
+            const days = payload.days || [];
+            const yLabels = payload.y_labels || [];
+            const data = payload.data || [];
+            const maxV = Math.max(payload.max_value || 0, 1);
+            if (!data.length) {
+                if (emptyEl) {
+                    emptyEl.classList.remove('hidden');
+                }
+                return;
+            }
+            if (emptyEl) {
+                emptyEl.classList.add('hidden');
+            }
+            const dayDisp = days.map(function (iso) {
+                return formatLavorazioniDayLabelIt(iso);
+            });
+            const chart = echarts.init(dom);
+            window.__leadLavorazioniHeatmapChart = chart;
+            chart.setOption({
+                tooltip: {
+                    position: 'top',
+                    formatter: function (p) {
+                        const x = dayDisp[p.data[0]] || '';
+                        const y = yLabels[p.data[1]] || '';
+                        return y + '<br/>' + x + ': ' + formatIntItStatic(p.data[2]);
+                    }
+                },
+                grid: {
+                    left: '10%',
+                    right: '10%',
+                    top: '10%',
+                    bottom: days.length > 14 ? '28%' : '20%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: dayDisp,
+                    splitArea: { show: true },
+                    axisLabel: { rotate: days.length > 10 ? 40 : 0, fontSize: 9 }
+                },
+                yAxis: {
+                    type: 'category',
+                    data: yLabels,
+                    splitArea: { show: true },
+                    axisLabel: { fontSize: 10, width: 160, overflow: 'truncate', margin: 10 }
+                },
+                visualMap: {
+                    min: 0,
+                    max: maxV,
+                    calculable: true,
+                    orient: 'horizontal',
+                    left: 'center',
+                    bottom: '1%',
+                    inRange: { color: ['#f0fdf4', '#22c55e', '#14532d'] }
+                },
+                series: [{
+                    name: 'Lead',
+                    type: 'heatmap',
+                    data: data,
+                    label: {
+                        show: true,
+                        fontSize: 9,
+                        formatter: function (p) {
+                            return p.data[2] > 0 ? String(p.data[2]) : '';
+                        }
+                    },
+                    emphasis: { itemStyle: { shadowBlur: 6, shadowColor: 'rgba(0,0,0,0.2)' } }
+                }]
+            });
+        }
+
+        async function fetchAndRenderLavorazioniCharts(qs) {
+            const area = document.getElementById('leadLavorazioniChartsArea');
+            const chartsErr = document.getElementById('leadLavorazioniChartsError');
+            if (chartsErr) {
+                chartsErr.classList.add('hidden');
+                chartsErr.textContent = '';
+            }
+            if (area) {
+                area.classList.remove('hidden');
+            }
+            const lavSel = document.getElementById('leadLavorazioniHeatmapLavorazione');
+            const lav = (lavSel && lavSel.value) ? lavSel.value : 'all';
+            try {
+                const rd = await fetch('/api/marketing/analysis-lead-lavorazioni-daily?' + qs).then(function (r) {
+                    return r.json();
+                });
+                const rh = await fetch('/api/marketing/analysis-lead-lavorazioni-heatmap?lavorazione=' + encodeURIComponent(lav) + '&' + qs).then(function (r) {
+                    return r.json();
+                });
+                if (rd.error || rh.error) {
+                    if (chartsErr) {
+                        chartsErr.textContent = rd.error || rh.error || 'Errore caricamento grafici';
+                        chartsErr.classList.remove('hidden');
+                    }
+                    return;
+                }
+                applyLavorazioneFilterUiFromPayload(rh.lavorazione_filter_ui);
+                renderLeadLavorazioniDailyFromFetch(rd);
+                renderLeadLavorazioniHeatmapFromFetch(rh);
+                requestAnimationFrame(resizeLeadLavorazioniSubcharts);
+            } catch (e) {
+                if (chartsErr) {
+                    chartsErr.textContent = e.message || 'Errore di rete (grafici)';
+                    chartsErr.classList.remove('hidden');
+                }
+            }
+        }
+
+        async function fetchLeadLavorazioniHeatmapOnly(qs) {
+            const lavSel = document.getElementById('leadLavorazioniHeatmapLavorazione');
+            const lav = (lavSel && lavSel.value) ? lavSel.value : 'all';
+            const chartsErr = document.getElementById('leadLavorazioniChartsError');
+            if (chartsErr) {
+                chartsErr.classList.add('hidden');
+                chartsErr.textContent = '';
+            }
+            try {
+                const rh = await fetch('/api/marketing/analysis-lead-lavorazioni-heatmap?lavorazione=' + encodeURIComponent(lav) + '&' + qs).then(function (r) {
+                    return r.json();
+                });
+                if (rh.error) {
+                    if (chartsErr) {
+                        chartsErr.textContent = rh.error;
+                        chartsErr.classList.remove('hidden');
+                    }
+                    return;
+                }
+                applyLavorazioneFilterUiFromPayload(rh.lavorazione_filter_ui);
+                renderLeadLavorazioniHeatmapFromFetch(rh);
+                requestAnimationFrame(resizeLeadLavorazioniSubcharts);
+            } catch (e) {
+                if (chartsErr) {
+                    chartsErr.textContent = e.message || 'Errore heatmap';
+                    chartsErr.classList.remove('hidden');
+                }
+            }
+        }
+
+        async function fetchLeadLavorazioniSankey() {
+            const intro = document.getElementById('leadLavorazioniSankeyIntro');
+            const introText = document.getElementById('leadLavorazioniSankeyIntroText');
+            const noData = document.getElementById('leadLavorazioniSankeyNoData');
+            const wrap = document.getElementById('leadLavorazioniSankeyWrap');
+            const errEl = document.getElementById('leadLavorazioniSankeyError');
+            if (errEl) {
+                errEl.classList.add('hidden');
+                errEl.textContent = '';
+            }
+            if (noData) {
+                noData.classList.add('hidden');
+            }
+            if (wrap) {
+                wrap.classList.add('hidden');
+            }
+            if (window.__leadLavorazioniSankeyChart) {
+                window.__leadLavorazioniSankeyChart.dispose();
+                window.__leadLavorazioniSankeyChart = null;
+            }
+            if (intro) {
+                intro.classList.remove('hidden');
+            }
+            if (introText) {
+                introText.textContent = 'Caricamento diagramma…';
+            }
+
+            const qs = buildLavorazioniQueryParamsString();
+            const chartsPromise = fetchAndRenderLavorazioniCharts(qs);
+            try {
+                const response = await fetch('/api/marketing/analysis-lead-lavorazioni-sankey?' + qs);
+                const payload = await response.json();
+                if (!response.ok) {
+                    if (introText) {
+                        introText.textContent = 'Impossibile caricare il diagramma.';
+                    }
+                    if (errEl) {
+                        errEl.textContent = payload.error || 'Errore richiesta';
+                        errEl.classList.remove('hidden');
+                    }
+                    await chartsPromise;
+                    return;
+                }
+                renderLeadLavorazioniSankeyFromFetch(payload);
+                requestAnimationFrame(function () {
+                    if (window.__leadLavorazioniSankeyChart) {
+                        window.__leadLavorazioniSankeyChart.resize();
+                    }
+                });
+            } catch (err) {
+                if (introText) {
+                    introText.textContent = 'Errore di rete.';
+                }
+                if (errEl) {
+                    errEl.textContent = err.message || 'Errore di rete';
+                    errEl.classList.remove('hidden');
+                }
+            }
+            await chartsPromise;
+        }
+
+        const heatmapLavSel = document.getElementById('leadLavorazioniHeatmapLavorazione');
+        if (heatmapLavSel) {
+            heatmapLavSel.addEventListener('change', function () {
+                const q = buildLavorazioniQueryParamsString();
+                fetchLeadLavorazioniHeatmapOnly(q);
+            });
+        }
+
+        window.addEventListener('resize', function () {
+            if (document.getElementById('panelLeadLavorazioni') && !document.getElementById('panelLeadLavorazioni').classList.contains('hidden')) {
+                resizeLeadLavorazioniSubcharts();
+            }
+        });
+
+        if (initialAnalysisTab === 'lead_wip') {
+            fetchLeadLavorazioniSankey();
+        }
     });
     function formatEuro(value) {
         return Number(value || 0).toLocaleString('it-IT', {
@@ -739,10 +1606,7 @@
     const baselineData = labels.map(() => baselineCpl);
 
     const ctx = document.getElementById('spendCplChart');
-    if (!ctx || labels.length === 0) {
-        return;
-    }
-
+    if (ctx && labels.length > 0) {
     new Chart(ctx, {
         type: 'line',
         data: {
@@ -848,6 +1712,550 @@
             }
         }
     });
+    }
+
+    const placementCplPalette = [
+        'rgba(16, 185, 129, 1)',
+        'rgba(79, 70, 229, 1)',
+        'rgba(245, 158, 11, 1)',
+        'rgba(236, 72, 153, 1)',
+        'rgba(59, 130, 246, 1)',
+        'rgba(139, 92, 246, 1)',
+        'rgba(20, 184, 166, 1)',
+        'rgba(239, 68, 68, 1)',
+        'rgba(14, 165, 233, 1)',
+        'rgba(168, 85, 247, 1)',
+        'rgba(234, 179, 8, 1)',
+        'rgba(100, 116, 139, 1)'
+    ];
+
+    const PLACEMENT_CHART_HINT_CPL = 'Una linea per posizionamento: CPL del giorno (€). Nel tooltip: media CPL del periodo.';
+    const PLACEMENT_CHART_HINT_SPEND = 'Una linea per posizionamento: speso giornaliero (€). Nel tooltip: totali di periodo (speso, lead, CPL medio).';
+    const PLACEMENT_CHART_HINT_LEADS = 'Una linea per posizionamento: lead Meta giornalieri (interi). Nel tooltip: totali di periodo.';
+    const PLACEMENT_CHART_HINT_MIXED =
+        'Se in una card scegli un posizionamento, quel grafico mostra insieme speso, lead Meta e CPL (assi separati). Nelle card con “Tutti i posizionamenti” continua a valere il menu “Vista grafico” sopra.';
+
+    function destroyChartOnCanvas(canvasId) {
+        const el = document.getElementById(canvasId);
+        if (!el || typeof Chart === 'undefined' || typeof Chart.getChart !== 'function') {
+            return;
+        }
+        const existing = Chart.getChart(el);
+        if (existing) {
+            existing.destroy();
+        }
+    }
+
+    function tooltipTitleFromDateLabel(dateStr) {
+        if (!dateStr) {
+            return [dateStr];
+        }
+        const date = new Date(dateStr + 'T12:00:00');
+        const days = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+        return [dateStr, days[date.getDay()]];
+    }
+
+    /** Linea orizzontale: CPL medio nel periodo (filtri correnti), tratteggio grigio. */
+    function makePeriodCplBaselineDataset(dateLabels, cplValue, yAxisID) {
+        const n = dateLabels && dateLabels.length ? dateLabels.length : 0;
+        let v = Number(cplValue);
+        if (Number.isNaN(v)) {
+            v = 0;
+        }
+        const data = n > 0 ? dateLabels.map(function () { return v; }) : [];
+        return {
+            label: 'CPL medio periodo (€)',
+            data: data,
+            yAxisID: yAxisID,
+            borderColor: 'rgba(156, 163, 175, 1)',
+            borderDash: [6, 4],
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0,
+            fill: false,
+            pointRadius: 0,
+            order: -1,
+            isPeriodCplBaseline: true
+        };
+    }
+
+    function renderPlatformPlacementChart(canvasId, spec, mode, isolatePosition) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !spec || !spec.placements || spec.placements.length === 0 || !spec.dates || spec.dates.length === 0) {
+            return;
+        }
+
+        let datasets;
+        let scales;
+        let tooltipCallbacks;
+
+        let pSingle = null;
+        if (isolatePosition) {
+            for (let i = 0; i < spec.placements.length; i++) {
+                if (spec.placements[i].position === isolatePosition) {
+                    pSingle = spec.placements[i];
+                    break;
+                }
+            }
+        }
+
+        if (pSingle) {
+            const lineOpts = {
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                tension: 0.3,
+                fill: false,
+                pointRadius: 2
+            };
+            datasets = [
+                Object.assign({}, lineOpts, {
+                    label: 'Speso (€)',
+                    data: pSingle.spend_daily,
+                    yAxisID: 'ySpend',
+                    isoKind: 'spend'
+                }, { borderColor: 'rgba(79, 70, 229, 1)' }),
+                Object.assign({}, lineOpts, {
+                    label: 'Lead Meta',
+                    data: pSingle.leads_daily,
+                    yAxisID: 'yLeads',
+                    isoKind: 'lead',
+                    borderColor: 'rgba(16, 185, 129, 1)'
+                }),
+                Object.assign({}, lineOpts, {
+                    label: 'CPL (€)',
+                    data: pSingle.cpl_daily,
+                    yAxisID: 'yCpl',
+                    isoKind: 'cpl',
+                    borderColor: 'rgba(245, 158, 11, 1)'
+                })
+            ];
+            datasets.push(makePeriodCplBaselineDataset(spec.dates, pSingle.period_cpl, 'yCpl'));
+            scales = {
+                x: {
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 0
+                    }
+                },
+                ySpend: {
+                    type: 'linear',
+                    position: 'left',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Speso (€)'
+                    },
+                    ticks: {
+                        callback: function (value) {
+                            return '€ ' + formatEuro(value);
+                        }
+                    }
+                },
+                yLeads: {
+                    type: 'linear',
+                    position: 'right',
+                    weight: 1,
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Lead Meta'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    },
+                    ticks: {
+                        callback: function (value) {
+                            return formatIntIt(value);
+                        }
+                    }
+                },
+                yCpl: {
+                    type: 'linear',
+                    position: 'right',
+                    weight: 2,
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'CPL (€)'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    },
+                    ticks: {
+                        callback: function (value) {
+                            return '€ ' + formatEuro(value);
+                        }
+                    }
+                }
+            };
+            const isoFooterLine =
+                pSingle.position +
+                    ' — periodo: € ' +
+                    formatEuro(pSingle.period_spend || 0) +
+                    ', ' +
+                    formatIntIt(pSingle.period_leads || 0) +
+                    ' lead, CPL medio € ' +
+                    formatEuro(pSingle.period_cpl || 0);
+            tooltipCallbacks = {
+                title: function (tooltipItems) {
+                    const dateStr = tooltipItems[0] && tooltipItems[0].label;
+                    return tooltipTitleFromDateLabel(dateStr);
+                },
+                label: function (context) {
+                    const ds = context.dataset;
+                    const value = context.parsed.y;
+                    if (ds.isPeriodCplBaseline) {
+                        return (ds.label || '') + ': € ' + formatEuro(value);
+                    }
+                    if (ds.isoKind === 'lead') {
+                        return (ds.label || '') + ': ' + formatIntIt(value);
+                    }
+                    return (ds.label || '') + ': € ' + formatEuro(value);
+                },
+                footer: function () {
+                    return [isoFooterLine];
+                }
+            };
+        } else if (mode === 'spend') {
+            datasets = spec.placements.map(function (p, i) {
+                return {
+                    label: p.position,
+                    data: p.spend_daily,
+                    placementKey: p.position,
+                    aggregateMetric: 'spend',
+                    periodSpend: p.period_spend,
+                    periodLeads: p.period_leads,
+                    periodCpl: p.period_cpl,
+                    borderColor: placementCplPalette[i % placementCplPalette.length],
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: false,
+                    pointRadius: 2
+                };
+            });
+            scales = {
+                x: {
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 0
+                    }
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Speso (€)'
+                    },
+                    ticks: {
+                        callback: function (value) {
+                            return '€ ' + formatEuro(value);
+                        }
+                    }
+                }
+            };
+        } else if (mode === 'leads') {
+            datasets = spec.placements.map(function (p, i) {
+                return {
+                    label: p.position,
+                    data: p.leads_daily,
+                    placementKey: p.position,
+                    aggregateMetric: 'leads',
+                    periodSpend: p.period_spend,
+                    periodLeads: p.period_leads,
+                    periodCpl: p.period_cpl,
+                    borderColor: placementCplPalette[i % placementCplPalette.length],
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: false,
+                    pointRadius: 2
+                };
+            });
+            scales = {
+                x: {
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 0
+                    }
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Lead Meta'
+                    },
+                    ticks: {
+                        callback: function (value) {
+                            return formatIntIt(value);
+                        }
+                    }
+                }
+            };
+        } else {
+            datasets = spec.placements.map(function (p, i) {
+                return {
+                    label: p.position,
+                    data: p.cpl_daily,
+                    placementKey: p.position,
+                    aggregateMetric: 'cpl',
+                    periodCpl: p.period_cpl,
+                    periodSpend: p.period_spend,
+                    periodLeads: p.period_leads,
+                    borderColor: placementCplPalette[i % placementCplPalette.length],
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: false,
+                    pointRadius: 2
+                };
+            });
+            scales = {
+                x: {
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 0
+                    }
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'CPL (€)'
+                    },
+                    ticks: {
+                        callback: function (value) {
+                            return '€ ' + formatEuro(value);
+                        }
+                    }
+                }
+            };
+        }
+
+        const yCplRefScaleForBaseline = {
+            type: 'linear',
+            position: 'right',
+            beginAtZero: true,
+            title: {
+                display: true,
+                text: 'CPL medio (€)'
+            },
+            grid: {
+                drawOnChartArea: false
+            },
+            ticks: {
+                callback: function (value) {
+                    return '€ ' + formatEuro(value);
+                }
+            }
+        };
+
+        if (!pSingle && spec.period_avg_cpl !== undefined && spec.period_avg_cpl !== null
+                && spec.dates && spec.dates.length > 0) {
+            const periodAvgCpl = Number(spec.period_avg_cpl);
+            if (!Number.isNaN(periodAvgCpl)) {
+                if (mode === 'cpl') {
+                    datasets.push(makePeriodCplBaselineDataset(spec.dates, periodAvgCpl, 'y'));
+                } else if (mode === 'spend') {
+                    datasets.push(makePeriodCplBaselineDataset(spec.dates, periodAvgCpl, 'yCplRef'));
+                    scales.yCplRef = yCplRefScaleForBaseline;
+                } else if (mode === 'leads') {
+                    datasets.push(makePeriodCplBaselineDataset(spec.dates, periodAvgCpl, 'yCplRef'));
+                    scales.yCplRef = yCplRefScaleForBaseline;
+                }
+            }
+        }
+
+        if (!tooltipCallbacks) {
+            tooltipCallbacks = {
+                title: function (tooltipItems) {
+                    const dateStr = tooltipItems[0] && tooltipItems[0].label;
+                    return tooltipTitleFromDateLabel(dateStr);
+                },
+                label: function (context) {
+                    const ds = context.dataset;
+                    const value = context.parsed.y;
+                    if (ds.isPeriodCplBaseline) {
+                        return (ds.label || '') + ': € ' + formatEuro(value);
+                    }
+                    if (mode === 'leads') {
+                        return (ds.label || '') + ': ' + formatIntIt(value) + ' lead';
+                    }
+                    if (mode === 'spend') {
+                        return (ds.label || '') + ': € ' + formatEuro(value);
+                    }
+                    return (ds.label || '') + ': € ' + formatEuro(value) + ' (CPL giorno)';
+                },
+                footer: function (tooltipItems) {
+                    if (!tooltipItems.length) {
+                        return '';
+                    }
+                    const lines = [];
+                    const seen = {};
+                    tooltipItems.forEach(function (item) {
+                        const ds = item.chart.data.datasets[item.datasetIndex];
+                        if (!ds || !ds.placementKey) {
+                            return;
+                        }
+                        const key = ds.placementKey;
+                        if (seen[key]) {
+                            return;
+                        }
+                        seen[key] = true;
+                        if (mode === 'spend') {
+                            lines.push(
+                                key +
+                                    ' — periodo: € ' +
+                                    formatEuro(ds.periodSpend || 0) +
+                                    ', ' +
+                                    formatIntIt(ds.periodLeads || 0) +
+                                    ' lead, CPL medio € ' +
+                                    formatEuro(ds.periodCpl || 0)
+                            );
+                        } else if (mode === 'leads') {
+                            lines.push(
+                                key +
+                                    ' — periodo: ' +
+                                    formatIntIt(ds.periodLeads || 0) +
+                                    ' lead, € ' +
+                                    formatEuro(ds.periodSpend || 0) +
+                                    ' speso, CPL medio € ' +
+                                    formatEuro(ds.periodCpl || 0)
+                            );
+                        } else if (ds.periodCpl !== undefined) {
+                            lines.push(key + ' — media periodo CPL: € ' + formatEuro(ds.periodCpl || 0));
+                        }
+                    });
+                    return lines.length ? lines : '';
+                }
+            };
+        }
+
+        new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: spec.dates,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    },
+                    tooltip: {
+                        callbacks: tooltipCallbacks
+                    }
+                },
+                scales: scales
+            }
+        });
+    }
+
+    function setupPlacementBreakdownCharts() {
+        const jsonEl = document.getElementById('placementCplByPlatformJson');
+        if (!jsonEl) {
+            return;
+        }
+        let raw = {};
+        try {
+            raw = JSON.parse(jsonEl.textContent || '{}');
+        } catch (e) {
+            return;
+        }
+
+        function getPlacementMetricSelectEls() {
+            return {
+                fb: document.getElementById('placementBreakdownChartMetricFacebook'),
+                ig: document.getElementById('placementBreakdownChartMetricInstagram')
+            };
+        }
+
+        /** Modalità grafico (cpl / spend / leads) letta dal select della singola piattaforma. */
+        function placementChartModeFromSelect(selectEl) {
+            const v = selectEl && selectEl.value;
+            if (v === 'spend') {
+                return 'spend';
+            }
+            if (v === 'leads') {
+                return 'leads';
+            }
+            return 'cpl';
+        }
+
+        function hintForPlacementChart(mode, isolateVal) {
+            if (isolateVal) {
+                return PLACEMENT_CHART_HINT_MIXED;
+            }
+            if (mode === 'spend') {
+                return PLACEMENT_CHART_HINT_SPEND;
+            }
+            if (mode === 'leads') {
+                return PLACEMENT_CHART_HINT_LEADS;
+            }
+            return PLACEMENT_CHART_HINT_CPL;
+        }
+
+        function updatePlacementHints(modeFb, modeIg, fbIsolateVal, igIsolateVal) {
+            const fbHint = document.getElementById('placementBreakdownChartHintFacebook');
+            if (fbHint) {
+                fbHint.textContent = hintForPlacementChart(modeFb, fbIsolateVal);
+            }
+            const igHint = document.getElementById('placementBreakdownChartHintInstagram');
+            if (igHint) {
+                igHint.textContent = hintForPlacementChart(modeIg, igIsolateVal);
+            }
+        }
+
+        function renderAllPlacementCharts() {
+            const metricM = getPlacementMetricSelectEls();
+            const modeFb = placementChartModeFromSelect(metricM.fb);
+            const modeIg = placementChartModeFromSelect(metricM.ig);
+            const fbIsoEl = document.getElementById('placementIsolateFacebook');
+            const igIsoEl = document.getElementById('placementIsolateInstagram');
+            const fbIsoVal = fbIsoEl && fbIsoEl.value ? fbIsoEl.value : '';
+            const igIsoVal = igIsoEl && igIsoEl.value ? igIsoEl.value : '';
+
+            destroyChartOnCanvas('placementCplFacebook');
+            destroyChartOnCanvas('placementCplInstagram');
+            if (raw.facebook) {
+                renderPlatformPlacementChart('placementCplFacebook', raw.facebook, modeFb, fbIsoVal);
+            }
+            if (raw.instagram) {
+                renderPlatformPlacementChart('placementCplInstagram', raw.instagram, modeIg, igIsoVal);
+            }
+            updatePlacementHints(modeFb, modeIg, fbIsoVal, igIsoVal);
+        }
+
+        const metricM = getPlacementMetricSelectEls();
+
+        renderAllPlacementCharts();
+        if (metricM.fb) {
+            metricM.fb.addEventListener('change', renderAllPlacementCharts);
+        }
+        if (metricM.ig) {
+            metricM.ig.addEventListener('change', renderAllPlacementCharts);
+        }
+        const placementIsoFb = document.getElementById('placementIsolateFacebook');
+        const placementIsoIg = document.getElementById('placementIsolateInstagram');
+        if (placementIsoFb) {
+            placementIsoFb.addEventListener('change', renderAllPlacementCharts);
+        }
+        if (placementIsoIg) {
+            placementIsoIg.addEventListener('change', renderAllPlacementCharts);
+        }
+    }
 
     // Distribuzione per periodo: Speso e Lead (periodo vs precedente)
     const hasDistribution = {{ 'true' if distribution_points else 'false' }};

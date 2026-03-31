@@ -2,8 +2,11 @@
 from datetime import datetime, date, timedelta
 from celery_app import celery_app
 from database import SessionLocal
-from models import SyncLog, IngestionJob, now_rome
+from models import MetaAccount, SyncLog, IngestionJob, now_rome
 from services.sync.meta_marketing_sync import run_manual_sync
+from services.sync.meta_leads_graph_sync import sync_meta_graph_leads_for_account
+from services.integrations.meta_marketing import MetaMarketingService
+from services.utils.crypto import decrypt_token
 from services.sync.meta_campaigns_sync import run_bootstrap, run_incremental
 import logging
 
@@ -163,6 +166,92 @@ def meta_manual_sync_task(
             )
         except Exception:
             pass
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="tasks.meta.graph_leads_sync")
+def meta_graph_leads_sync_task(
+    account_id: str,
+    start_date_str: str,
+    end_date_str: str,
+    job_id: int | None = None,
+):
+    """
+    Ingest Lead Ads da Graph /{ad_id}/leads → meta_graph_leads (stesso intervallo date).
+    Job separato dalla sync marketing (Insights).
+    """
+    start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+    db = SessionLocal()
+    job = None
+    try:
+        if job_id:
+            job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
+            if job:
+                logger.info(
+                    "[META_GRAPH_LEADS_TASK][START] job_id=%s account_id=%s period=%s..%s",
+                    job.id,
+                    account_id,
+                    start_date_str,
+                    end_date_str,
+                )
+                job.status = "RUNNING"
+                job.started_at = now_rome()
+                db.commit()
+
+        account = (
+            db.query(MetaAccount)
+            .filter(MetaAccount.account_id == account_id, MetaAccount.is_active == True)
+            .first()
+        )
+        if not account:
+            raise ValueError(f"Account Meta {account_id} non trovato o non attivo")
+
+        token = decrypt_token(account.access_token)
+        service = MetaMarketingService(access_token=token)
+        tag = {
+            "ingestion_source": "celery_meta_graph_leads",
+            "job_type": "meta_graph_leads",
+            "account_id": account_id,
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+        }
+        lead_stats = sync_meta_graph_leads_for_account(
+            db, account, service, start_date, end_date, tag
+        )
+
+        if job:
+            params = job.params or {}
+            params["stats"] = lead_stats
+            job.params = params
+            job.status = "SUCCESS"
+            job.completed_at = now_rome()
+            job.message = (
+                f"Graph leads: creati {lead_stats.get('graph_leads_created', 0)}, "
+                f"aggiornati {lead_stats.get('graph_leads_updated', 0)}"
+            )
+            db.commit()
+
+        logger.info(
+            "[META_GRAPH_LEADS_TASK][END] job_id=%s account_id=%s stats=%s",
+            job.id if job else None,
+            account_id,
+            lead_stats,
+        )
+        return lead_stats
+    except Exception as e:
+        logger.error("[META_GRAPH_LEADS_TASK] failed: %s", e, exc_info=True)
+        try:
+            if job:
+                job.status = "ERROR"
+                job.completed_at = now_rome()
+                job.message = str(e)
+                db.add(job)
+                db.commit()
+        except Exception:
+            db.rollback()
         raise
     finally:
         db.close()

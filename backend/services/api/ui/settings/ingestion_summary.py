@@ -19,6 +19,7 @@ JOB_LABELS = {
     'ulixe': 'Ulixe',
     'ulixe_rcrm_google': 'RCRM Ulixe (Google Sheet)',
     'meta_marketing': 'Meta Marketing',
+    'meta_graph_leads': 'Meta Lead Ads (Graph)',
     'meta_conversion_marker': 'Meta Conversion Marker',
     'meta_conversion': 'Meta Conversion API',
 }
@@ -91,6 +92,7 @@ async def ingestion_summary(request: Request, db: Session = Depends(get_db)):
         # Meta marketing / bootstrap: stats salvate nei params del job (se presenti)
         if job.params and isinstance(job.params, dict) and job.job_type in (
             "meta_marketing",
+            "meta_graph_leads",
             "meta_campaigns_bootstrap",
         ):
             stats = (job.params or {}).get("stats")

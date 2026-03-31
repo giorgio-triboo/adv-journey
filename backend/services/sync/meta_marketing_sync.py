@@ -3,13 +3,40 @@ Job autonomo per ingestion dati marketing da Meta.
 """
 from sqlalchemy.orm import Session
 from database import SessionLocal
-from services.integrations.meta_marketing import MetaMarketingService
-from models import MetaAccount, MetaCampaign, MetaMarketingData, MetaAd, MetaAdSet, now_rome
+from services.integrations.meta_marketing import MetaMarketingService, META_INSIGHTS_PAGE_LIMIT
+from models import (
+    MetaAccount,
+    MetaCampaign,
+    MetaMarketingData,
+    MetaMarketingPlacement,
+    MetaAd,
+    MetaAdSet,
+    now_rome,
+)
 from datetime import datetime, timedelta, date
-from typing import List, Optional
+from typing import List, Optional, Set
 import logging
 
 logger = logging.getLogger('services.sync')
+
+
+def _meta_ad_for_account(
+    db: Session,
+    account: MetaAccount,
+    ad_id_str: str,
+) -> Optional[MetaAd]:
+    """Risolve MetaAd per stringa ad_id limitato all'account (join campagna)."""
+    if not ad_id_str or not str(ad_id_str).strip():
+        return None
+    aid = str(ad_id_str).strip()
+    return (
+        db.query(MetaAd)
+        .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+        .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+        .filter(MetaCampaign.account_id == account.id)
+        .filter(MetaAd.ad_id == aid)
+        .first()
+    )
 
 
 def _append_ingestion_debug(existing_raw: dict | None, tag: dict) -> dict:
@@ -41,21 +68,12 @@ def _normalize_meta_id(raw: object) -> str:
     return value.strip()
 
 
-def _group_insights_by_campaign(insights: List[dict]) -> dict[str, List[dict]]:
-    grouped: dict[str, List[dict]] = {}
-    for insight in insights:
-        campaign_id = _normalize_meta_id(insight.get("campaign_id", ""))
-        if not campaign_id:
-            continue
-        grouped.setdefault(campaign_id, []).append(insight)
-    return grouped
-
-
-def _aggregate_insights_by_key(insights: List[dict], key_name: str) -> dict[str, dict]:
-    """
-    Aggrega metriche base per la chiave indicata (campaign_id/adset_id).
-    """
-    grouped: dict[str, dict] = {}
+def _aggregate_insights_merge_into(
+    grouped: dict[str, dict],
+    insights: List[dict],
+    key_name: str,
+) -> None:
+    """Aggiorna grouped con le righe insights (senza ricalcolare ctr/cpc/cpm)."""
     for insight in insights:
         raw_key = _normalize_meta_id(insight.get(key_name, ""))
         if not raw_key:
@@ -80,6 +98,8 @@ def _aggregate_insights_by_key(insights: List[dict], key_name: str) -> dict[str,
         row["clicks"] += clicks
         row["conversions"] += conversions
 
+
+def _aggregate_insights_finalize_derived_metrics(grouped: dict[str, dict]) -> None:
     for _, row in grouped.items():
         impressions = int(row.get("impressions", 0) or 0)
         clicks = int(row.get("clicks", 0) or 0)
@@ -87,7 +107,158 @@ def _aggregate_insights_by_key(insights: List[dict], key_name: str) -> dict[str,
         row["ctr"] = (clicks / impressions * 100) if impressions > 0 else 0
         row["cpc"] = (spend / clicks) if clicks > 0 else 0
         row["cpm"] = (spend / impressions * 1000) if impressions > 0 else 0
+
+
+def _aggregate_insights_by_key(insights: List[dict], key_name: str) -> dict[str, dict]:
+    """
+    Aggrega metriche base per la chiave indicata (campaign_id/adset_id).
+    """
+    grouped: dict[str, dict] = {}
+    _aggregate_insights_merge_into(grouped, insights, key_name)
+    _aggregate_insights_finalize_derived_metrics(grouped)
     return grouped
+
+
+def _merge_insight_rows_into_groups(groups: dict[tuple[str, str], dict], rows: List[dict]) -> None:
+    """Somma metriche per (ad_id, date) dentro groups (merge incrementale per pagina)."""
+    for r in rows:
+        aid = (r.get("ad_id") or "").strip()
+        d = (r.get("date") or "").strip()
+        if not aid or not d:
+            continue
+        key = (aid, d)
+        if key not in groups:
+            groups[key] = {
+                "ad_id": aid,
+                "date": d,
+                "campaign_id": r.get("campaign_id", ""),
+                "adset_id": r.get("adset_id", ""),
+                "spend": 0.0,
+                "impressions": 0,
+                "clicks": 0,
+                "conversions": 0,
+                "_parts": 0,
+            }
+        g = groups[key]
+        g["_parts"] += 1
+        try:
+            g["spend"] += float(str(r.get("spend", 0) or 0))
+        except (TypeError, ValueError):
+            pass
+        g["impressions"] += int(r.get("impressions", 0) or 0)
+        g["clicks"] += int(r.get("clicks", 0) or 0)
+        g["conversions"] += int(r.get("conversions", 0) or 0)
+
+
+def _finalize_ad_day_merge_groups(groups: dict[tuple[str, str], dict]) -> List[dict]:
+    """Converte groups in lista con ctr/cpc/cpm dai totali."""
+    out: List[dict] = []
+    for g in groups.values():
+        spend = float(g["spend"])
+        im = int(g["impressions"])
+        cl = int(g["clicks"])
+        ctr = (cl / im * 100) if im > 0 else 0.0
+        cpc = (spend / cl) if cl > 0 else 0.0
+        cpm = (spend / im * 1000) if im > 0 else 0.0
+        out.append(
+            {
+                "date": g["date"],
+                "campaign_id": g["campaign_id"],
+                "adset_id": g["adset_id"],
+                "ad_id": g["ad_id"],
+                "impressions": im,
+                "clicks": cl,
+                "conversions": g["conversions"],
+                "ctr": f"{ctr:.2f}",
+                "spend": f"{spend:.2f}",
+                "cpc": f"{cpc:.2f}",
+                "cpm": f"{cpm:.2f}",
+                "cpa": "0.00",
+                "publisher_platform": "",
+                "platform_position": "",
+                "raw_data": {
+                    "_aggregated_from_breakdown": True,
+                    "breakdown_row_count": g["_parts"],
+                },
+            }
+        )
+    return out
+
+
+def _merge_insight_rows_by_ad_day(rows: List[dict]) -> List[dict]:
+    """
+    Somma metriche per (ad_id, date) — usato quando la risposta Insights include più righe
+    (breakdown per placement). Ricava ctr/cpc/cpm dai totali come in get_insights.
+    """
+    groups: dict[tuple[str, str], dict] = {}
+    _merge_insight_rows_into_groups(groups, rows)
+    return _finalize_ad_day_merge_groups(groups)
+
+
+def _upsert_placement_row(
+    db: Session,
+    insight: dict,
+    ad_record: MetaAd,
+    insight_date: datetime,
+    start_date: date,
+    end_date: date,
+    job_debug_tag: dict,
+) -> str:
+    """Persiste una riga breakdown su meta_marketing_placement. Ritorna 'created'|'updated'|''."""
+    insight_date_only = insight_date.date()
+    if insight_date_only < start_date or insight_date_only > end_date:
+        return ""
+
+    pub = (insight.get("publisher_platform") or "").strip().lower()
+    pos = (insight.get("platform_position") or "").strip()
+
+    existing = (
+        db.query(MetaMarketingPlacement)
+        .filter(
+            MetaMarketingPlacement.ad_id == ad_record.id,
+            MetaMarketingPlacement.date == insight_date,
+            MetaMarketingPlacement.publisher_platform == pub,
+            MetaMarketingPlacement.platform_position == pos,
+        )
+        .first()
+    )
+
+    base_raw = insight.get("raw_data", {})
+    base_raw = _append_ingestion_debug(
+        base_raw,
+        {**job_debug_tag, "layer": "placement_breakdown"},
+    )
+
+    if existing:
+        existing.spend = insight.get("spend", existing.spend)
+        existing.impressions = insight.get("impressions", existing.impressions)
+        existing.clicks = insight.get("clicks", existing.clicks)
+        existing.conversions = insight.get("conversions", existing.conversions)
+        existing.ctr = insight.get("ctr", existing.ctr)
+        existing.cpc = insight.get("cpc", existing.cpc)
+        existing.cpm = insight.get("cpm", existing.cpm)
+        existing.cpa = insight.get("cpa", existing.cpa)
+        existing.additional_metrics = base_raw
+        existing.updated_at = now_rome()
+        return "updated"
+
+    row = MetaMarketingPlacement(
+        ad_id=ad_record.id,
+        date=insight_date,
+        publisher_platform=pub,
+        platform_position=pos,
+        spend=insight.get("spend", 0),
+        impressions=insight.get("impressions", 0),
+        clicks=insight.get("clicks", 0),
+        conversions=insight.get("conversions", 0),
+        ctr=insight.get("ctr", 0),
+        cpc=insight.get("cpc", 0),
+        cpm=insight.get("cpm", 0),
+        cpa=insight.get("cpa", 0),
+        additional_metrics=base_raw,
+    )
+    db.add(row)
+    return "created"
 
 
 def run(db: Session = None) -> dict:
@@ -194,16 +365,16 @@ def run(db: Session = None) -> dict:
     
     return stats
 
-def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: date, metrics: List[str]) -> dict:
+def run_manual_sync(
+    db: Session,
+    account_id: str,
+    start_date: date,
+    end_date: date,
+    metrics: List[str],
+) -> dict:
     """
-    Esegue sync manuale per un account specifico con date e metriche personalizzate.
-    
-    Args:
-        db: Database session
-        account_id: ID dell'account Meta da sincronizzare
-        start_date: Data inizio periodo
-        end_date: Data fine periodo
-        metrics: Lista di metriche da recuperare
+    Sync manuale Insights → meta_marketing_data / meta_marketing_placement.
+    Lead Ads Graph (`meta_graph_leads`) è solo il task/endpoint dedicati, non questo modulo.
     
     Returns: dict con statistiche {"campaigns_synced": int, "errors": int}
     """
@@ -251,18 +422,23 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
         
         if existing_campaign and existing_campaign.sync_filters:
             filters = existing_campaign.sync_filters.copy()
-            # Se c'è solo un tag filter, non è sufficiente - serve name_pattern
-            if not filters.get('name_pattern'):
+            # Struttura da Meta: serve name_pattern (match sul nome) OPPURE campaign_ids (lista ID espliciti).
+            has_name = bool((filters.get("name_pattern") or "").strip())
+            has_ids = bool(filters.get("campaign_ids"))
+            if not has_name and not has_ids:
                 filters = None
         
         # Sync campaigns structure con filtri (se disponibili)
-        if filters and filters.get('name_pattern'):
+        if filters and (
+            (filters.get("name_pattern") or "").strip() or filters.get("campaign_ids")
+        ):
             service.sync_account_campaigns(account.account_id, db, filters=filters)
         else:
-            # Senza filtri non richiamiamo sync_account_campaigns: emetterebbe warning e skip.
-            # Usiamo la struttura campagne già presente a DB per la sync marketing.
+            # Senza filtri usabili non richiamiamo sync_account_campaigns (evita sync “vuota”).
+            # La sync marketing usa comunque ads/campagne già in DB.
             logger.info(
-                "Meta Marketing Manual Sync: No sync filters found, using existing campaigns in DB for account %s",
+                "Meta Marketing Manual Sync: No sync filters (name_pattern or campaign_ids) on sample campaign; "
+                "using existing structure in DB for account %s",
                 account.account_id,
             )
         
@@ -292,172 +468,279 @@ def run_manual_sync(db: Session, account_id: str, start_date: date, end_date: da
                 f"Run campaigns/adsets/ads sync before marketing sync."
             )
         
-        # Fetch insights una sola volta per account/range (A)
+        # Sempre breakdown placement + totali aggregati (Insights paginati, limit=50 per richiesta).
+        breakdowns = ["publisher_platform", "platform_position"]
         logger.info(
-            "Meta Marketing Manual Sync: Fetching account-level ad insights once for account %s",
+            "Meta Marketing Manual Sync: fetching ad insights for account %s (breakdowns=%s, page_limit=%s)",
             account.account_id,
-        )
-        insights = service.get_insights(
-            account_id=account.account_id,
-            level='ad',
-            date_preset=None,  # usa esplicitamente il range richiesto, non last_7d di default
-            start_date=start_date,
-            end_date=end_date,
-            fields=metrics,
-        )
-        logger.info(
-            "Meta Marketing Manual Sync: Retrieved %s ad-level insights for account %s",
-            len(insights),
-            account.account_id,
+            breakdowns,
+            META_INSIGHTS_PAGE_LIMIT,
         )
 
-        # Aggregazioni da ad-level per validazione tecnica (B)
-        campaign_aggregates = _aggregate_insights_by_key(insights, "campaign_id")
-        adset_aggregates = _aggregate_insights_by_key(insights, "adset_id")
-        logger.info(
-            "Meta Marketing Manual Sync: Aggregates built from ad-level insights (campaigns=%s, adsets=%s)",
-            len(campaign_aggregates),
-            len(adset_aggregates),
-        )
+        stats["placement_created"] = 0
+        stats["placement_updated"] = 0
 
-        insights_by_campaign = _group_insights_by_campaign(insights)
+        # Merge incrementale (ad_id, date): non teniamo in RAM l'intera lista breakdown.
+        merge_groups: dict[tuple[str, str], dict] = {}
+        campaign_agg: dict[str, dict] = {}
+        adset_agg: dict[str, dict] = {}
+        api_campaign_ids: Set[str] = set()
+        total_insight_rows = 0
+        insight_page_idx = 0
 
-        # Fetch and save marketing insights for each campaign (using pre-fetched insights)
-        for campaign in campaigns:
-            try:
-                normalized_campaign_id = _normalize_meta_id(campaign.campaign_id)
-                campaign_insights = insights_by_campaign.get(normalized_campaign_id, [])
-                logger.info(
-                    "Meta Marketing Manual Sync: Processing campaign %s with %s pre-fetched insights",
-                    campaign.campaign_id,
-                    len(campaign_insights),
-                )
-                
-                # Get all ad_ids for this campaign to help debug matching issues
-                campaign_ad_ids = db.query(MetaAd.ad_id).join(MetaAdSet).filter(
-                    MetaAdSet.campaign_id == campaign.id
-                ).all()
-                campaign_ad_ids_set = {str(ad_id[0]) for ad_id in campaign_ad_ids}
-                logger.debug(f"Meta Marketing Manual Sync: Campaign {campaign.campaign_id} has {len(campaign_ad_ids_set)} ads in DB: {list(campaign_ad_ids_set)[:5]}...")
-                
-                # Save insights to database
-                records_created = 0
-                records_updated = 0
-                records_skipped_no_ad_id = 0
-                records_skipped_no_ad_record = 0
-                insight_ad_ids = set()
-                
-                for insight in campaign_insights:
-                    ad_id_str = insight.get('ad_id', '')
+        records_created = 0
+        records_updated = 0
+        records_skipped_no_ad_id = 0
+        records_skipped_no_ad_record = 0
+        campaigns_touched: Set[str] = set()
+
+        try:
+            logger.info(
+                "Meta Marketing Manual Sync: start insights pagination account=%s (%s) period=%s..%s "
+                "(each API page is logged under services.integrations.meta_marketing)",
+                account.account_id,
+                account.name,
+                start_date,
+                end_date,
+            )
+            for page in service.iter_insight_pages(
+                account_id=account.account_id,
+                level="ad",
+                date_preset=None,
+                start_date=start_date,
+                end_date=end_date,
+                fields=metrics,
+                breakdowns=breakdowns,
+                page_limit=META_INSIGHTS_PAGE_LIMIT,
+            ):
+                insight_page_idx += 1
+                total_insight_rows += len(page)
+                _merge_insight_rows_into_groups(merge_groups, page)
+                _aggregate_insights_merge_into(campaign_agg, page, "campaign_id")
+                _aggregate_insights_merge_into(adset_agg, page, "adset_id")
+                for i in page:
+                    if i.get("campaign_id"):
+                        api_campaign_ids.add(_normalize_meta_id(i["campaign_id"]))
+
+                # Placement: persisti e commit per pagina (riduce RAM sessione / rischio OOM).
+                for raw in page:
+                    ad_id_str = raw.get("ad_id", "")
                     if not ad_id_str:
-                        records_skipped_no_ad_id += 1
                         continue
-                    
-                    insight_ad_ids.add(ad_id_str)
-                    
-                    # Find ad record
-                    ad_record = db.query(MetaAd).filter(MetaAd.ad_id == ad_id_str).first()
+                    ad_record = _meta_ad_for_account(db, account, ad_id_str)
                     if not ad_record:
-                        records_skipped_no_ad_record += 1
-                        if records_skipped_no_ad_record <= 3:  # Log first 3 missing ads for debugging
-                            logger.warning(f"Meta Marketing Manual Sync: Ad record not found for ad_id {ad_id_str} in campaign {campaign.campaign_id}")
                         continue
-                    
-                    # Parse date
-                    insight_date = datetime.strptime(insight['date'], '%Y-%m-%d')
-                    insight_date_only = insight_date.date()
-                    
-                    # Filter: salva solo dati nel range richiesto
-                    if insight_date_only < start_date or insight_date_only > end_date:
-                        logger.debug(f"Meta Marketing Manual Sync: Skipping insight with date {insight_date_only} (outside range {start_date} - {end_date})")
+                    try:
+                        insight_date = datetime.strptime(raw["date"], "%Y-%m-%d")
+                    except (ValueError, KeyError):
                         continue
-                    
-                    # Check if record exists
-                    existing = db.query(MetaMarketingData).filter(
-                        MetaMarketingData.ad_id == ad_record.id,
-                        MetaMarketingData.date == insight_date
-                    ).first()
-                    
-                    placement_info = {}
+                    pr = _upsert_placement_row(
+                        db,
+                        raw,
+                        ad_record,
+                        insight_date,
+                        start_date,
+                        end_date,
+                        job_debug_tag,
+                    )
+                    if pr == "created":
+                        stats["placement_created"] += 1
+                    elif pr == "updated":
+                        stats["placement_updated"] += 1
 
-                    if existing:
-                        # Update existing
-                        logger.info(
-                            "[META_SYNC][MANUAL][UPDATE] ad_db_id=%s date=%s spend=%s conv=%s",
-                            ad_record.id,
-                            insight_date,
-                            insight.get('spend'),
-                            insight.get('conversions'),
-                        )
-                        existing.spend = insight.get('spend', existing.spend)
-                        existing.impressions = insight.get('impressions', existing.impressions)
-                        existing.clicks = insight.get('clicks', existing.clicks)
-                        existing.conversions = insight.get('conversions', existing.conversions)
-                        existing.ctr = insight.get('ctr', existing.ctr)
-                        existing.cpc = insight.get('cpc', existing.cpc)
-                        existing.cpm = insight.get('cpm', existing.cpm)
-                        # publisher_platform non più aggiornato per ridurre complessità ingestion
-                        # Update additional metrics if present + debug tag
-                        base_raw = insight.get('raw_data', existing.additional_metrics)
-                        existing.additional_metrics = _append_ingestion_debug(
-                            base_raw,
-                            {**job_debug_tag, **placement_info},
-                        )
-                        existing.updated_at = now_rome()
-                        records_updated += 1
-                    else:
-                        # Create new
-                        logger.info(
-                            "[META_SYNC][MANUAL][INSERT] ad_db_id=%s date=%s spend=%s conv=%s",
-                            ad_record.id,
-                            insight_date,
-                            insight.get('spend'),
-                            insight.get('conversions'),
-                        )
-                        base_raw = insight.get('raw_data', {})
-                        base_raw = _append_ingestion_debug(
-                            base_raw,
-                            {**job_debug_tag, **placement_info},
-                        )
-                        marketing_data = MetaMarketingData(
-                            ad_id=ad_record.id,
-                            date=insight_date,
-                            spend=insight.get('spend', 0),
-                            impressions=insight.get('impressions', 0),
-                            clicks=insight.get('clicks', 0),
-                            conversions=insight.get('conversions', 0),
-                            ctr=insight.get('ctr', 0),
-                            cpc=insight.get('cpc', 0),
-                            cpm=insight.get('cpm', 0),
-                            cpa=insight.get('cpa', 0),
-                            additional_metrics=base_raw,
-                        )
-                        db.add(marketing_data)
-                        records_created += 1
-                
                 db.commit()
-                stats["campaigns_synced"] += 1
-                
-                # Log matching statistics
-                matched_ad_ids = insight_ad_ids & campaign_ad_ids_set
-                unmatched_ad_ids = insight_ad_ids - campaign_ad_ids_set
-                
                 logger.info(
-                    f"Meta Marketing Manual Sync: Campaign {campaign.campaign_id} completed - "
-                    f"Created: {records_created}, Updated: {records_updated}, "
-                    f"Skipped (no ad_id): {records_skipped_no_ad_id}, "
-                    f"Skipped (no ad_record): {records_skipped_no_ad_record}, "
-                    f"Ad ID matching: {len(matched_ad_ids)} matched, {len(unmatched_ad_ids)} unmatched"
+                    "Meta Marketing Manual Sync: DB commit after insights page %s — placements "
+                    "created_total=%s updated_total=%s | page_rows=%s cum_insight_rows=%s ad_day_keys=%s",
+                    insight_page_idx,
+                    stats.get("placement_created", 0),
+                    stats.get("placement_updated", 0),
+                    len(page),
+                    total_insight_rows,
+                    len(merge_groups),
                 )
-                
-                if unmatched_ad_ids and len(unmatched_ad_ids) <= 5:
-                    logger.warning(f"Meta Marketing Manual Sync: Unmatched ad_ids in insights: {list(unmatched_ad_ids)}")
-                
-            except Exception as e:
-                logger.error(f"Meta Marketing Manual Sync: Error syncing insights for campaign {campaign.campaign_id}: {e}", exc_info=True)
-                db.rollback()
-                stats["errors"] += 1
-        
+
+            if insight_page_idx == 0:
+                logger.warning(
+                    "Meta Marketing Manual Sync: no insight pages returned for account %s (check token / range)",
+                    account.account_id,
+                )
+
+            logger.info(
+                "Meta Marketing Manual Sync: insights fetch finished — %s ad-level rows, %s API pages, account %s",
+                total_insight_rows,
+                insight_page_idx,
+                account.account_id,
+            )
+
+            _aggregate_insights_finalize_derived_metrics(campaign_agg)
+            _aggregate_insights_finalize_derived_metrics(adset_agg)
+            logger.info(
+                "Meta Marketing Manual Sync: Aggregates built from ad-level insights (campaigns=%s, adsets=%s)",
+                len(campaign_agg),
+                len(adset_agg),
+            )
+
+            db_campaign_ids: Set[str] = {
+                _normalize_meta_id(c.campaign_id) for c in campaigns
+            }
+            orphan_campaigns = api_campaign_ids - db_campaign_ids
+            if orphan_campaigns:
+                logger.warning(
+                    "Meta Marketing Manual Sync: %s campaign_id nelle risposta Insights non sono in meta_campaigns "
+                    "per questo account (es. %s). Si elabora comunque per ad_id sull'account; "
+                    "sincronizza la struttura campagne da Meta se mancano oggetti.",
+                    len(orphan_campaigns),
+                    list(orphan_campaigns)[:5],
+                )
+
+            merged_for_totals = _finalize_ad_day_merge_groups(merge_groups)
+            n_layer_a = len(merged_for_totals)
+            logger.info(
+                "Meta Marketing Manual Sync: persisting MetaMarketingData (layer A totals) — %s ad-day rows, account %s",
+                n_layer_a,
+                account.account_id,
+            )
+
+            for md_i, insight in enumerate(merged_for_totals, start=1):
+                ad_id_str = insight.get("ad_id", "")
+                if not ad_id_str:
+                    records_skipped_no_ad_id += 1
+                    continue
+
+                ad_record = _meta_ad_for_account(db, account, ad_id_str)
+                if not ad_record:
+                    records_skipped_no_ad_record += 1
+                    if records_skipped_no_ad_record <= 5:
+                        logger.warning(
+                            "Meta Marketing Manual Sync: nessun MetaAd in DB per ad_id=%s "
+                            "(account %s); sincronizza ads/campagne o verifica ID.",
+                            ad_id_str,
+                            account.account_id,
+                        )
+                    continue
+
+                cid = _normalize_meta_id(insight.get("campaign_id", ""))
+                if cid:
+                    campaigns_touched.add(cid)
+
+                insight_date = datetime.strptime(insight["date"], "%Y-%m-%d")
+                insight_date_only = insight_date.date()
+                if insight_date_only < start_date or insight_date_only > end_date:
+                    logger.debug(
+                        "Meta Marketing Manual Sync: Skipping insight date %s outside range",
+                        insight_date_only,
+                    )
+                    continue
+
+                existing = (
+                    db.query(MetaMarketingData)
+                    .filter(
+                        MetaMarketingData.ad_id == ad_record.id,
+                        MetaMarketingData.date == insight_date,
+                    )
+                    .first()
+                )
+
+                placement_info = {}
+
+                if existing:
+                    logger.debug(
+                        "[META_SYNC][MANUAL][UPDATE] ad_db_id=%s date=%s spend=%s conv=%s",
+                        ad_record.id,
+                        insight_date,
+                        insight.get("spend"),
+                        insight.get("conversions"),
+                    )
+                    existing.spend = insight.get("spend", existing.spend)
+                    existing.impressions = insight.get("impressions", existing.impressions)
+                    existing.clicks = insight.get("clicks", existing.clicks)
+                    existing.conversions = insight.get("conversions", existing.conversions)
+                    existing.ctr = insight.get("ctr", existing.ctr)
+                    existing.cpc = insight.get("cpc", existing.cpc)
+                    existing.cpm = insight.get("cpm", existing.cpm)
+                    base_raw = insight.get("raw_data", existing.additional_metrics)
+                    existing.additional_metrics = _append_ingestion_debug(
+                        base_raw,
+                        {**job_debug_tag, **placement_info},
+                    )
+                    existing.updated_at = now_rome()
+                    records_updated += 1
+                else:
+                    logger.debug(
+                        "[META_SYNC][MANUAL][INSERT] ad_db_id=%s date=%s spend=%s conv=%s",
+                        ad_record.id,
+                        insight_date,
+                        insight.get("spend"),
+                        insight.get("conversions"),
+                    )
+                    base_raw = insight.get("raw_data", {})
+                    base_raw = _append_ingestion_debug(
+                        base_raw,
+                        {**job_debug_tag, **placement_info},
+                    )
+                    marketing_data = MetaMarketingData(
+                        ad_id=ad_record.id,
+                        date=insight_date,
+                        spend=insight.get("spend", 0),
+                        impressions=insight.get("impressions", 0),
+                        clicks=insight.get("clicks", 0),
+                        conversions=insight.get("conversions", 0),
+                        ctr=insight.get("ctr", 0),
+                        cpc=insight.get("cpc", 0),
+                        cpm=insight.get("cpm", 0),
+                        cpa=insight.get("cpa", 0),
+                        additional_metrics=base_raw,
+                    )
+                    db.add(marketing_data)
+                    records_created += 1
+
+                if n_layer_a and (md_i % 150 == 0 or md_i == n_layer_a):
+                    logger.info(
+                        "Meta Marketing Manual Sync: layer A progress %s/%s (account %s)",
+                        md_i,
+                        n_layer_a,
+                        account.account_id,
+                    )
+
+            db.commit()
+            stats["campaigns_synced"] = len(campaigns_touched)
+
+            logger.info(
+                "Meta Marketing Manual Sync: account %s — Created: %s, Updated: %s, "
+                "Skipped (no ad_id): %s, Skipped (no ad in DB): %s, campaigns_touched=%s",
+                account.account_id,
+                records_created,
+                records_updated,
+                records_skipped_no_ad_id,
+                records_skipped_no_ad_record,
+                len(campaigns_touched),
+            )
+
+        except Exception as e:
+            logger.error(
+                "Meta Marketing Manual Sync: Error syncing insights for account %s: %s",
+                account.account_id,
+                e,
+                exc_info=True,
+            )
+            db.rollback()
+            stats["errors"] += 1
+
+        logger.info(
+            "Meta Marketing Manual Sync: placement rows (account total) created=%s updated=%s",
+            stats.get("placement_created", 0),
+            stats.get("placement_updated", 0),
+        )
+
+        # Marker deploy: se dopo questa riga compaiono ancora "Meta Graph leads ingest" nello stesso job,
+        # il worker Celery non sta usando questa versione del modulo (riavvio / rebuild immagine).
+        logger.info(
+            "Meta Marketing Manual Sync: marketing-only pipeline complete for account %s "
+            "(no Graph /{ad_id}/leads in this function — use task meta_graph_leads_sync separately)",
+            account.account_id,
+        )
+
         logger.info(f"Meta Marketing Manual Sync ✅: {stats['campaigns_synced']} campaigns synced for account {account.account_id}")
         
     except Exception as e:

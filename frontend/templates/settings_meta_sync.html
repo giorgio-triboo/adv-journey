@@ -3,8 +3,19 @@
 {% block content %}
 <div class="animate-fadeInUp">
     <div class="mb-8">
-        <h1 class="text-3xl font-bold gradient-text">Sync Manuale Dati Marketing Meta</h1>
-        <p class="text-neutral-500 mt-2">Forza l'aggiornamento dei dati marketing per un periodo specifico con metriche personalizzate.</p>
+        <h1 class="text-3xl font-bold gradient-text">Sync Manuale Meta</h1>
+        <p class="text-neutral-500 mt-2">Due azioni: Insights (marketing + breakdown placement in DB) e ingest Lead Ads da Graph.</p>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mb-6" role="tablist">
+        <button type="button" id="tabBtnMarketing" role="tab" aria-selected="true"
+                class="px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white shadow-sm transition-all">
+            Marketing (Insights)
+        </button>
+        <button type="button" id="tabBtnGraphLeads" role="tab" aria-selected="false"
+                class="px-4 py-2 rounded-lg font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-all">
+            Lead Ads (Graph)
+        </button>
     </div>
 
     {% if request.query_params.get('error') %}
@@ -19,9 +30,10 @@
     </div>
     {% endif %}
 
-    <div class="glass-card overflow-hidden mb-6">
+    <div id="panelMarketing" class="glass-card overflow-hidden mb-6">
         <div class="px-6 py-4 border-b border-white/20 bg-white/50">
-            <h2 class="text-lg font-semibold">Configurazione Sync</h2>
+            <h2 class="text-lg font-semibold">Dati marketing (Insights)</h2>
+            <p class="text-sm text-neutral-500 mt-1">La sync viene accodata sul <strong>worker Celery</strong>; la risposta HTTP è immediata, l&apos;elaborazione avviene in background.</p>
         </div>
         <div class="px-6 py-8">
             <form id="syncForm" class="space-y-6">
@@ -116,13 +128,65 @@
                 <!-- Pulsanti -->
                 <div class="flex items-center justify-between pt-4 border-t border-neutral-200">
                     <div class="text-sm text-neutral-500">
-                        <p>La sincronizzazione verrà eseguita in background.</p>
-                        <p class="mt-1">I dati verranno salvati nel database per un riscontro locale.</p>
+                        <p>Dopo &quot;Avvia sync&quot; ricevi subito conferma di accodamento; il job gira sul worker (può richiedere diversi minuti).</p>
+                        <p class="mt-1">Solo Insights (spend, breakdown piattaforma/posizione, ecc.). Le lead da Graph sono nella tab <strong>Lead Ads (Graph)</strong>.</p>
                     </div>
                     <button type="submit" id="syncButton"
                             class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
                         <span id="syncButtonText">Avvia Sync</span>
-                        <span id="syncButtonLoading" class="hidden">⏳ Sincronizzazione in corso...</span>
+                        <span id="syncButtonLoading" class="hidden">⏳ Accodamento...</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="panelGraphLeads" class="glass-card overflow-hidden mb-6 hidden">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+            <h2 class="text-lg font-semibold">Lead Ads (Graph API)</h2>
+            <p class="text-sm text-neutral-500 mt-1 max-w-3xl">
+                Per ogni <code class="text-xs bg-neutral-100 px-1 rounded">MetaAd</code> dell&apos;account chiama
+                <code class="text-xs bg-neutral-100 px-1 rounded">GET /&#123;ad_id&#125;/leads</code> e salva in
+                <code class="text-xs bg-neutral-100 px-1 rounded">meta_graph_leads</code> (filtrate per
+                <code class="text-xs bg-neutral-100 px-1 rounded">created_time</code> nel periodo, fuso Europe/Rome).
+                Job separato dalla sync marketing: molte chiamate API, accoda sul worker Celery.
+            </p>
+        </div>
+        <div class="px-6 py-8">
+            <form id="graphLeadsForm" class="space-y-6">
+                <div>
+                    <label class="block text-sm font-semibold text-neutral-700 mb-2">
+                        Account Meta <span class="text-neutral-400 text-xs">(opzionale — vuoto = tutti gli account con sync abilitato)</span>
+                    </label>
+                    <select name="account_id" id="graph_leads_account_id"
+                            class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                        <option value="">-- Tutti gli account attivi (sync on) --</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.account_id }}">{{ account.name }} ({{ account.account_id }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-neutral-700 mb-2">Data inizio <span class="text-red-500">*</span></label>
+                        <input type="text" name="start_date" id="graph_leads_start_date" required
+                               data-datepicker="single"
+                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                               value="{{ default_start_date }}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-neutral-700 mb-2">Data fine <span class="text-red-500">*</span></label>
+                        <input type="text" name="end_date" id="graph_leads_end_date" required
+                               data-datepicker="single"
+                               class="w-full px-4 py-2 rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                               value="{{ default_end_date }}">
+                    </div>
+                </div>
+                <div class="flex items-center justify-end pt-4 border-t border-neutral-200">
+                    <button type="submit" id="graphLeadsButton"
+                            class="px-6 py-3 bg-amber-600 text-white font-semibold rounded-lg hover:bg-amber-700 shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span id="graphLeadsButtonText">Accoda ingest lead Graph</span>
+                        <span id="graphLeadsButtonLoading" class="hidden">⏳ Accodamento...</span>
                     </button>
                 </div>
             </form>
@@ -139,6 +203,7 @@
             <p><strong>Sync Manuale:</strong> Usa questa maschera per sincronizzare periodi specifici o recuperare dati storici.</p>
             <p><strong>Metriche:</strong> Seleziona solo le metriche necessarie per ottimizzare le chiamate API e ridurre i tempi di sincronizzazione.</p>
             <p><strong>CPL:</strong> Per calcolare il CPL (Costo per Lead) sono necessari Spend e Conversions (da Actions).</p>
+            <p><strong>Lead Graph:</strong> Tab dedicata per popolare <code class="text-xs bg-neutral-100 px-1 rounded">meta_graph_leads</code>; non è inclusa nella sync marketing.</p>
         </div>
     </div>
 
@@ -147,6 +212,27 @@
 </div>
 
 <script>
+(function () {
+    const tabMarketing = document.getElementById('tabBtnMarketing');
+    const tabGraphLeads = document.getElementById('tabBtnGraphLeads');
+    const panelMarketing = document.getElementById('panelMarketing');
+    const panelGraphLeads = document.getElementById('panelGraphLeads');
+    const activeTab = 'px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white shadow-sm transition-all';
+    const inactiveTab = 'px-4 py-2 rounded-lg font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-all';
+
+    function showTab(which) {
+        panelMarketing.classList.toggle('hidden', which !== 'marketing');
+        panelGraphLeads.classList.toggle('hidden', which !== 'graphLeads');
+        tabMarketing.setAttribute('aria-selected', which === 'marketing');
+        tabGraphLeads.setAttribute('aria-selected', which === 'graphLeads');
+        tabMarketing.className = which === 'marketing' ? activeTab : inactiveTab;
+        tabGraphLeads.className = which === 'graphLeads' ? activeTab : inactiveTab;
+    }
+
+    tabMarketing.addEventListener('click', function () { showTab('marketing'); });
+    tabGraphLeads.addEventListener('click', function () { showTab('graphLeads'); });
+})();
+
 document.getElementById('syncForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     
@@ -203,11 +289,22 @@ document.getElementById('syncForm').addEventListener('submit', async function(e)
             })
         });
         
-        // Verifica se la risposta è OK
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Errore risposta:', response.status, errorText);
-            await showCustomAlert('Errore', `Errore HTTP ${response.status}: ${errorText}`);
+            const raw = await response.text();
+            let errMsg = 'HTTP ' + response.status;
+            try {
+                const errJson = JSON.parse(raw);
+                if (errJson.message) errMsg = errJson.message;
+                if (Array.isArray(errJson.per_account) && errJson.per_account.length) {
+                    errMsg += ' — ' + errJson.per_account.map(function (r) {
+                        return (r.account_name || r.account_id) + (r.error ? ': ' + r.error : '');
+                    }).join(' | ');
+                }
+            } catch (ignore) {
+                if (raw) errMsg += ': ' + raw;
+            }
+            console.error('Errore risposta:', errMsg);
+            await showCustomAlert('Errore', errMsg);
             return;
         }
         
@@ -215,12 +312,14 @@ document.getElementById('syncForm').addEventListener('submit', async function(e)
         console.log('Risposta sync:', result);
         
         if (result.success) {
-            showSuccessTooltip(
-                `Sincronizzazione avviata con successo!`,
-                `Account: ${result.account_name || 'Tutti'} • Periodo: ${startDate} - ${endDate} • Metriche: ${metrics.join(', ')}`
-            );
-            // Reset form (opzionale)
-            // e.target.reset();
+            let detail = `Account: ${result.account_name || 'Tutti'} • Periodo: ${startDate} - ${endDate}`;
+            if (Array.isArray(result.job_ids) && result.job_ids.length) {
+                detail += ' • Job ID: ' + result.job_ids.join(', ');
+            }
+            if (Array.isArray(result.celery_task_ids) && result.celery_task_ids.length) {
+                detail += ' • Celery: ' + result.celery_task_ids.map(function (id) { return (id || '').substring(0, 8) + '…'; }).join(', ');
+            }
+            showSuccessTooltip(`Sync accodata sul worker`, detail);
         } else {
             await showCustomAlert('Errore', 'Errore durante la sincronizzazione: ' + (result.message || 'Errore sconosciuto'));
         }
@@ -231,6 +330,51 @@ document.getElementById('syncForm').addEventListener('submit', async function(e)
         syncButton.disabled = false;
         syncButtonText.classList.remove('hidden');
         syncButtonLoading.classList.add('hidden');
+    }
+});
+
+document.getElementById('graphLeadsForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const btn = document.getElementById('graphLeadsButton');
+    const txt = document.getElementById('graphLeadsButtonText');
+    const loading = document.getElementById('graphLeadsButtonLoading');
+    btn.disabled = true;
+    txt.classList.add('hidden');
+    loading.classList.remove('hidden');
+    const fd = new FormData(e.target);
+    const accountId = fd.get('account_id') || '';
+    const startDate = fd.get('start_date');
+    const endDate = fd.get('end_date');
+    try {
+        const response = await fetch('/settings/meta-sync/manual-graph-leads', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                account_id: accountId || null,
+                start_date: startDate,
+                end_date: endDate
+            })
+        });
+        const result = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+            await showCustomAlert('Errore', result.message || ('HTTP ' + response.status));
+            return;
+        }
+        if (result.success) {
+            let detail = (result.account_name || '') + ' • ' + startDate + ' – ' + endDate;
+            if (Array.isArray(result.job_ids) && result.job_ids.length) {
+                detail += ' • Job: ' + result.job_ids.join(', ');
+            }
+            showSuccessTooltip('Ingest lead Graph accodato', detail);
+        } else {
+            await showCustomAlert('Errore', result.message || 'Errore sconosciuto');
+        }
+    } catch (err) {
+        await showCustomAlert('Errore', err.message || String(err));
+    } finally {
+        btn.disabled = false;
+        txt.classList.remove('hidden');
+        loading.classList.add('hidden');
     }
 });
 

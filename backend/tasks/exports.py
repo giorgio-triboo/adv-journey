@@ -22,6 +22,7 @@ from models import (
     MetaAdSet,
     MetaCampaign,
     MetaMarketingData,
+    MetaMarketingPlacement,
     MsgTrafficMapping,
     StatusCategory,
     TrafficPlatform,
@@ -508,6 +509,136 @@ def _export_marketing(db, filters: dict[str, Any]) -> tuple[list[str], list[dict
     return headers, rows, "full"
 
 
+def _export_marketing_analysis_placement(db, filters: dict[str, Any]) -> tuple[list[str], list[dict[str, Any]]]:
+    """
+    Export righe giornaliere da meta_marketing_placement (breakdown publisher_platform + platform_position),
+    con gli stessi filtri della pagina /marketing/analysis (account / campagna / adset / periodo).
+    """
+    date_from_obj, date_to_obj = _parse_date_range(filters)
+
+    q = (
+        db.query(
+            MetaMarketingPlacement,
+            MetaAd,
+            MetaAdSet,
+            MetaCampaign,
+            MetaAccount,
+        )
+        .join(MetaAd, MetaMarketingPlacement.ad_id == MetaAd.id)
+        .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+        .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+        .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+        .filter(
+            MetaAccount.is_active == True,
+            MetaMarketingPlacement.date >= date_from_obj,
+            MetaMarketingPlacement.date <= date_to_obj,
+        )
+    )
+
+    account_id = (filters.get("account_id") or "").strip()
+    if account_id:
+        q = q.filter(MetaAccount.account_id == account_id)
+
+    campaign_name = (filters.get("campaign_name") or "").strip()
+    campaign_id = (filters.get("campaign_id") or "").strip()
+    if campaign_name:
+        q = q.filter(MetaCampaign.name.ilike(f"%{campaign_name}%"))
+    elif campaign_id:
+        q = q.filter(MetaCampaign.campaign_id == campaign_id)
+
+    adset_name = (filters.get("adset_name") or "").strip()
+    adset_raw = filters.get("adset_id") or ""
+    if adset_name:
+        q = q.filter(MetaAdSet.name.ilike(f"%{adset_name}%"))
+    elif adset_raw:
+        try:
+            adset_pk = int(str(adset_raw).strip())
+            q = q.filter(MetaAdSet.id == adset_pk)
+        except ValueError:
+            pass
+
+    creative_name = (filters.get("creative_name") or "").strip()
+    if creative_name:
+        q = q.filter(MetaAd.name.ilike(f"%{creative_name}%"))
+
+    status_f = (filters.get("status") or "all").strip().lower()
+    if status_f == "active":
+        q = q.filter(MetaCampaign.status == "ACTIVE")
+    elif status_f == "inactive":
+        q = q.filter(MetaCampaign.status != "ACTIVE")
+
+    platform_f = (filters.get("platform") or "all").strip().lower()
+    if platform_f in ("facebook", "instagram"):
+        q = q.filter(
+            func.lower(func.coalesce(MetaMarketingPlacement.publisher_platform, "")) == platform_f
+        )
+
+    q = q.order_by(
+        MetaMarketingPlacement.date,
+        MetaAccount.name,
+        MetaCampaign.name,
+        MetaAdSet.name,
+        MetaAd.name,
+        MetaMarketingPlacement.publisher_platform,
+        MetaMarketingPlacement.platform_position,
+    )
+
+    headers = [
+        "Data",
+        "Account Meta ID",
+        "Account",
+        "Campagna ID",
+        "Campagna",
+        "AdSet Meta ID",
+        "AdSet",
+        "Ad Meta ID",
+        "Ad",
+        "Publisher platform",
+        "Posizione",
+        "Speso",
+        "Impression",
+        "Click",
+        "Lead Meta",
+        "CPL giorno",
+        "CTR",
+        "CPC",
+        "CPM",
+        "CPA",
+    ]
+
+    rows: list[dict[str, Any]] = []
+    for mp, ad, adset, campaign, account in q.all():
+        d = mp.date
+        date_str = d.strftime("%Y-%m-%d") if d else ""
+        spend = _parse_amount(mp.spend)
+        conv = int(mp.conversions or 0)
+        cpl = (spend / conv) if conv > 0 else 0.0
+        rows.append({
+            "Data": date_str,
+            "Account Meta ID": account.account_id or "",
+            "Account": account.name or "",
+            "Campagna ID": campaign.campaign_id or "",
+            "Campagna": campaign.name or "",
+            "AdSet Meta ID": adset.adset_id or "",
+            "AdSet": adset.name or "",
+            "Ad Meta ID": ad.ad_id or "",
+            "Ad": ad.name or "",
+            "Publisher platform": mp.publisher_platform or "",
+            "Posizione": mp.platform_position or "",
+            "Speso": _fmt_decimal(spend, 2),
+            "Impression": str(int(mp.impressions or 0)),
+            "Click": str(int(mp.clicks or 0)),
+            "Lead Meta": str(conv),
+            "CPL giorno": _fmt_decimal(cpl, 2),
+            "CTR": _fmt_decimal(_parse_amount(mp.ctr), 4),
+            "CPC": _fmt_decimal(_parse_amount(mp.cpc), 4),
+            "CPM": _fmt_decimal(_parse_amount(mp.cpm), 4),
+            "CPA": _fmt_decimal(_parse_amount(mp.cpa), 4),
+        })
+
+    return headers, rows
+
+
 @celery_app.task(name="tasks.exports.generate_and_email_csv")
 def generate_and_email_csv_task(export_type: str, requester_email: str, filters: dict[str, Any], subsection: str = ""):
     """Genera il CSV in background e lo invia via mail al richiedente."""
@@ -524,6 +655,15 @@ def generate_and_email_csv_task(export_type: str, requester_email: str, filters:
             filename = f"marketing_{mode}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             subject = f"Export Marketing ({mode}) pronto"
             body = f"In allegato trovi il CSV richiesto per Marketing ({mode})."
+        elif export_type == "marketing_analysis_placement":
+            headers, rows = _export_marketing_analysis_placement(db, filters)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"marketing_analysis_breakdown_{ts}.csv"
+            subject = "Export Marketing Analysis (breakdown placement) pronto"
+            body = (
+                "In allegato il CSV con le righe giornaliere da meta_marketing_placement "
+                "(publisher_platform, platform_position), filtrate come in Marketing Analysis."
+            )
         else:
             raise ValueError(f"Tipo export non supportato: {export_type}")
 

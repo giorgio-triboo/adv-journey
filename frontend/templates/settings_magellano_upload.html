@@ -7,25 +7,24 @@
         <p class="text-neutral-500 mt-2">Sincronizza automaticamente le lead da Magellano o carica file manualmente.</p>
     </div>
 
-    <!-- Tabs -->
-    <div class="glass-card mb-6">
-        <div class="border-b border-neutral-200">
-            <nav class="flex -mb-px">
-                <button onclick="switchTab('sync')" id="tab-sync-btn" 
-                        class="tab-button active px-6 py-3 text-sm font-medium border-b-2 border-indigo-500 text-indigo-600">
-                    Sync Automatico
-                </button>
-                <button onclick="switchTab('upload')" id="tab-upload-btn"
-                        class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300">
-                    Upload Manuale
-                </button>
-            </nav>
-        </div>
+    <div class="flex flex-wrap gap-2 mb-6" role="tablist" aria-label="Sezioni sync Magellano">
+        <button type="button" onclick="switchTab('sync')" id="tab-sync-btn" role="tab" aria-selected="true"
+                class="px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white shadow-sm transition-all">
+            Sync automatico
+        </button>
+        <button type="button" onclick="switchTab('upload')" id="tab-upload-btn" role="tab" aria-selected="false"
+                class="px-4 py-2 rounded-lg font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-all">
+            Upload manuale
+        </button>
+    </div>
 
-        <!-- Tab Content: Sync Automatico -->
-        <div id="tab-sync" class="tab-content p-8">
-            <h2 class="text-xl font-semibold mb-6">Sincronizzazione Automatica</h2>
-            
+    <!-- Tab Content: Sync Automatico -->
+    <div id="tab-sync" class="glass-card overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+            <h2 class="text-lg font-semibold">Sincronizzazione automatica</h2>
+            <p class="text-sm text-neutral-500 mt-1">Recupero lead da Magellano per intervallo date; job in background.</p>
+        </div>
+        <div class="px-6 py-8">
             <form id="syncForm" class="space-y-6">
                 <div>
                     <label class="block text-sm font-medium text-neutral-700 mb-2">
@@ -110,11 +109,15 @@
             <!-- Result Message -->
             <div id="syncResultMessage" class="hidden mt-6 p-4 rounded-lg"></div>
         </div>
+    </div>
 
-        <!-- Tab Content: Upload Manuale -->
-        <div id="tab-upload" class="tab-content hidden p-8">
-            <h2 class="text-xl font-semibold mb-6">Upload Manuale File</h2>
-            
+    <!-- Tab Content: Upload Manuale -->
+    <div id="tab-upload" class="glass-card overflow-hidden mb-6 hidden">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+            <h2 class="text-lg font-semibold">Upload manuale file</h2>
+            <p class="text-sm text-neutral-500 mt-1">ZIP, Excel o CSV esportati da Magellano.</p>
+        </div>
+        <div class="px-6 py-8">
             <form id="uploadForm" enctype="multipart/form-data" class="space-y-6">
                 <div>
                     <label class="block text-sm font-medium text-neutral-700 mb-2">
@@ -202,9 +205,11 @@
     </div>
 
     <!-- Info Card -->
-    <div class="glass-card p-8">
-        <h2 class="text-xl font-semibold mb-6">Informazioni</h2>
-        <div class="space-y-4 text-sm text-neutral-600">
+    <div class="glass-card overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+            <h2 class="text-lg font-semibold">Informazioni</h2>
+        </div>
+        <div class="px-6 py-8 text-sm text-neutral-600 space-y-4">
             <div class="p-4 bg-neutral-50 rounded-lg border border-neutral-200">
                 <strong class="text-neutral-800 block mb-1">Sync Automatico:</strong> 
                 <span class="text-neutral-600">Recupera automaticamente le lead da Magellano per il range di date specificato. Le lead esistenti verranno aggiornate, quelle nuove verranno create.</span>
@@ -224,26 +229,25 @@
 </div>
 
 <script>
-// Tab switching
+const magTabActive = 'px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white shadow-sm transition-all';
+const magTabInactive = 'px-4 py-2 rounded-lg font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-all';
+
 function switchTab(tab) {
-    // Hide all tabs
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.add('hidden');
-    });
-    
-    // Remove active class from all buttons
-    document.querySelectorAll('.tab-button').forEach(btn => {
-        btn.classList.remove('active', 'border-indigo-500', 'text-indigo-600');
-        btn.classList.add('border-transparent', 'text-neutral-500');
-    });
-    
-    // Show selected tab
-    document.getElementById(`tab-${tab}`).classList.remove('hidden');
-    
-    // Activate button
-    const btn = document.getElementById(`tab-${tab}-btn`);
-    btn.classList.add('active', 'border-indigo-500', 'text-indigo-600');
-    btn.classList.remove('border-transparent', 'text-neutral-500');
+    const isSync = tab === 'sync';
+    const panelSync = document.getElementById('tab-sync');
+    const panelUpload = document.getElementById('tab-upload');
+    const btnSync = document.getElementById('tab-sync-btn');
+    const btnUpload = document.getElementById('tab-upload-btn');
+    if (panelSync) panelSync.classList.toggle('hidden', !isSync);
+    if (panelUpload) panelUpload.classList.toggle('hidden', isSync);
+    if (btnSync) {
+        btnSync.setAttribute('aria-selected', isSync);
+        btnSync.className = isSync ? magTabActive : magTabInactive;
+    }
+    if (btnUpload) {
+        btnUpload.setAttribute('aria-selected', !isSync);
+        btnUpload.className = !isSync ? magTabActive : magTabInactive;
+    }
 }
 
 // Set default dates for sync

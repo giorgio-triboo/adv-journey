@@ -9,46 +9,34 @@
         </p>
     </div>
 
-    <div class="mb-6 border-b border-neutral-200">
-        <nav class="-mb-px flex flex-wrap gap-2" aria-label="Tabs">
-            <button
-                type="button"
-                class="ulixe-tab-btn border-b-2 border-indigo-500 text-indigo-600 px-4 py-2 text-sm font-medium"
-                data-tab="scraping"
-                onclick="setUlixeTab('scraping')"
-            >
-                Sync RCRM
-            </button>
-            <button
-                type="button"
-                class="ulixe-tab-btn border-b-2 border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 px-4 py-2 text-sm font-medium"
-                data-tab="upload"
-                onclick="setUlixeTab('upload')"
-            >
-                Upload manuale RCRM
-            </button>
-            <button
-                type="button"
-                class="ulixe-tab-btn border-b-2 border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 px-4 py-2 text-sm font-medium"
-                data-tab="sync"
-                onclick="setUlixeTab('sync')"
-            >
-                Sync utenti (puntuale)
-            </button>
-        </nav>
+    <div class="flex flex-wrap gap-2 mb-6" role="tablist" aria-label="Sezioni sync Ulixe">
+        <button type="button" id="tabBtnUlixeScraping" role="tab" aria-selected="true"
+                class="px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white shadow-sm transition-all"
+                onclick="setUlixeTab('scraping')">
+            Sync RCRM
+        </button>
+        <button type="button" id="tabBtnUlixeUpload" role="tab" aria-selected="false"
+                class="px-4 py-2 rounded-lg font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-all"
+                onclick="setUlixeTab('upload')">
+            Upload manuale RCRM
+        </button>
+        <button type="button" id="tabBtnUlixeSync" role="tab" aria-selected="false"
+                class="px-4 py-2 rounded-lg font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-all"
+                onclick="setUlixeTab('sync')">
+            Sync utenti (puntuale)
+        </button>
     </div>
 
     <!-- TAB 1: RCRM da Google Sheet -->
-    <div id="ulixe-tab-scraping" class="space-y-4">
-        <div class="glass-card p-6 mb-6">
-            <h2 class="text-xl font-semibold mb-3">Sync RCRM</h2>
-            <p class="text-sm text-neutral-600 mb-4 max-w-3xl">
-                Per il <span class="font-medium">mese selezionato</span>, aggiorna il database RCRM leggendo dal Google Sheet.
-                I dati già salvati per quel mese vengono sostituiti.
+    <div id="ulixe-tab-scraping" class="glass-card overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+            <h2 class="text-lg font-semibold">Sync RCRM</h2>
+            <p class="text-sm text-neutral-500 mt-1 max-w-3xl">
+                Per il <span class="font-medium text-neutral-700">mese selezionato</span>, aggiorna il database RCRM dal Google Sheet; i dati del mese vengono sostituiti.
+                Il <span class="font-medium text-neutral-700">1° del mese</span>, se scegli il mese appena iniziato, si usa il <span class="font-medium text-neutral-700">mese precedente</span>.
             </p>
-            <p class="text-sm text-neutral-500 mb-4 max-w-3xl">
-                Il <span class="font-medium">1° giorno di ogni mese</span>, se scegli il mese appena iniziato, la sincronizzazione usa automaticamente il <span class="font-medium">mese precedente</span> (il foglio/datario RCRM è ancora quello del mese chiuso).
-            </p>
+        </div>
+        <div class="px-6 py-8">
             {% if not google_rcrm_configured %}
             <div class="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-sm">
                 Google Sheet non configurato su questo ambiente: questa azione non è disponibile.
@@ -87,14 +75,15 @@
     </div>
 
     <!-- TAB 2: Upload manuale -->
-    <div id="ulixe-tab-upload" class="hidden space-y-4">
-        <div class="glass-card p-6 mb-6">
-            <h2 class="text-xl font-semibold mb-3">Upload RCRM mensile</h2>
-            <p class="text-sm text-neutral-600 mb-4 max-w-3xl">
-                Carica un CSV con colonne <span class="font-medium">IDMessaggio</span> e <span class="font-medium">RCRM</span>.
-                Per il mese scelto, i dati esistenti vengono <span class="font-medium">sostituiti</span> interamente da questo file.
+    <div id="ulixe-tab-upload" class="glass-card overflow-hidden mb-6 hidden">
+        <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+            <h2 class="text-lg font-semibold">Upload RCRM mensile</h2>
+            <p class="text-sm text-neutral-500 mt-1 max-w-3xl">
+                CSV con <span class="font-medium text-neutral-700">IDMessaggio</span> e <span class="font-medium text-neutral-700">RCRM</span>;
+                per il mese scelto i dati esistenti vengono <span class="font-medium text-neutral-700">sostituiti</span>.
             </p>
-
+        </div>
+        <div class="px-6 py-8">
             <form id="ulixeRcrmUploadForm" class="space-y-4" enctype="multipart/form-data">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -146,19 +135,20 @@
     </div>
 
     <!-- TAB 3: Sync utenti puntuale -->
-    <div id="ulixe-tab-sync" class="hidden space-y-4">
+    <div id="ulixe-tab-sync" class="hidden space-y-6 mb-6">
         {% if not ulixe_configured %}
-        <div class="glass-card p-4 mb-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+        <div class="glass-card p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
             Connessione Ulixe non attiva. Contatta l&apos;amministratore per abilitare questa funzione.
         </div>
         {% endif %}
-        <div class="glass-card p-6 mb-6">
-            <h2 class="text-xl font-semibold mb-3">Sync utenti</h2>
-            <p class="text-sm text-neutral-600 mb-4 max-w-3xl">
-                Inserisci gli <span class="font-medium">user ID Ulixe</span> (come sulle lead), uno per riga, fino a 10 per volta.
-                Vengono aggiornati stato e categoria da Ulixe.
-            </p>
-
+        <div class="glass-card overflow-hidden">
+            <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+                <h2 class="text-lg font-semibold">Sync utenti</h2>
+                <p class="text-sm text-neutral-500 mt-1 max-w-3xl">
+                    <span class="font-medium text-neutral-700">User ID Ulixe</span> (come sulle lead), uno per riga, max 10; aggiornamento stato e categoria da Ulixe.
+                </p>
+            </div>
+            <div class="px-6 py-8">
             <form id="ulixeSyncForm" class="space-y-4">
                 <div>
                     <label class="block text-sm font-medium text-neutral-700 mb-2">
@@ -190,12 +180,16 @@
                     </button>
                 </div>
             </form>
+            </div>
         </div>
 
         {% if leads_examples %}
-        <div class="glass-card p-6">
-            <h2 class="text-lg font-semibold mb-1">Esempi da lead recenti</h2>
-            <p class="text-sm text-neutral-500 mb-4">Clicca per aggiungere al campo sopra.</p>
+        <div class="glass-card overflow-hidden">
+            <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+                <h2 class="text-lg font-semibold">Esempi da lead recenti</h2>
+                <p class="text-sm text-neutral-500 mt-1">Clicca per aggiungere al campo sopra.</p>
+            </div>
+            <div class="px-6 py-6">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {% for lead in leads_examples %}
                 <div class="p-3 bg-neutral-50 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
@@ -213,14 +207,19 @@
                 </div>
                 {% endfor %}
             </div>
+            </div>
         </div>
         {% endif %}
 
         <!-- Results Area -->
-        <div id="resultsArea" class="hidden mt-6">
-            <div class="glass-card p-6">
-                <h2 class="text-xl font-semibold mb-4">Risultati Sync</h2>
-                <div id="resultsContent"></div>
+        <div id="resultsArea" class="hidden">
+            <div class="glass-card overflow-hidden">
+                <div class="px-6 py-4 border-b border-white/20 bg-white/50">
+                    <h2 class="text-lg font-semibold">Risultati sync</h2>
+                </div>
+                <div class="px-6 py-6">
+                    <div id="resultsContent"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -229,21 +228,25 @@
 <script>
 let currentUserIds = [];
 
+const ulixeTabActive = 'px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white shadow-sm transition-all';
+const ulixeTabInactive = 'px-4 py-2 rounded-lg font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-all';
+
 /** Tab: definito per primo così i click funzionano anche se il resto dello script fallisce. */
 function setUlixeTab(tab) {
     const tabs = ['scraping', 'upload', 'sync'];
+    const btnIds = {
+        scraping: 'tabBtnUlixeScraping',
+        upload: 'tabBtnUlixeUpload',
+        sync: 'tabBtnUlixeSync',
+    };
     tabs.forEach(t => {
         const panel = document.getElementById('ulixe-tab-' + t);
-        const btn = document.querySelector('.ulixe-tab-btn[data-tab="' + t + '"]');
-        if (!panel || !btn) return;
-        if (t === tab) {
-            panel.classList.remove('hidden');
-            btn.classList.remove('border-transparent', 'text-neutral-500');
-            btn.classList.add('border-indigo-500', 'text-indigo-600');
-        } else {
-            panel.classList.add('hidden');
-            btn.classList.remove('border-indigo-500', 'text-indigo-600');
-            btn.classList.add('border-transparent', 'text-neutral-500');
+        const btn = document.getElementById(btnIds[t]);
+        const active = t === tab;
+        if (panel) panel.classList.toggle('hidden', !active);
+        if (btn) {
+            btn.setAttribute('aria-selected', active);
+            btn.className = active ? ulixeTabActive : ulixeTabInactive;
         }
     });
 }

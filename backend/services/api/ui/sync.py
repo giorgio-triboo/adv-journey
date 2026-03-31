@@ -13,6 +13,7 @@ from models import (
     SyncLog,
     IngestionJob,
     UlixeRcrmTemp,
+    now_rome,
 )
 from services.utils.crypto import hash_email_for_meta, hash_phone_for_meta
 from datetime import datetime, timedelta, date
@@ -767,7 +768,9 @@ async def manual_meta_sync(request: Request, db: Session = Depends(get_db)):
         
         from tasks.meta_marketing import meta_manual_sync_task
 
-        jobs_created = []
+        job_ids: List[int] = []
+        celery_task_ids: List[str] = []
+
         for account in accounts_to_sync:
             job = IngestionJob(
                 job_type="meta_marketing",
@@ -796,27 +799,278 @@ async def manual_meta_sync(request: Request, db: Session = Depends(get_db)):
             job.celery_task_id = async_result.id
             job.status = "QUEUED"
             db.commit()
-            jobs_created.append(job.id)
+
+            job_ids.append(job.id)
+            celery_task_ids.append(async_result.id)
 
         logger.info(
-            f"Manual sync started: {account_name}, period: {start_date} - {end_date}, metrics: {metrics}, jobs={jobs_created}"
+            "Manual meta marketing queued on worker: %s, period: %s - %s, metrics: %s, jobs=%s celery=%s",
+            account_name,
+            start_date,
+            end_date,
+            metrics,
+            job_ids,
+            celery_task_ids,
         )
-        
-        return JSONResponse({
-            "success": True,
-            "message": f"Sync avviata per {account_name}",
-            "account_name": account_name,
-            "start_date": start_date_str,
-            "end_date": end_date_str,
-            "metrics": metrics,
-            "job_ids": jobs_created,
-        })
+
+        return JSONResponse(
+            {
+                "success": True,
+                "message": f"Sync marketing accodata per {account_name} (worker Celery)",
+                "account_name": account_name,
+                "start_date": start_date_str,
+                "end_date": end_date_str,
+                "metrics": metrics,
+                "job_ids": job_ids,
+                "celery_task_ids": celery_task_ids,
+            }
+        )
         
     except ValueError as e:
         return JSONResponse({"success": False, "message": f"Formato date non valido: {str(e)}"}, status_code=400)
     except Exception as e:
         logger.error(f"Error in manual sync: {e}", exc_info=True)
         return JSONResponse({"success": False, "message": f"Errore: {str(e)}"}, status_code=500)
+
+
+@router.post("/settings/meta-sync/manual-graph-leads")
+async def manual_meta_graph_leads(request: Request, db: Session = Depends(get_db)):
+    """
+    Accoda su Celery l'ingest Lead Ads Graph → meta_graph_leads (GET /{ad_id}/leads).
+    Separato dalla sync marketing Insights.
+    """
+    if not request.session.get("user"):
+        return JSONResponse({"success": False, "message": "Non autorizzato"}, status_code=401)
+
+    try:
+        data = await request.json()
+        account_id = data.get("account_id")
+        start_date_str = data.get("start_date")
+        end_date_str = data.get("end_date")
+
+        if not start_date_str or not end_date_str:
+            return JSONResponse({"success": False, "message": "Date obbligatorie"}, status_code=400)
+
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+        if start_date > end_date:
+            return JSONResponse(
+                {"success": False, "message": "Data inizio deve essere precedente alla data fine"},
+                status_code=400,
+            )
+
+        user_session = request.session.get("user")
+        current_user = db.query(User).filter(User.email == user_session.get("email")).first()
+        if not current_user:
+            return JSONResponse({"success": False, "message": "Utente non trovato"}, status_code=401)
+
+        if account_id:
+            account = db.query(MetaAccount).filter(
+                MetaAccount.account_id == account_id,
+                MetaAccount.is_active == True,
+            ).first()
+            if not account:
+                return JSONResponse(
+                    {"success": False, "message": "Account non trovato o non autorizzato"},
+                    status_code=404,
+                )
+            accounts_to_sync = [account]
+            account_name = account.name
+        else:
+            accounts_to_sync = db.query(MetaAccount).filter(
+                MetaAccount.is_active == True,
+                MetaAccount.sync_enabled == True,
+            ).all()
+            if not accounts_to_sync:
+                return JSONResponse(
+                    {"success": False, "message": "Nessun account attivo trovato"},
+                    status_code=404,
+                )
+            account_name = f"{len(accounts_to_sync)} account"
+
+        from tasks.meta_marketing import meta_graph_leads_sync_task
+
+        job_ids: List[int] = []
+        celery_task_ids: List[str] = []
+
+        for account in accounts_to_sync:
+            job = IngestionJob(
+                job_type="meta_graph_leads",
+                status="PENDING",
+                params={
+                    "source": "frontend_manual",
+                    "account_id": account.account_id,
+                    "account_name": account.name,
+                    "start_date": start_date_str,
+                    "end_date": end_date_str,
+                },
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+
+            async_result = meta_graph_leads_sync_task.delay(
+                account.account_id,
+                start_date_str,
+                end_date_str,
+                job_id=job.id,
+            )
+
+            job.celery_task_id = async_result.id
+            job.status = "QUEUED"
+            db.commit()
+
+            job_ids.append(job.id)
+            celery_task_ids.append(async_result.id)
+
+        logger.info(
+            "Manual Meta Graph leads queued: %s, period %s..%s, jobs=%s celery=%s",
+            account_name,
+            start_date_str,
+            end_date_str,
+            job_ids,
+            celery_task_ids,
+        )
+
+        return JSONResponse(
+            {
+                "success": True,
+                "message": f"Ingest lead Graph accodato per {account_name} (worker Celery)",
+                "account_name": account_name,
+                "start_date": start_date_str,
+                "end_date": end_date_str,
+                "job_ids": job_ids,
+                "celery_task_ids": celery_task_ids,
+            }
+        )
+    except ValueError as e:
+        return JSONResponse({"success": False, "message": f"Formato date non valido: {str(e)}"}, status_code=400)
+    except Exception as e:
+        logger.error("manual_meta_graph_leads failed: %s", e, exc_info=True)
+        return JSONResponse({"success": False, "message": f"Errore: {str(e)}"}, status_code=500)
+
+
+@router.post("/settings/meta-sync/manual-leads-match")
+async def manual_meta_leads_match(request: Request, db: Session = Depends(get_db)):
+    """
+    Match Lead Ads Meta → Lead locali (meta_campaign_id / meta_adset_id / meta_ad_id).
+    Stessa logica di scripts/sync_meta_leads_from_ads.py, eseguita in richiesta HTTP.
+    """
+    if not request.session.get("user"):
+        return JSONResponse(
+            {"success": False, "message": "Non autorizzato"}, status_code=401
+        )
+
+    user_session = request.session.get("user")
+    current_user = db.query(User).filter(
+        User.email == user_session.get("email")
+    ).first()
+    if not current_user:
+        return JSONResponse(
+            {"success": False, "message": "Utente non trovato"}, status_code=401
+        )
+
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    only_missing = data.get("only_missing", True)
+    if isinstance(only_missing, str):
+        only_missing = only_missing.lower() in ("1", "true", "yes", "on")
+    limit_raw = data.get("limit_ads")
+    limit_ads = None
+    if limit_raw is not None and str(limit_raw).strip() != "":
+        try:
+            limit_ads = int(limit_raw)
+            if limit_ads < 1:
+                return JSONResponse(
+                    {
+                        "success": False,
+                        "message": "limit_ads deve essere un intero positivo",
+                    },
+                    status_code=400,
+                )
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {
+                    "success": False,
+                    "message": "limit_ads non valido",
+                },
+                status_code=400,
+            )
+
+    from services.sync.meta_leads_from_ads_sync import sync_meta_leads_from_ads
+
+    job = IngestionJob(
+        job_type="meta_leads_match",
+        status="RUNNING",
+        started_at=now_rome(),
+        params={
+            "source": "frontend_manual_leads_match",
+            "only_missing": only_missing,
+            "limit_ads": limit_ads,
+        },
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    try:
+        stats = sync_meta_leads_from_ads(
+            db, only_missing=only_missing, limit_ads=limit_ads
+        )
+        params = job.params or {}
+        params["stats"] = jsonable_encoder(stats)
+        job.params = params
+        job.status = "SUCCESS"
+        job.completed_at = now_rome()
+        job.message = (
+            f"Match lead completato: {stats.get('local_leads_matched', 0)} lead aggiornate"
+        )
+        db.commit()
+
+        try:
+            sync_log = SyncLog(
+                status="SUCCESS",
+                details={
+                    "meta_leads_match": {
+                        "type": "manual",
+                        "stats": jsonable_encoder(stats),
+                    }
+                },
+            )
+            db.add(sync_log)
+            db.commit()
+        except Exception as log_exc:
+            logger.error(
+                "Errore salvataggio SyncLog per meta leads match: %s",
+                log_exc,
+                exc_info=True,
+            )
+
+        return JSONResponse(
+            {
+                "success": True,
+                "message": "Match lead Meta completato",
+                "job_id": job.id,
+                "stats": jsonable_encoder(stats),
+            }
+        )
+    except Exception as e:
+        logger.error("manual_meta_leads_match failed: %s", e, exc_info=True)
+        try:
+            job.status = "ERROR"
+            job.completed_at = now_rome()
+            job.message = str(e)
+            db.commit()
+        except Exception:
+            db.rollback()
+        return JSONResponse(
+            {"success": False, "message": str(e), "job_id": job.id},
+            status_code=500,
+        )
+
 
 @router.get("/settings/ulixe-sync")
 async def settings_ulixe_sync(request: Request, db: Session = Depends(get_db)):

@@ -15,7 +15,7 @@ import time
 import json
 import requests
 import traceback
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Iterator
 from datetime import datetime, timedelta, date
 
 logger = logging.getLogger('services.integrations.meta_marketing')
@@ -29,6 +29,10 @@ API_CALL_DELAY = 5.0  # 5 secondi tra chiamate
 MAX_RETRIES = 4  # Numero massimo di tentativi (1 iniziale + 3 retry con backoff 2s, 5s, 7s)
 RETRY_BACKOFF_TIMES = [2, 5, 7]  # Backoff incrementale per retry: 2s, 5s, 7s
 GRAPH_API_TIMEOUT_SECONDS = 60
+
+# Page size Insights (Graph): riduce picchi RAM e allinea al default tipico Meta.
+META_INSIGHTS_PAGE_LIMIT = 50
+
 
 class MetaMarketingService:
     def __init__(self, access_token: Optional[str] = None):
@@ -598,6 +602,206 @@ class MetaMarketingService:
             logger.error(f"Error fetching ads for adset {adset_id}: {e}")
             return []
 
+    def _normalize_insight_row(self, insight: dict) -> Dict:
+        """Converte una riga grezza Graph insights nel dict usato dalla sync (stesso schema di prima)."""
+        actions = insight.get("actions", [])
+        conversions = 0
+        for action in actions:
+            if action.get("action_type") in ["lead", "offsite_conversion"]:
+                conversions += int(action.get("value", 0))
+
+        spend = float(insight.get("spend", 0))
+        impressions = int(insight.get("impressions", 0))
+        clicks = int(insight.get("clicks", 0))
+
+        ctr = (clicks / impressions * 100) if impressions > 0 else 0
+        raw_ad_id = insight.get("ad_id", "")
+        if isinstance(raw_ad_id, dict):
+            raw_ad_id = raw_ad_id.get("id", raw_ad_id.get("value", ""))
+        if raw_ad_id:
+            raw_ad_id = str(raw_ad_id)
+
+        ad_id_clean = raw_ad_id
+        if raw_ad_id and "/" in raw_ad_id:
+            ad_id_clean = raw_ad_id.split("/")[-1].replace("ad_", "")
+        if ad_id_clean and ad_id_clean.startswith("act_"):
+            parts = ad_id_clean.split("/")
+            if len(parts) > 1:
+                ad_id_clean = parts[-1].replace("ad_", "")
+
+        pub_dim = insight.get("publisher_platform")
+        pos_dim = insight.get("platform_position")
+        if pub_dim is not None and not isinstance(pub_dim, str):
+            pub_dim = str(pub_dim)
+        if pos_dim is not None and not isinstance(pos_dim, str):
+            pos_dim = str(pos_dim)
+        pub_dim = (pub_dim or "").strip()
+        pos_dim = (pos_dim or "").strip()
+
+        return {
+            "date": insight.get("date_start", ""),
+            "campaign_id": insight.get("campaign_id", ""),
+            "adset_id": insight.get("adset_id", ""),
+            "ad_id": ad_id_clean,
+            "impressions": impressions,
+            "clicks": clicks,
+            "conversions": conversions,
+            "ctr": self._format_percentage(ctr),
+            "spend": self._format_currency(spend),
+            "publisher_platform": pub_dim,
+            "platform_position": pos_dim,
+            "raw_data": dict(insight),
+        }
+
+    def _prepare_insights_fields(
+        self,
+        level: str,
+        fields: Optional[List[str]] = None,
+    ) -> List[str]:
+        if fields is None:
+            fields = [
+                "spend",
+                "impressions",
+                "clicks",
+                "ctr",
+                "cpc",
+                "cpm",
+                "actions",
+                "action_values",
+                "cost_per_action_type",
+            ]
+        fields = list(fields)
+        if level == "ad":
+            for field in ["ad_id", "campaign_id", "adset_id", "date_start"]:
+                if field not in fields:
+                    fields.append(field)
+        elif level == "campaign":
+            for f in ["campaign_id", "date_start"]:
+                if f not in fields:
+                    fields.append(f)
+        return fields
+
+    def iter_insight_pages(
+        self,
+        account_id: str,
+        level: str = "ad",
+        date_preset: str = "last_7d",
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        fields: Optional[List[str]] = None,
+        breakdowns: Optional[List[str]] = None,
+        page_limit: int = META_INSIGHTS_PAGE_LIMIT,
+    ) -> Iterator[List[Dict]]:
+        """
+        Scarica insights pagina per pagina (parametro Graph `limit`, default 50).
+        Ogni yield è una lista di righe normalizzate — evita di tenere in RAM l'intera risposta grezza.
+        """
+        if not self.access_token:
+            return
+
+        fields = self._prepare_insights_fields(level, fields)
+
+        graph_url = f"https://graph.facebook.com/v23.0/act_{account_id}/insights"
+        params: Dict[str, Any] = {
+            "level": level,
+            "fields": ",".join(fields),
+            "time_increment": 1,
+            "access_token": self.access_token,
+            "limit": page_limit,
+        }
+        if breakdowns:
+            params["breakdowns"] = ",".join(breakdowns)
+
+        if date_preset:
+            params["date_preset"] = date_preset
+        elif start_date and end_date:
+            params["time_range"] = json.dumps(
+                {
+                    "since": start_date.strftime("%Y-%m-%d"),
+                    "until": end_date.strftime("%Y-%m-%d"),
+                }
+            )
+
+        next_url: Optional[str] = graph_url
+        next_params: Optional[Dict[str, Any]] = params
+        page_index = 0
+        total_rows = 0
+        first_sample_logged = False
+        if start_date and end_date:
+            range_desc = f"time_range={start_date.isoformat()}..{end_date.isoformat()}"
+        elif date_preset:
+            range_desc = f"date_preset={date_preset}"
+        else:
+            range_desc = ""
+
+        while next_url:
+            page_index += 1
+            logger.info(
+                "Meta Insights API: HTTP GET page=%s account_id=%s limit=%s level=%s %s",
+                page_index,
+                account_id,
+                page_limit,
+                level,
+                range_desc,
+            )
+            t_req = time.perf_counter()
+            response = requests.get(next_url, params=next_params, timeout=GRAPH_API_TIMEOUT_SECONDS)
+            if response.status_code >= 400:
+                try:
+                    error_payload = response.json()
+                except Exception:
+                    error_payload = {"error": {"message": response.text}}
+                raise RuntimeError(f"Meta Insights API error: {error_payload}")
+
+            payload = response.json()
+            page_rows = payload.get("data", [])
+            total_rows += len(page_rows)
+
+            if page_rows and not first_sample_logged:
+                first = page_rows[0]
+                logger.info(
+                    "Sample insight — keys=%s ad_id=%s date=%s campaign_id=%s",
+                    list(first.keys()) if isinstance(first, dict) else [],
+                    first.get("ad_id") if isinstance(first, dict) else "",
+                    first.get("date_start") if isinstance(first, dict) else "",
+                    first.get("campaign_id") if isinstance(first, dict) else "",
+                )
+                logger.debug("Raw first insight: %s", dict(first) if isinstance(first, dict) else first)
+                first_sample_logged = True
+
+            self._apply_dynamic_rate_limit(
+                response.headers,
+                context=f"insights account={account_id} page={page_index}",
+            )
+
+            normalized = [self._normalize_insight_row(row) for row in page_rows if isinstance(row, dict)]
+            more_pages = bool(payload.get("paging", {}).get("next"))
+            elapsed = time.perf_counter() - t_req
+            logger.info(
+                "Meta Insights API: page=%s account_id=%s done raw_rows=%s normalized=%s elapsed=%.2fs "
+                "cum_api_rows=%s more_pages=%s",
+                page_index,
+                account_id,
+                len(page_rows),
+                len(normalized),
+                elapsed,
+                total_rows,
+                more_pages,
+            )
+            yield normalized
+
+            next_url = payload.get("paging", {}).get("next")
+            next_params = None
+
+        logger.info(
+            "Retrieved %s insight rows from Meta API for account %s (breakdowns=%s, pages=%s, limit=%s)",
+            total_rows,
+            account_id,
+            breakdowns or [],
+            page_index,
+            page_limit,
+        )
+
     def get_insights(
         self,
         account_id: str,
@@ -605,7 +809,9 @@ class MetaMarketingService:
         date_preset: str = 'last_7d',
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
-        fields: Optional[List[str]] = None
+        fields: Optional[List[str]] = None,
+        breakdowns: Optional[List[str]] = None,
+        page_limit: int = META_INSIGHTS_PAGE_LIMIT,
     ) -> List[Dict]:
         """
         Recupera metriche marketing (insights) da Meta.
@@ -617,147 +823,95 @@ class MetaMarketingService:
             start_date: Data inizio (se None, usa date_preset)
             end_date: Data fine (se None, usa date_preset)
             fields: Campi da recuperare (default: spend, impressions, clicks, conversions, etc.)
-        
-        Returns: Lista di insights con metriche
+            breakdowns: Es. ["publisher_platform", "platform_position"] — moltiplica le righe
+                per combinazione; usare solo per il layer B (tabella meta_marketing_placement).
+            page_limit: Righe per richiesta Graph (default META_INSIGHTS_PAGE_LIMIT, tipicamente 50).
+
+        Returns: Lista di insights con metriche; con breakdown include publisher_platform e platform_position.
+
+        Per volumi elevati preferire iter_insight_pages (stesso page_limit) per non duplicare tutto in RAM.
         """
         if not self.access_token:
             return []
-        
-        if fields is None:
-            # Campi metrici principali; i breakdown (publisher_platform, platform_position)
-            # vengono passati tramite parametro "breakdowns", non in "fields".
-            fields = [
-                'spend', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm',
-                'actions', 'action_values', 'cost_per_action_type',
-            ]
-        
-        # Campi richiesti per livello
-        if level == 'ad':
-            required_fields = ['ad_id', 'campaign_id', 'adset_id', 'date_start']
-            for field in required_fields:
-                if field not in fields:
-                    fields.append(field)
-        elif level == 'campaign':
-            for f in ['campaign_id', 'date_start']:
-                if f not in fields:
-                    fields.append(f)
-        
         try:
-            graph_url = f"https://graph.facebook.com/v23.0/act_{account_id}/insights"
-            params = {
-                'level': level,
-                'fields': ",".join(fields),
-                'time_increment': 1,  # Daily breakdown
-                # Nessun breakdown aggiuntivo per ridurre la complessità/rate limit
-                # (in particolare niente publisher_platform / platform_position)
-                'access_token': self.access_token,
-            }
-            
-            if date_preset:
-                params['date_preset'] = date_preset
-            elif start_date and end_date:
-                params['time_range'] = json.dumps({
-                    'since': start_date.strftime('%Y-%m-%d'),
-                    'until': end_date.strftime('%Y-%m-%d')
-                })
+            return [
+                row
+                for page in self.iter_insight_pages(
+                    account_id=account_id,
+                    level=level,
+                    date_preset=date_preset,
+                    start_date=start_date,
+                    end_date=end_date,
+                    fields=fields,
+                    breakdowns=breakdowns,
+                    page_limit=page_limit,
+                )
+                for row in page
+            ]
+        except Exception as e:
+            logger.error("Error fetching insights for account %s: %s", account_id, e)
+            return []
 
-            all_insights_rows: List[Dict] = []
-            next_url = graph_url
-            next_params = params
+    def get_leads_for_ad(self, ad_id: str) -> List[Dict[str, Any]]:
+        """
+        Lead Ads (Graph): GET /{ad_id}/leads — flusso separato dagli insights marketing.
+        Stessa filosofia di get_insights: requests, paginazione, _apply_dynamic_rate_limit.
+        """
+        if not self.access_token:
+            return []
+        aid = str(ad_id or "").strip()
+        if not aid:
+            return []
+        if aid.startswith("ad_"):
+            aid = aid.replace("ad_", "", 1)
+
+        try:
+            graph_url = f"https://graph.facebook.com/v23.0/{aid}/leads"
+            params: Dict[str, Any] = {
+                "fields": "id,created_time,form_id,field_data",
+                "access_token": self.access_token,
+            }
+            all_rows: List[Dict[str, Any]] = []
+            next_url: Optional[str] = graph_url
+            next_params: Optional[Dict[str, Any]] = params
             page_index = 0
 
             while next_url:
                 page_index += 1
-                response = requests.get(next_url, params=next_params, timeout=GRAPH_API_TIMEOUT_SECONDS)
+                response = requests.get(
+                    next_url,
+                    params=next_params,
+                    timeout=GRAPH_API_TIMEOUT_SECONDS,
+                )
                 if response.status_code >= 400:
                     try:
                         error_payload = response.json()
                     except Exception:
                         error_payload = {"error": {"message": response.text}}
-                    raise RuntimeError(f"Meta Insights API error: {error_payload}")
+                    raise RuntimeError(f"Meta Leads API error for ad {aid}: {error_payload}")
 
                 payload = response.json()
                 page_rows = payload.get("data", [])
-                all_insights_rows.extend(page_rows)
+                if isinstance(page_rows, list):
+                    all_rows.extend(page_rows)
 
                 self._apply_dynamic_rate_limit(
                     response.headers,
-                    context=f"insights account={account_id} page={page_index}",
+                    context=f"leads ad={aid} page={page_index}",
                 )
 
                 next_url = payload.get("paging", {}).get("next")
-                # Sulla paginazione next URL i parametri sono già inclusi.
                 next_params = None
 
-            insights = all_insights_rows
-            logger.info(f"Retrieved {len(insights)} insights from Meta API for account {account_id}")
-            if insights and len(insights) > 0:
-                # Log first insight to see structure
-                first_insight = insights[0]
-                logger.info(f"Sample insight structure - Keys: {list(first_insight.keys()) if isinstance(first_insight, dict) else []}")
-                logger.info(f"Sample insight - ad_id: {first_insight.get('ad_id') if isinstance(first_insight, dict) else ''}, ad_id type: {type(first_insight.get('ad_id')) if isinstance(first_insight, dict) else 'unknown'}, date: {first_insight.get('date_start') if isinstance(first_insight, dict) else ''}, campaign_id: {first_insight.get('campaign_id') if isinstance(first_insight, dict) else ''}")
-                # Log raw insight dict to see all fields
-                logger.debug(f"Raw first insight: {dict(first_insight) if isinstance(first_insight, dict) else first_insight}")
-            
-            result = []
-            for insight in insights:
-                # Parse actions for conversions
-                actions = insight.get('actions', [])
-                conversions = 0
-                for action in actions:
-                    if action.get('action_type') in ['lead', 'offsite_conversion']:
-                        conversions += int(action.get('value', 0))
-                
-                # Calculate CTR, CPC, CPM if not provided
-                spend = float(insight.get('spend', 0))
-                impressions = int(insight.get('impressions', 0))
-                clicks = int(insight.get('clicks', 0))
-                
-                ctr = (clicks / impressions * 100) if impressions > 0 else 0
-                cpc = (spend / clicks) if clicks > 0 else 0
-                cpm = (spend / impressions * 1000) if impressions > 0 else 0
-                
-                # Extract ad_id - potrebbe essere in formato "act_123456/ad_789" o solo "789"
-                # L'API Meta potrebbe restituire ad_id come oggetto o come stringa
-                raw_ad_id = insight.get('ad_id', '')
-                
-                # Se ad_id è un oggetto (dict), prova a estrarre l'id
-                if isinstance(raw_ad_id, dict):
-                    raw_ad_id = raw_ad_id.get('id', raw_ad_id.get('value', ''))
-                
-                # Converti a stringa se necessario
-                if raw_ad_id:
-                    raw_ad_id = str(raw_ad_id)
-                
-                ad_id_clean = raw_ad_id
-                if raw_ad_id and '/' in raw_ad_id:
-                    # Se è in formato "act_123456/ad_789", estrai solo "789"
-                    ad_id_clean = raw_ad_id.split('/')[-1].replace('ad_', '')
-                
-                # Rimuovi eventuali prefissi
-                if ad_id_clean and ad_id_clean.startswith('act_'):
-                    parts = ad_id_clean.split('/')
-                    if len(parts) > 1:
-                        ad_id_clean = parts[-1].replace('ad_', '')
-                
-                result.append({
-                    "date": insight.get('date_start', ''),
-                    "campaign_id": insight.get('campaign_id', ''),
-                    "adset_id": insight.get('adset_id', ''),
-                    "ad_id": ad_id_clean,  # Usa la versione pulita
-                    "impressions": impressions,
-                    "clicks": clicks,
-                    "conversions": conversions,
-                    "ctr": self._format_percentage(ctr),
-                    "spend": self._format_currency(spend),
-                    # publisher_platform e platform_position rimossi dall'ingestion per ridurre carico
-                    "raw_data": dict(insight)
-                })
-            
-            return result
+            logger.info(
+                "Retrieved %s lead rows from Meta Leads API for ad %s",
+                len(all_rows),
+                aid,
+            )
+            return all_rows
         except Exception as e:
-            logger.error(f"Error fetching insights for account {account_id}: {e}")
-            return []
+            logger.error("Error fetching leads for ad %s: %s", ad_id, e)
+            raise
 
     def _format_currency(self, value: float) -> str:
         """

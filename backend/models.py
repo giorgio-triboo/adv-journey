@@ -231,7 +231,7 @@ class MetaCampaign(Base):
     lifetime_budget = Column(String, nullable=True)
     tags = Column(JSON, default=list) # List of tags for filtering
     is_synced = Column(Boolean, default=False) # Whether to sync this campaign
-    sync_filters = Column(JSON, default=dict) # Filter config: {"tag": "value", "name_pattern": "pattern"}
+    sync_filters = Column(JSON, default=dict)  # Es. {"name_pattern": "Direct"} o {"campaign_ids": ["120...", ...]}
     created_at = Column(DateTime, default=now_rome)
     updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
     
@@ -267,6 +267,8 @@ class MetaAd(Base):
     
     adset = relationship("MetaAdSet", back_populates="ads")
     marketing_data = relationship("MetaMarketingData", back_populates="ad")
+    placement_breakdowns = relationship("MetaMarketingPlacement", back_populates="ad")
+    graph_leads = relationship("MetaGraphLead", back_populates="ad")
 
 class MetaMarketingData(Base):
     __tablename__ = "meta_marketing_data"
@@ -297,6 +299,66 @@ class MetaMarketingData(Base):
     
     lead = relationship("Lead", back_populates="marketing_data")
     ad = relationship("MetaAd", back_populates="marketing_data")
+
+class MetaMarketingPlacement(Base):
+    """
+    Layer B: metriche giornaliere per ad scomposte per publisher_platform (es. facebook, instagram)
+    e platform_position (es. feed, story, reels). Separato da MetaMarketingData (layer A, totale per ad/giorno)
+    per evitare doppi conteggi nelle query aggregate.
+    """
+    __tablename__ = "meta_marketing_placement"
+    __table_args__ = (
+        UniqueConstraint(
+            "ad_id",
+            "date",
+            "publisher_platform",
+            "platform_position",
+            name="uq_meta_marketing_placement_ad_date_pub_pos",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    ad_id = Column(Integer, ForeignKey("meta_ads.id", ondelete="CASCADE"), nullable=False, index=True)
+    date = Column(DateTime, index=True)
+
+    publisher_platform = Column(String, nullable=False, default="", index=True)
+    platform_position = Column(String, nullable=False, default="")
+
+    spend = Column(Numeric(18, 4), default=0)
+    impressions = Column(Integer, default=0)
+    clicks = Column(Integer, default=0)
+    conversions = Column(Integer, default=0)
+    ctr = Column(Numeric(10, 4), default=0)
+    cpc = Column(Numeric(18, 4), default=0)
+    cpm = Column(Numeric(18, 4), default=0)
+    cpa = Column(Numeric(18, 4), default=0)
+
+    additional_metrics = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
+
+    ad = relationship("MetaAd", back_populates="placement_breakdowns")
+
+class MetaGraphLead(Base):
+    """
+    Lead Lead Ads da Graph GET /{ad_id}/leads — ingest separato dagli insights marketing.
+    """
+    __tablename__ = "meta_graph_leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    graph_lead_id = Column(String, unique=True, nullable=False, index=True)
+    ad_id = Column(Integer, ForeignKey("meta_ads.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    form_id = Column(String, nullable=True)
+    created_time = Column(DateTime, nullable=True, index=True)
+    field_data = Column(JSON, nullable=True)
+    raw_payload = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime, default=now_rome)
+    updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
+
+    ad = relationship("MetaAd", back_populates="graph_leads")
 
 class MetaDataset(Base):
     __tablename__ = "meta_datasets"

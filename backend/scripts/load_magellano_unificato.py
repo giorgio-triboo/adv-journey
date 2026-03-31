@@ -5,9 +5,14 @@ Carica le lead da magellano_export_unificato.csv (arricchito con meta_* ID) nel 
 Supporta --cleanup per rimuovere prima le lead presenti nel CSV.
 
 Uso:
-    docker compose exec backend python scripts/load_magellano_unificato.py [--cleanup]
+    docker compose exec backend python scripts/load_magellano_unificato.py \\
+        --csv exports/magelano-export-0226/magellano_export_unificato_0226.csv
+
+Mapping CSV→DB: intestazioni riconosciute per match normalizzato (spazi, punti, underscore)
+e alias espliciti; meta_* da colonne meta_* o da facebook_*_id (export Magellano unificato).
 """
 import os
+import re
 import sys
 import csv
 import logging
@@ -21,6 +26,7 @@ if PROJECT_ROOT not in sys.path:
 from database import SessionLocal
 from models import Lead, LeadHistory, MetaMarketingData, StatusCategory
 from services.utils.crypto import hash_email_for_meta, hash_phone_for_meta
+from services.utils.platforms import normalize_platform
 
 logger = logging.getLogger("scripts.load_magellano_unificato")
 logging.basicConfig(level=logging.INFO)
@@ -76,6 +82,35 @@ def _to_str(val):
     return s if s and s.lower() != "nan" else None
 
 
+def _normalize_header_key(name: str) -> str:
+    """Chiave comparabile: solo lettere/numeri lowercase (Id user, id_user, ID User → iduser)."""
+    if not name:
+        return ""
+    return re.sub(r"[^a-z0-9]", "", (name or "").strip().lower())
+
+
+def _make_row_getter(row: dict):
+    """
+    Risolve colonne CSV anche se intestazioni differiscono (spazi vs underscore, maiuscole, punti).
+    """
+
+    def get(*keys):
+        for k in keys:
+            if not k:
+                continue
+            if k in row:
+                return row[k]
+            target = _normalize_header_key(k)
+            if not target:
+                continue
+            for orig in row:
+                if _normalize_header_key(orig) == target:
+                    return row.get(orig)
+        return None
+
+    return get
+
+
 def cleanup_leads(db, magellano_ids: set):
     """Rimuove lead e dipendenze."""
     if not magellano_ids:
@@ -101,18 +136,14 @@ def load_csv(csv_path: str, cleanup: bool = False) -> dict:
             for row in reader:
                 rows.append({k.strip().strip("\ufeff"): v for k, v in row.items()})
 
-        def get(row, *keys):
-            for k in keys:
-                v = row.get(k)
-                if v is not None: return v
-                for orig in row:
-                    if orig.strip().lower().replace(" ", "") == k.lower().replace(" ", ""):
-                        return row.get(orig)
-            return None
+        if rows:
+            hdr = list(rows[0].keys())
+            logger.info("CSV: %s colonne. Prime intestazioni: %s", len(hdr), hdr[:25])
 
         magellano_ids = set()
         for row in rows:
-            mid = _to_str(get(row, "Id user", "Id user"))
+            get = _make_row_getter(row)
+            mid = _to_str(get("Id user", "id_user", "User id"))
             if mid:
                 try: magellano_ids.add(str(int(float(mid))))
                 except ValueError: magellano_ids.add(mid)
@@ -124,47 +155,71 @@ def load_csv(csv_path: str, cleanup: bool = False) -> dict:
             logger.info("Rimosse %s leads", n)
 
         for idx, row in enumerate(rows):
-            magellano_id = _to_str(get(row, "Id user"))
+            get = _make_row_getter(row)
+            magellano_id = _to_str(get("Id user", "id_user"))
             if not magellano_id:
                 stats["skipped"] += 1
                 continue
 
             external_user_id = f"MAG-{magellano_id}" if not str(magellano_id).startswith("MAG-") else magellano_id
-            email_raw = _cell(get(row, "Email"))
-            phone_raw = _cell(get(row, "Telephone"))
+            email_raw = _cell(get("Email"))
+            phone_raw = _cell(get("Telephone"))
             email_hash = hash_email_for_meta(email_raw) if email_raw else ""
             phone_hash = hash_phone_for_meta(phone_raw) if phone_raw else ""
 
-            status_raw = _cell(get(row, "Sent status"))
+            status_raw = _cell(get("Sent status", "sent_status"))
             mag_status = _norm_status(status_raw)
             mag_cat = _status_category(mag_status)
             is_paid = mag_status == "magellano_sent"
 
-            subscr = _parse_date(get(row, "Subscr. date"))
-            fb_id = _norm_fb_id(get(row, "facebook_id"))
+            subscr = _parse_date(get("Subscr. date", "Subscr date", "subscr_date"))
+            fb_id = _norm_fb_id(get("facebook_id", "Facebook Id", "Facebook id"))
+
+            # meta_*: colonne dirette (merge Meta) oppure ID da export Magellano
+            meta_c = _to_str(
+                get("meta_campaign_id", "Meta campaign id", "campaign_id")
+            ) or _to_str(
+                get(
+                    "facebook_campaign_name_id",
+                    "Facebook campaign name id",
+                    "facebook_campaign_id",
+                )
+            )
+            meta_as = _to_str(get("meta_adset_id", "Meta adset id", "adset_id")) or _to_str(
+                get("facebook_ad_set_id", "Facebook ad set id", "facebook_adset_id")
+            )
+            meta_ad = _to_str(get("meta_ad_id", "Meta ad id", "ad_id")) or _to_str(
+                get("facebook_ad_name_id", "Facebook ad name id", "facebook_ad_id")
+            )
+
+            fb_plat_raw = _to_str(get("facebook_piattaforma"))
+            platform_norm = normalize_platform(fb_plat_raw) if fb_plat_raw else None
 
             try:
                 existing = db.query(Lead).filter(Lead.magellano_id == magellano_id).first()
                 data = {
-                    "brand": _to_str(get(row, "gruppocepu_serviziobrand")),
-                    "msg_id": _to_str(get(row, "gruppocepu_idmessaggio")),
-                    "form_id": _to_str(get(row, "gruppocepu_formid")),
-                    "source": _to_str(get(row, "Source")),
-                    "campaign_name": _to_str(get(row, "Campaign")),
-                    "magellano_campaign_id": _to_str(get(row, "Id campaign")),
+                    "brand": _to_str(
+                        get("gruppocepu_serviziobrand", "Gruppocepu serviziobrand")
+                    ),
+                    "msg_id": _to_str(get("gruppocepu_idmessaggio", "Gruppocepu idmessaggio")),
+                    "form_id": _to_str(get("gruppocepu_formid", "Gruppocepu formid")),
+                    "source": _to_str(get("Source")),
+                    "campaign_name": _to_str(get("Campaign")),
+                    "magellano_campaign_id": _to_str(get("Id campaign", "id_campaign")),
                     "magellano_status_raw": status_raw or None,
                     "magellano_status": mag_status,
                     "magellano_status_category": mag_cat,
                     "is_paid": is_paid,
-                    "facebook_ad_name": _to_str(get(row, "facebook_ad_name")),
-                    "facebook_ad_set": _to_str(get(row, "facebook_ad_set")),
-                    "facebook_campaign_name": _to_str(get(row, "facebook_campaign_name")),
+                    "facebook_ad_name": _to_str(get("facebook_ad_name")),
+                    "facebook_ad_set": _to_str(get("facebook_ad_set")),
+                    "facebook_campaign_name": _to_str(get("facebook_campaign_name")),
                     "facebook_id": fb_id,
-                    "facebook_piattaforma": _to_str(get(row, "facebook_piattaforma")),
+                    "facebook_piattaforma": fb_plat_raw,
                     "magellano_subscr_date": subscr,
-                    "meta_campaign_id": _to_str(get(row, "meta_campaign_id")),
-                    "meta_adset_id": _to_str(get(row, "meta_adset_id")),
-                    "meta_ad_id": _to_str(get(row, "meta_ad_id")),
+                    "meta_campaign_id": meta_c,
+                    "meta_adset_id": meta_as,
+                    "meta_ad_id": meta_ad,
+                    "platform": platform_norm,
                     "current_status": status_raw or mag_status,
                     "status_category": mag_cat,
                 }
