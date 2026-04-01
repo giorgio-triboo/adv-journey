@@ -1085,15 +1085,14 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
         _aggregate_placement_creative_for_platform("facebook", selected_pc_position_facebook)
         _aggregate_placement_creative_for_platform("instagram", selected_pc_position_instagram)
 
-        # CPL giornaliero per posizionamento, aggregato in due grafici (Facebook / Instagram), solo asse CPL
-        chart_date_order = [p["date"] for p in chart_points]
-        if not chart_date_order:
-            d0 = date_from.date() if hasattr(date_from, "date") else date_from
-            d1 = date_to.date() if hasattr(date_to, "date") else date_to
-            cur = d0
-            while cur <= d1:
-                chart_date_order.append(cur.isoformat())
-                cur += timedelta(days=1)
+        # CPL giornaliero per posizionamento: asse X = sempre l'intervallo filtro (non solo i giorni con righe in MetaMarketingData).
+        d0 = date_from.date() if hasattr(date_from, "date") else date_from
+        d1 = date_to.date() if hasattr(date_to, "date") else date_to
+        chart_date_order: list[str] = []
+        cur = d0
+        while cur <= d1:
+            chart_date_order.append(cur.isoformat())
+            cur += timedelta(days=1)
 
         placement_daily_q = (
             db.query(

@@ -53,7 +53,7 @@
                             class="w-full sm:flex-1 lg:w-auto whitespace-nowrap px-4 py-2 text-sm bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
                         Applica Filtri
                     </button>
-                    <a href="/marketing/analysis?tab={{ analysis_tab|default('analysis') }}"
+                    <a href="/marketing/analysis"
                        class="w-full sm:flex-1 lg:w-auto whitespace-nowrap text-center px-4 py-2 text-sm border border-neutral-300 bg-white text-neutral-800 font-semibold rounded-lg hover:bg-neutral-50 transition-all active:scale-95">
                         Azzera filtri
                     </a>
@@ -1131,15 +1131,50 @@
         const tabActiveCls = 'px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white shadow-sm transition-all';
         const tabInactiveCls = 'px-4 py-2 rounded-lg font-medium bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-all';
 
-        function showMarketingAnalysisTab(which) {
+        /**
+         * Allinea la query string al form (tab, periodo, filtri nome, posizionamenti).
+         * Parte dai parametri già nell'URL così non si perdono chiavi extra.
+         * push: nuova voce nello history (cambio tab); replace: normalizza URL al load senza stack extra.
+         */
+        function mergeMarketingAnalysisUrlFromForm(mode) {
+            const wantPush = mode === 'push';
+            if (wantPush && typeof history.pushState !== 'function') {
+                return;
+            }
+            if (!wantPush && typeof history.replaceState !== 'function') {
+                return;
+            }
+            const pathname = window.location.pathname;
+            const params = new URLSearchParams(window.location.search);
+            const form = document.getElementById('analysisFiltersForm');
+            if (form) {
+                new FormData(form).forEach(function (value, key) {
+                    const s = String(value).trim();
+                    if (s === '') {
+                        params.delete(key);
+                    } else {
+                        params.set(key, s);
+                    }
+                });
+            }
+            const q = params.toString();
+            const next = q ? pathname + '?' + q : pathname;
+            const cur = pathname + window.location.search;
+            if (next === cur) {
+                return;
+            }
+            if (wantPush) {
+                history.pushState(null, '', next);
+            } else {
+                history.replaceState(null, '', next);
+            }
+        }
+
+        function applyMarketingAnalysisTabPanels(which) {
             const panelA = document.getElementById('panelAnalysis');
             const panelB = document.getElementById('panelBreakdown');
             const panelPc = document.getElementById('panelPlacementCreative');
             const panelL = document.getElementById('panelLeadLavorazioni');
-            const hiddenInput = document.getElementById('analysisActiveTab');
-            if (hiddenInput) {
-                hiddenInput.value = which;
-            }
             if (panelA) {
                 panelA.classList.toggle('hidden', which !== 'analysis');
             }
@@ -1161,6 +1196,59 @@
                 btn.setAttribute('aria-selected', on ? 'true' : 'false');
                 btn.className = on ? tabActiveCls : tabInactiveCls;
             });
+        }
+
+        /** Dopo indietro/avanti: riallinea form + pannelli al query string corrente. */
+        function applyMarketingAnalysisStateFromLocation() {
+            const params = new URLSearchParams(window.location.search);
+            let t = (params.get('tab') || 'analysis').toLowerCase();
+            const allowed = { analysis: 1, breakdown: 1, placement_creative: 1, lead_wip: 1 };
+            if (!allowed[t]) {
+                t = 'analysis';
+            }
+            const hiddenInput = document.getElementById('analysisActiveTab');
+            if (hiddenInput) {
+                hiddenInput.value = t;
+            }
+            const setIfPresent = function (elementId, paramKey) {
+                if (!params.has(paramKey)) {
+                    return;
+                }
+                const el = document.getElementById(elementId);
+                if (el) {
+                    el.value = params.get(paramKey) || '';
+                }
+            };
+            setIfPresent('analysisDateFrom', 'date_from');
+            setIfPresent('analysisDateTo', 'date_to');
+            setIfPresent('analysisCampaignName', 'campaign_name');
+            setIfPresent('analysisAdsetName', 'adset_name');
+            setIfPresent('analysisCreativeName', 'creative_name');
+            setIfPresent('pcPositionFacebookFilter', 'pc_position_facebook');
+            setIfPresent('pcPositionInstagramFilter', 'pc_position_instagram');
+
+            applyMarketingAnalysisTabPanels(t);
+            if (t === 'breakdown') {
+                initPlacementBreakdownChartsOnce();
+                requestAnimationFrame(function () {
+                    resizePlacementBreakdownCharts();
+                });
+            }
+            if (t === 'lead_wip') {
+                fetchLeadLavorazioniSankey();
+            }
+        }
+
+        function showMarketingAnalysisTab(which, opts) {
+            opts = opts || {};
+            const hiddenInput = document.getElementById('analysisActiveTab');
+            if (hiddenInput) {
+                hiddenInput.value = which;
+            }
+            applyMarketingAnalysisTabPanels(which);
+            if (opts.userNavigation) {
+                mergeMarketingAnalysisUrlFromForm('push');
+            }
             if (which === 'breakdown') {
                 initPlacementBreakdownChartsOnce();
                 requestAnimationFrame(function () {
@@ -1176,10 +1264,17 @@
             const b = document.getElementById(pair[0]);
             if (b) {
                 b.addEventListener('click', function () {
-                    showMarketingAnalysisTab(pair[1]);
+                    showMarketingAnalysisTab(pair[1], { userNavigation: true });
                 });
             }
         });
+
+        window.addEventListener('popstate', function () {
+            applyMarketingAnalysisStateFromLocation();
+        });
+
+        // URL coerente con il form (date server + tab): refresh / copia link / tab Breakdown non perdono il periodo.
+        mergeMarketingAnalysisUrlFromForm('replace');
 
         const initialAnalysisTab = (document.getElementById('analysisActiveTab') || {}).value || 'analysis';
         if (initialAnalysisTab === 'breakdown') {
