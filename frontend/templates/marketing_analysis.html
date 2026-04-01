@@ -3,10 +3,10 @@
 {% block content %}
 <div class="animate-fadeInUp">
     <div class="mb-8">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h1 class="text-3xl font-bold gradient-text">Marketing Analysis</h1>
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <h1 class="text-3xl font-bold gradient-text leading-none">Marketing Analysis</h1>
             <button type="button" id="marketingAnalysisExportButton"
-                    class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-2.5 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition-all active:scale-95 shadow-sm">
+                    class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-2.5 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition-all active:scale-95 shadow-sm sm:self-center">
                 Export CSV
             </button>
         </div>
@@ -21,40 +21,40 @@
             <div class="hidden" aria-hidden="true">
                 <input type="hidden" name="tab" id="analysisActiveTab" value="{{ analysis_tab|default('analysis') }}">
             </div>
-            <div class="flex flex-col gap-3 lg:flex-row lg:flex-nowrap lg:items-end lg:gap-2 lg:w-full">
-                <div class="w-full min-w-0 shrink-0 lg:w-[13.5rem] lg:flex-none">
-                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1">Periodo</label>
+            <div class="flex flex-col gap-3 lg:flex-row lg:flex-nowrap lg:items-end lg:gap-3 lg:w-full">
+                <div class="w-full min-w-0 shrink-0 lg:w-[14rem] lg:flex-none">
+                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1 tracking-wide">Periodo</label>
                     <input type="text" id="analysisDateRange"
-                           class="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+                           class="w-full min-w-0 px-3 py-2.5 pr-3 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
                            placeholder="Intervallo date">
                     <input type="hidden" name="date_from" id="analysisDateFrom" value="{{ date_from }}">
                     <input type="hidden" name="date_to" id="analysisDateTo" value="{{ date_to }}">
                 </div>
-                <div class="w-full min-w-0 lg:w-[10rem] lg:flex-none">
-                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1" for="analysisCampaignName">Campagna</label>
+                <div class="w-full min-w-0 lg:w-[11.5rem] lg:flex-none">
+                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1 tracking-wide" for="analysisCampaignName">Campagna</label>
                     <input type="text" name="campaign_name" id="analysisCampaignName" value="{{ selected_campaign_name|default('', true) }}"
                            autocomplete="off" placeholder="Nome campagna…"
-                           class="w-full min-w-0 px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                           class="w-full min-w-0 px-3 py-2.5 pr-3 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
                 </div>
-                <div class="w-full min-w-0 lg:w-[12.5rem] lg:flex-none">
-                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1" for="analysisAdsetName">AdSet</label>
+                <div class="w-full min-w-0 lg:w-[13rem] lg:flex-none">
+                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1 tracking-wide" for="analysisAdsetName">AdSet</label>
                     <input type="text" name="adset_name" id="analysisAdsetName" value="{{ selected_adset_name|default('', true) }}"
                            autocomplete="off" placeholder="Nome ad set…"
-                           class="w-full min-w-0 px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                           class="w-full min-w-0 px-3 py-2.5 pr-3 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
                 </div>
-                <div class="w-full min-w-0 lg:w-[12.5rem] lg:flex-none">
-                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1" for="analysisCreativeName">Creatività</label>
+                <div class="w-full min-w-0 lg:w-[13rem] lg:flex-none">
+                    <label class="block text-xs font-semibold text-neutral-500 uppercase mb-1 tracking-wide" for="analysisCreativeName">Creatività</label>
                     <input type="text" name="creative_name" id="analysisCreativeName" value="{{ selected_creative_name|default('', true) }}"
                            autocomplete="off" placeholder="Nome inserzione…"
-                           class="w-full min-w-0 px-3 py-2 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                           class="w-full min-w-0 px-3 py-2.5 pr-3 text-sm rounded-lg border border-neutral-200 focus:ring-2 focus:ring-indigo-500 outline-none">
                 </div>
-                <div class="flex flex-col sm:flex-row gap-2 w-full lg:w-auto lg:shrink-0 lg:pb-0 lg:ml-auto">
+                <div class="flex flex-col sm:flex-row gap-2 w-full lg:w-auto lg:shrink-0 lg:items-stretch lg:pb-0 lg:ml-auto">
                     <button type="submit"
-                            class="w-full sm:flex-1 lg:w-auto whitespace-nowrap px-4 py-2 text-sm bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
+                            class="w-full sm:flex-1 lg:w-auto whitespace-nowrap px-4 py-2.5 text-sm bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
                         Applica Filtri
                     </button>
                     <a href="/marketing/analysis"
-                       class="w-full sm:flex-1 lg:w-auto whitespace-nowrap text-center px-4 py-2 text-sm border border-neutral-300 bg-white text-neutral-800 font-semibold rounded-lg hover:bg-neutral-50 transition-all active:scale-95">
+                       class="w-full sm:flex-1 lg:w-auto whitespace-nowrap inline-flex items-center justify-center px-4 py-2.5 text-sm border border-neutral-300 bg-white text-neutral-800 font-semibold rounded-lg hover:bg-neutral-50 transition-all active:scale-95">
                         Azzera filtri
                     </a>
                 </div>
@@ -245,7 +245,7 @@
                 </div>
             </div>
             {% if chart_points %}
-            <div class="h-72">
+            <div class="h-72 min-h-[18rem] pb-1">
                 <canvas id="spendCplChart"></canvas>
             </div>
             {% else %}
@@ -268,10 +268,10 @@
                 </div>
             </div>
             {% if distribution_points %}
-            <div class="h-72">
+            <div class="h-72 min-h-[18rem] pb-1 pr-1">
                 <canvas id="campaignDistributionChart"></canvas>
             </div>
-            <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            <div class="mt-5 pt-2 pb-1 grid grid-cols-1 sm:grid-cols-2 gap-5 gap-x-6 text-sm border-t border-neutral-100">
                 <div>
                     <p class="font-semibold text-neutral-800">Periodo selezionato</p>
                     <p class="text-neutral-700">
@@ -1742,13 +1742,17 @@
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            layout: {
+                padding: { bottom: 10, left: 2, right: 4 }
+            },
             interaction: {
                 mode: 'index',
                 intersect: false
             },
             plugins: {
                 legend: {
-                    position: 'bottom'
+                    position: 'bottom',
+                    labels: { boxPadding: 6, padding: 16 }
                 },
                 tooltip: {
                     callbacks: {
@@ -1772,7 +1776,10 @@
                 x: {
                     ticks: {
                         maxRotation: 45,
-                        minRotation: 0
+                        minRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: 14,
+                        autoSkipPadding: 12
                     }
                 },
                 y1: {
@@ -2391,9 +2398,13 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                layout: {
+                    padding: { top: 4, right: 20, bottom: 8, left: 4 }
+                },
                 plugins: {
                     legend: {
-                        position: 'bottom'
+                        position: 'bottom',
+                        labels: { boxPadding: 6, padding: 14 }
                     },
                     tooltip: {
                         callbacks: {
@@ -2434,12 +2445,14 @@
                         position: 'right',
                         title: {
                             display: true,
-                            text: 'Lead'
+                            text: 'Lead',
+                            padding: 8
                         },
                         grid: {
                             drawOnChartArea: false
                         },
                         ticks: {
+                            padding: 6,
                             callback: function(value) {
                                 return formatIntIt(value);
                             }
