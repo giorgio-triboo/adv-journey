@@ -12,8 +12,18 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/png" href="/static/img/dp-favicon.png">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" type="image/png" href="/static/img/dp-favicon.png?v={{ static_assets_version }}">
+    {% if user %}
+    {# Fallback se style.css non carica (404/proxy/cache): evita sidebar a tutta larghezza sopra al contenuto #}
+    <style id="sidebar-layout-fallback">
+        .sidebar-root{position:fixed;top:0;left:0;z-index:40;height:100vh;width:48px;box-sizing:border-box}
+        .sidebar-rail{position:absolute;left:0;top:0;width:48px;display:flex;flex-direction:column;align-items:center;padding:2rem 0.25rem 0;box-sizing:border-box}
+        .sidebar-hamburger{display:inline-flex;align-items:center;justify-content:center;width:2.5rem;height:2.5rem;border:none;border-radius:0.5rem;background:#f1f5f9;color:#64748b;cursor:pointer}
+        .sidebar-hamburger-icon{width:1.5rem;height:1.5rem;display:block}
+        .main-layout{margin-left:48px;min-height:100vh;padding:2rem 1rem;box-sizing:border-box}
+    </style>
+    {% endif %}
+    <link rel="stylesheet" href="/static/css/style.css?v={{ static_assets_version }}">
 </head>
 <body class="{% if not user %}login-body{% endif %}">
     {% if user %}

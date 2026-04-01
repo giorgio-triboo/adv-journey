@@ -192,6 +192,20 @@ templates = Jinja2Templates(directory=os.path.join(FRONTEND_DIR, "templates"))
 # Starlette passa globals dict a get_template; la cache LRU di Jinja2 usa una chiave non hashabile → TypeError in prod (Python 3.13).
 templates.env.cache = None
 
+# Cache-bust su CSS/static: cambia ad ogni deploy che tocca style.css (evita menu “sopra” per CSS vecchio assente in cache).
+_style_css_path = os.path.join(FRONTEND_DIR, "static", "css", "style.css")
+_static_assets_version = (
+    str(int(os.path.getmtime(_style_css_path))) if os.path.isfile(_style_css_path) else "0"
+)
+templates.env.globals["static_assets_version"] = _static_assets_version
+if not os.path.isfile(_style_css_path):
+    logger.error(
+        "Manca style.css (%s): senza questo file il menu non è affiancato e l’hamburger non ha stile. "
+        "In Docker serve la cartella frontend in /app/frontend (COPY nell’immagine oppure volume "
+        "./frontend:/app/frontend come in docker-compose di sviluppo).",
+        _style_css_path,
+    )
+
 # Include Routers
 app.include_router(auth_router)
 app.include_router(leads_router)
