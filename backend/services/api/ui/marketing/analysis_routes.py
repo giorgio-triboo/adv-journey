@@ -121,6 +121,279 @@ def _apply_analysis_platform_meta_marketing_placement(q, analysis_platform: str)
     return q
 
 
+def _empty_totals_for_analysis_template() -> dict[str, Any]:
+    """Totale KPI vuoti: usato quando si salta il calcolo completo (tab placement_creative)."""
+    return {
+        "total_spend": 0.0,
+        "total_impressions": 0,
+        "total_clicks": 0,
+        "total_conversions": 0,
+        "global_cpl": 0.0,
+        "avg_ctr": 0.0,
+        "avg_cpc": 0.0,
+        "avg_cpm": 0.0,
+        "pay_level": None,
+        "total_magellano_entrate": 0,
+        "total_magellano_inviate": 0,
+        "total_magellano_doppioni": 0,
+        "total_magellano_scartate": 0,
+        "total_ulixe_scartate": 0,
+        "total_ulixe_approvate": 0,
+        "ulixe_approvate_from_rcrm": False,
+        "total_ricavo": 0.0,
+        "total_margine": 0.0,
+        "total_margine_pct": None,
+        "leads_count": 0,
+        "magellano_doppioni_pct": 0,
+        "magellano_scartate_pct": 0,
+        "ulixe_scartate_pct": 0,
+    }
+
+
+def _compute_placement_creative_tab_data(
+    db: Session,
+    date_from,
+    date_to,
+    af: dict,
+    placement_creative_expand_by_ad: bool,
+    params,
+) -> tuple[
+    dict[str, list[dict[str, Any]]],
+    list[dict[str, str]],
+    list[dict[str, str]],
+    str,
+    str,
+]:
+    """
+    Dati solo per il tab «Creatività per posizionamento».
+    Evita le query aggregate dell'analisi completa che fanno scadere il timeout proxy.
+    """
+    placement_creative_by_platform: dict[str, list[dict[str, Any]]] = {
+        "facebook": [],
+        "instagram": [],
+    }
+    _mpp_pos_key = func.lower(func.trim(func.coalesce(MetaMarketingPlacement.platform_position, "")))
+
+    def _placement_creative_base_for_platform(pub: str):
+        q = (
+            db.query(MetaMarketingPlacement)
+            .join(MetaAd, MetaMarketingPlacement.ad_id == MetaAd.id)
+            .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+            .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+            .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+            .filter(
+                MetaAccount.is_active == True,
+                MetaMarketingPlacement.date >= date_from,
+                MetaMarketingPlacement.date <= date_to,
+                _placement_publisher_platform_eq(MetaMarketingPlacement.publisher_platform, pub),
+            )
+        )
+        q = _apply_analysis_entity_filters(q, **af)
+        return q
+
+    def _position_options_for_platform(pub: str) -> list[dict[str, str]]:
+        _pos_opts_q = (
+            _placement_creative_base_for_platform(pub)
+            .with_entities(MetaMarketingPlacement.platform_position)
+            .distinct()
+        )
+        _raw_positions = {((r[0] or "").strip() or "__empty__") for r in _pos_opts_q.all()}
+        opts: list[dict[str, str]] = []
+        for raw in sorted(_raw_positions, key=lambda x: (x != "__empty__", x.lower())):
+            if raw == "__empty__":
+                opts.append({"value": "__empty__", "label": "(senza posizionamento)"})
+            else:
+                opts.append({"value": raw, "label": raw})
+        return opts
+
+    placement_position_options_facebook = _position_options_for_platform("facebook")
+    placement_position_options_instagram = _position_options_for_platform("instagram")
+    allowed_pc_pos_fb = {o["value"] for o in placement_position_options_facebook}
+    allowed_pc_pos_ig = {o["value"] for o in placement_position_options_instagram}
+    _pc_pos_fb = (params.get("pc_position_facebook") or "").strip()
+    _pc_pos_ig = (params.get("pc_position_instagram") or "").strip()
+    selected_pc_position_facebook = _pc_pos_fb if _pc_pos_fb in allowed_pc_pos_fb else ""
+    selected_pc_position_instagram = _pc_pos_ig if _pc_pos_ig in allowed_pc_pos_ig else ""
+
+    def _aggregate_placement_creative_for_platform(pub: str, selected_position: str) -> None:
+        base_pf = (
+            db.query(MetaMarketingPlacement)
+            .join(MetaAd, MetaMarketingPlacement.ad_id == MetaAd.id)
+            .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+            .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+            .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+            .filter(
+                MetaAccount.is_active == True,
+                MetaMarketingPlacement.date >= date_from,
+                MetaMarketingPlacement.date <= date_to,
+                _placement_publisher_platform_eq(MetaMarketingPlacement.publisher_platform, pub),
+            )
+        )
+        base_pf = _apply_analysis_entity_filters(base_pf, **af)
+        if selected_position:
+            if selected_position == "__empty__":
+                base_pf = base_pf.filter(MetaMarketingPlacement.platform_position == "")
+            else:
+                base_pf = base_pf.filter(
+                    MetaMarketingPlacement.platform_position == selected_position
+                )
+
+        having_any = or_(
+            func.sum(MetaMarketingPlacement.spend) > 0,
+            func.sum(MetaMarketingPlacement.conversions) > 0,
+            func.sum(MetaMarketingPlacement.impressions) > 0,
+            func.sum(MetaMarketingPlacement.clicks) > 0,
+        )
+
+        if selected_position:
+            placement_creative_q = base_pf.with_entities(
+                MetaMarketingPlacement.publisher_platform.label("platform"),
+                MetaMarketingPlacement.platform_position.label("position"),
+                MetaAd.id.label("internal_ad_id"),
+                MetaAd.name.label("ad_name"),
+                MetaAd.creative_id.label("creative_id"),
+                func.sum(MetaMarketingPlacement.spend).label("total_spend"),
+                func.sum(MetaMarketingPlacement.conversions).label("total_conversions"),
+            )
+            rows = (
+                placement_creative_q.group_by(
+                    MetaMarketingPlacement.publisher_platform,
+                    MetaMarketingPlacement.platform_position,
+                    MetaAd.id,
+                    MetaAd.name,
+                    MetaAd.creative_id,
+                )
+                .having(having_any)
+                .order_by(
+                    MetaMarketingPlacement.platform_position,
+                    desc(func.sum(MetaMarketingPlacement.spend)),
+                )
+                .all()
+            )
+            for crow in rows:
+                pk = (crow.platform or "").lower()
+                if pk not in placement_creative_by_platform:
+                    continue
+                ts = _parse_amount(crow.total_spend) if crow.total_spend is not None else 0.0
+                tc = int(crow.total_conversions or 0)
+                cpl_c = (ts / tc) if tc > 0 else 0.0
+                placement_creative_by_platform[pk].append(
+                    {
+                        "position": (crow.position or "").strip() or "unknown",
+                        "ad_name": crow.ad_name or "",
+                        "internal_ad_id": int(crow.internal_ad_id),
+                        "show_thumbnail": bool((crow.creative_id or "").strip() and crow.internal_ad_id),
+                        "total_spend": round(ts, 2),
+                        "total_conversions": tc,
+                        "cpl": round(cpl_c, 2),
+                    }
+                )
+            return
+
+        if placement_creative_expand_by_ad:
+            q_ads = (
+                base_pf.with_entities(
+                    MetaMarketingPlacement.publisher_platform.label("platform"),
+                    MetaAd.id.label("internal_ad_id"),
+                    MetaAd.name.label("ad_name"),
+                    MetaAd.creative_id.label("creative_id"),
+                    func.sum(MetaMarketingPlacement.spend).label("total_spend"),
+                    func.sum(MetaMarketingPlacement.conversions).label("total_conversions"),
+                )
+                .group_by(
+                    MetaMarketingPlacement.publisher_platform,
+                    MetaAd.id,
+                    MetaAd.name,
+                    MetaAd.creative_id,
+                )
+                .having(having_any)
+                .order_by(desc(func.sum(MetaMarketingPlacement.spend)))
+            )
+            for crow in q_ads.all():
+                pk = (crow.platform or "").lower()
+                if pk not in placement_creative_by_platform:
+                    continue
+                ts = _parse_amount(crow.total_spend) if crow.total_spend is not None else 0.0
+                tc = int(crow.total_conversions or 0)
+                cpl_c = (ts / tc) if tc > 0 else 0.0
+                placement_creative_by_platform[pk].append(
+                    {
+                        "position": "",
+                        "ad_name": crow.ad_name or "",
+                        "internal_ad_id": int(crow.internal_ad_id),
+                        "show_thumbnail": bool((crow.creative_id or "").strip() and crow.internal_ad_id),
+                        "total_spend": round(ts, 2),
+                        "total_conversions": tc,
+                        "cpl": round(cpl_c, 2),
+                    }
+                )
+            return
+
+        q_agg = (
+            base_pf.with_entities(
+                MetaMarketingPlacement.publisher_platform.label("platform"),
+                _mpp_pos_key.label("position_key"),
+                func.max(MetaMarketingPlacement.platform_position).label("position_display"),
+                func.sum(MetaMarketingPlacement.spend).label("total_spend"),
+                func.sum(MetaMarketingPlacement.conversions).label("total_conversions"),
+            )
+            .group_by(
+                MetaMarketingPlacement.publisher_platform,
+                _mpp_pos_key,
+            )
+            .having(having_any)
+            .order_by(desc(func.sum(MetaMarketingPlacement.spend)))
+        )
+        _pc_buckets: dict[tuple[str, str], dict[str, Any]] = {}
+        for crow in q_agg.all():
+            pk = (crow.platform or "").lower()
+            if pk not in placement_creative_by_platform:
+                continue
+            ts = _parse_amount(crow.total_spend) if crow.total_spend is not None else 0.0
+            tc = int(crow.total_conversions or 0)
+            pos_k = (getattr(crow, "position_key", None) or "").strip()
+            raw_disp = (getattr(crow, "position_display", None) or "").strip()
+            if raw_disp:
+                position_label = raw_disp
+            else:
+                position_label = "unknown" if not pos_k else pos_k
+            norm = position_label.strip().lower()
+            bkey = (pk, norm)
+            if bkey not in _pc_buckets:
+                _pc_buckets[bkey] = {"position": position_label, "spend": 0.0, "conv": 0}
+            _pc_buckets[bkey]["spend"] += ts
+            _pc_buckets[bkey]["conv"] += tc
+            if len(position_label) > len(_pc_buckets[bkey]["position"]):
+                _pc_buckets[bkey]["position"] = position_label
+
+        for (_pk, _norm), b in sorted(
+            _pc_buckets.items(),
+            key=lambda kv: kv[1]["spend"],
+            reverse=True,
+        ):
+            ts_b, tc_b = b["spend"], b["conv"]
+            cpl_b = (ts_b / tc_b) if tc_b > 0 else 0.0
+            placement_creative_by_platform[_pk].append(
+                {
+                    "position": b["position"],
+                    "total_spend": round(ts_b, 2),
+                    "total_conversions": tc_b,
+                    "cpl": round(cpl_b, 2),
+                }
+            )
+
+    _aggregate_placement_creative_for_platform("facebook", selected_pc_position_facebook)
+    _aggregate_placement_creative_for_platform("instagram", selected_pc_position_instagram)
+
+    return (
+        placement_creative_by_platform,
+        placement_position_options_facebook,
+        placement_position_options_instagram,
+        selected_pc_position_facebook,
+        selected_pc_position_instagram,
+    )
+
+
 def _mmd_filtered_base_query(db: Session, date_from, date_to, af: dict, analysis_platform: str):
     """Query MetaMarketingData con join account e filtri entity/piattaforma (layer A)."""
     q = (
@@ -477,6 +750,99 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             .order_by(MetaAdSet.name)
             .all()
         )
+
+        # Tab solo placement/creative: evita lead .all(), breakdown e serie giornaliere (timeout proxy).
+        # Un solo aggregato Meta per i KPI in tab Analisi se l'utente cambia tab senza ricaricare (pushState).
+        if analysis_tab == "placement_creative":
+            mmd_kpis_pc = _compute_mmd_kpis_from_aggregate(db, date_from, date_to, af, analysis_platform)
+            ts_pc = mmd_kpis_pc["total_spend"]
+            tcv_pc = mmd_kpis_pc["total_conversions"]
+            g_cpl_pc = (ts_pc / tcv_pc) if tcv_pc > 0 else 0.0
+            totals_pc = _empty_totals_for_analysis_template()
+            totals_pc.update(
+                {
+                    "total_spend": round(ts_pc, 2),
+                    "total_impressions": mmd_kpis_pc["total_impressions"],
+                    "total_clicks": mmd_kpis_pc["total_clicks"],
+                    "total_conversions": tcv_pc,
+                    "global_cpl": round(g_cpl_pc, 2),
+                    "avg_ctr": round(mmd_kpis_pc["avg_ctr"], 2),
+                    "avg_cpc": round(mmd_kpis_pc["avg_cpc"], 4),
+                    "avg_cpm": round(mmd_kpis_pc["avg_cpm"], 2),
+                }
+            )
+            (
+                placement_creative_by_platform,
+                placement_position_options_facebook,
+                placement_position_options_instagram,
+                selected_pc_position_facebook,
+                selected_pc_position_instagram,
+            ) = _compute_placement_creative_tab_data(
+                db, date_from, date_to, af, placement_creative_expand_by_ad, params
+            )
+            analysis_filter_hierarchy: dict[str, Any] = {
+                "accounts": [
+                    {"account_id": str(a.account_id or "").strip(), "name": (a.name or "").strip()}
+                    for a in accounts
+                ],
+                "campaigns": [
+                    {
+                        "campaign_id": str(c.campaign_id or "").strip(),
+                        "name": (c.name or "").strip(),
+                        "account_id": str(c.account.account_id or "").strip() if c.account else "",
+                    }
+                    for c in campaigns
+                ],
+                "adsets": [
+                    {
+                        "id": int(ad.id),
+                        "name": (ad.name or "").strip(),
+                        "campaign_id": str(ad.campaign.campaign_id or "").strip() if ad.campaign else "",
+                        "account_id": str(ad.campaign.account.account_id or "").strip()
+                        if ad.campaign and ad.campaign.account
+                        else "",
+                    }
+                    for ad in adsets
+                ],
+            }
+            return templates.TemplateResponse(
+                request,
+                "marketing_analysis.html",
+                {
+                    "request": request,
+                    "title": "Marketing Analysis",
+                    "user": user,
+                    "accounts": accounts,
+                    "campaigns": campaigns,
+                    "adsets": adsets,
+                    "analysis_filter_hierarchy_json": _htmlsafe_json_for_script(analysis_filter_hierarchy),
+                    "totals": totals_pc,
+                    "chart_points": [],
+                    "distribution_points": [],
+                    "platform_totals": {"facebook": {}, "instagram": {}},
+                    "platform_chart_points": {"facebook": [], "instagram": []},
+                    "platform_distribution_points": {"facebook": [], "instagram": []},
+                    "placement_insights_by_platform": {"facebook": [], "instagram": []},
+                    "placement_creative_by_platform": placement_creative_by_platform,
+                    "placement_cpl_by_platform": {"facebook": None, "instagram": None},
+                    "selected_pc_position_facebook": selected_pc_position_facebook,
+                    "selected_pc_position_instagram": selected_pc_position_instagram,
+                    "placement_position_options_facebook": placement_position_options_facebook,
+                    "placement_position_options_instagram": placement_position_options_instagram,
+                    "placement_creative_expand_by_ad": placement_creative_expand_by_ad,
+                    "selected_account_id": selected_account_id,
+                    "selected_campaign_id": selected_campaign_id,
+                    "selected_adset_id": selected_adset_id,
+                    "selected_campaign_name": campaign_name_q,
+                    "selected_adset_name": adset_name_q,
+                    "selected_creative_name": creative_name_q,
+                    "date_from": date_from.strftime('%Y-%m-%d'),
+                    "date_to": date_to.strftime('%Y-%m-%d'),
+                    "active_page": "marketing_analysis",
+                    "analysis_tab": analysis_tab,
+                    "lavorazione_filter_ui": lavorazioni_heatmap_lavorazione_filter_ui_payload(),
+                },
+            )
 
         # KPI principali: una query aggregata (niente .all() su tutte le righe giornaliere)
         mmd_kpis = _compute_mmd_kpis_from_aggregate(db, date_from, date_to, af, analysis_platform)
@@ -912,227 +1278,16 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
                 }
             )
 
-        # Posizionamento × creatività: filtri posizione indipendenti per Facebook e Instagram
-        placement_creative_by_platform: dict[str, list[dict[str, Any]]] = {
-            "facebook": [],
-            "instagram": [],
-        }
-
-        def _placement_creative_base_for_platform(pub: str):
-            """Join + filtri date/account/campagna/adset + singola publisher_platform."""
-            q = (
-                db.query(MetaMarketingPlacement)
-                .join(MetaAd, MetaMarketingPlacement.ad_id == MetaAd.id)
-                .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
-                .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
-                .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
-                .filter(
-                    MetaAccount.is_active == True,
-                    MetaMarketingPlacement.date >= date_from,
-                    MetaMarketingPlacement.date <= date_to,
-                    _placement_publisher_platform_eq(MetaMarketingPlacement.publisher_platform, pub),
-                )
-            )
-            q = _apply_analysis_entity_filters(q, **af)
-            return q
-
-        def _position_options_for_platform(pub: str) -> list[dict[str, str]]:
-            _pos_opts_q = (
-                _placement_creative_base_for_platform(pub)
-                .with_entities(MetaMarketingPlacement.platform_position)
-                .distinct()
-            )
-            _raw_positions = {((r[0] or "").strip() or "__empty__") for r in _pos_opts_q.all()}
-            opts: list[dict[str, str]] = []
-            for raw in sorted(_raw_positions, key=lambda x: (x != "__empty__", x.lower())):
-                if raw == "__empty__":
-                    opts.append({"value": "__empty__", "label": "(senza posizionamento)"})
-                else:
-                    opts.append({"value": raw, "label": raw})
-            return opts
-
-        placement_position_options_facebook = _position_options_for_platform("facebook")
-        placement_position_options_instagram = _position_options_for_platform("instagram")
-        allowed_pc_pos_fb = {o["value"] for o in placement_position_options_facebook}
-        allowed_pc_pos_ig = {o["value"] for o in placement_position_options_instagram}
-        _pc_pos_fb = (params.get("pc_position_facebook") or "").strip()
-        _pc_pos_ig = (params.get("pc_position_instagram") or "").strip()
-        selected_pc_position_facebook = _pc_pos_fb if _pc_pos_fb in allowed_pc_pos_fb else ""
-        selected_pc_position_instagram = _pc_pos_ig if _pc_pos_ig in allowed_pc_pos_ig else ""
-
-        def _aggregate_placement_creative_for_platform(pub: str, selected_position: str) -> None:
-            base_pf = (
-                db.query(MetaMarketingPlacement)
-                .join(MetaAd, MetaMarketingPlacement.ad_id == MetaAd.id)
-                .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
-                .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
-                .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
-                .filter(
-                    MetaAccount.is_active == True,
-                    MetaMarketingPlacement.date >= date_from,
-                    MetaMarketingPlacement.date <= date_to,
-                    _placement_publisher_platform_eq(MetaMarketingPlacement.publisher_platform, pub),
-                )
-            )
-            base_pf = _apply_analysis_entity_filters(base_pf, **af)
-            if selected_position:
-                if selected_position == "__empty__":
-                    base_pf = base_pf.filter(MetaMarketingPlacement.platform_position == "")
-                else:
-                    base_pf = base_pf.filter(
-                        MetaMarketingPlacement.platform_position == selected_position
-                    )
-
-            having_any = or_(
-                func.sum(MetaMarketingPlacement.spend) > 0,
-                func.sum(MetaMarketingPlacement.conversions) > 0,
-                func.sum(MetaMarketingPlacement.impressions) > 0,
-                func.sum(MetaMarketingPlacement.clicks) > 0,
-            )
-
-            if selected_position:
-                placement_creative_q = base_pf.with_entities(
-                    MetaMarketingPlacement.publisher_platform.label("platform"),
-                    MetaMarketingPlacement.platform_position.label("position"),
-                    MetaAd.id.label("internal_ad_id"),
-                    MetaAd.name.label("ad_name"),
-                    MetaAd.creative_id.label("creative_id"),
-                    func.sum(MetaMarketingPlacement.spend).label("total_spend"),
-                    func.sum(MetaMarketingPlacement.conversions).label("total_conversions"),
-                )
-                rows = (
-                    placement_creative_q.group_by(
-                        MetaMarketingPlacement.publisher_platform,
-                        MetaMarketingPlacement.platform_position,
-                        MetaAd.id,
-                        MetaAd.name,
-                        MetaAd.creative_id,
-                    )
-                    .having(having_any)
-                    .order_by(
-                        MetaMarketingPlacement.platform_position,
-                        desc(func.sum(MetaMarketingPlacement.spend)),
-                    )
-                    .all()
-                )
-                for crow in rows:
-                    pk = (crow.platform or "").lower()
-                    if pk not in placement_creative_by_platform:
-                        continue
-                    ts = _parse_amount(crow.total_spend) if crow.total_spend is not None else 0.0
-                    tc = int(crow.total_conversions or 0)
-                    cpl_c = (ts / tc) if tc > 0 else 0.0
-                    placement_creative_by_platform[pk].append(
-                        {
-                            "position": (crow.position or "").strip() or "unknown",
-                            "ad_name": crow.ad_name or "",
-                            "internal_ad_id": int(crow.internal_ad_id),
-                            "show_thumbnail": bool((crow.creative_id or "").strip() and crow.internal_ad_id),
-                            "total_spend": round(ts, 2),
-                            "total_conversions": tc,
-                            "cpl": round(cpl_c, 2),
-                        }
-                    )
-                return
-
-            if placement_creative_expand_by_ad:
-                # AdSet nel filtro (ID o nome) + "tutti i posizionamenti": una riga per annuncio (somma sui placement)
-                q_ads = (
-                    base_pf.with_entities(
-                        MetaMarketingPlacement.publisher_platform.label("platform"),
-                        MetaAd.id.label("internal_ad_id"),
-                        MetaAd.name.label("ad_name"),
-                        MetaAd.creative_id.label("creative_id"),
-                        func.sum(MetaMarketingPlacement.spend).label("total_spend"),
-                        func.sum(MetaMarketingPlacement.conversions).label("total_conversions"),
-                    )
-                    .group_by(
-                        MetaMarketingPlacement.publisher_platform,
-                        MetaAd.id,
-                        MetaAd.name,
-                        MetaAd.creative_id,
-                    )
-                    .having(having_any)
-                    .order_by(desc(func.sum(MetaMarketingPlacement.spend)))
-                )
-                for crow in q_ads.all():
-                    pk = (crow.platform or "").lower()
-                    if pk not in placement_creative_by_platform:
-                        continue
-                    ts = _parse_amount(crow.total_spend) if crow.total_spend is not None else 0.0
-                    tc = int(crow.total_conversions or 0)
-                    cpl_c = (ts / tc) if tc > 0 else 0.0
-                    placement_creative_by_platform[pk].append(
-                        {
-                            "position": "",
-                            "ad_name": crow.ad_name or "",
-                            "internal_ad_id": int(crow.internal_ad_id),
-                            "show_thumbnail": bool((crow.creative_id or "").strip() and crow.internal_ad_id),
-                            "total_spend": round(ts, 2),
-                            "total_conversions": tc,
-                            "cpl": round(cpl_c, 2),
-                        }
-                    )
-                return
-
-            # Tutti i posizionamenti e senza espansione per ad: una riga per placement (chiave normalizzata
-            # come la card Breakdown / POSIZIONAMENTI: lower+trim, così varianti DB non duplicano la colonna).
-            q_agg = (
-                base_pf.with_entities(
-                    MetaMarketingPlacement.publisher_platform.label("platform"),
-                    _mpp_pos_key.label("position_key"),
-                    func.max(MetaMarketingPlacement.platform_position).label("position_display"),
-                    func.sum(MetaMarketingPlacement.spend).label("total_spend"),
-                    func.sum(MetaMarketingPlacement.conversions).label("total_conversions"),
-                )
-                .group_by(
-                    MetaMarketingPlacement.publisher_platform,
-                    _mpp_pos_key,
-                )
-                .having(having_any)
-                .order_by(desc(func.sum(MetaMarketingPlacement.spend)))
-            )
-            # Unica riga per posizionamento (come card Breakdown): chiave lower+trim; somma lead/spesa e CPL ricalcolato.
-            _pc_buckets: dict[tuple[str, str], dict[str, Any]] = {}
-            for crow in q_agg.all():
-                pk = (crow.platform or "").lower()
-                if pk not in placement_creative_by_platform:
-                    continue
-                ts = _parse_amount(crow.total_spend) if crow.total_spend is not None else 0.0
-                tc = int(crow.total_conversions or 0)
-                pos_k = (getattr(crow, "position_key", None) or "").strip()
-                raw_disp = (getattr(crow, "position_display", None) or "").strip()
-                if raw_disp:
-                    position_label = raw_disp
-                else:
-                    position_label = "unknown" if not pos_k else pos_k
-                norm = position_label.strip().lower()
-                bkey = (pk, norm)
-                if bkey not in _pc_buckets:
-                    _pc_buckets[bkey] = {"position": position_label, "spend": 0.0, "conv": 0}
-                _pc_buckets[bkey]["spend"] += ts
-                _pc_buckets[bkey]["conv"] += tc
-                if len(position_label) > len(_pc_buckets[bkey]["position"]):
-                    _pc_buckets[bkey]["position"] = position_label
-
-            for (_pk, _norm), b in sorted(
-                _pc_buckets.items(),
-                key=lambda kv: kv[1]["spend"],
-                reverse=True,
-            ):
-                ts_b, tc_b = b["spend"], b["conv"]
-                cpl_b = (ts_b / tc_b) if tc_b > 0 else 0.0
-                placement_creative_by_platform[_pk].append(
-                    {
-                        "position": b["position"],
-                        "total_spend": round(ts_b, 2),
-                        "total_conversions": tc_b,
-                        "cpl": round(cpl_b, 2),
-                    }
-                )
-
-        _aggregate_placement_creative_for_platform("facebook", selected_pc_position_facebook)
-        _aggregate_placement_creative_for_platform("instagram", selected_pc_position_instagram)
+        # Posizionamento × creatività (stessa logica del tab dedicato; funzione condivisa).
+        (
+            placement_creative_by_platform,
+            placement_position_options_facebook,
+            placement_position_options_instagram,
+            selected_pc_position_facebook,
+            selected_pc_position_instagram,
+        ) = _compute_placement_creative_tab_data(
+            db, date_from, date_to, af, placement_creative_expand_by_ad, params
+        )
 
         # CPL giornaliero per posizionamento: asse X = sempre l'intervallo filtro (non solo i giorni con righe in MetaMarketingData).
         d0 = date_from.date() if hasattr(date_from, "date") else date_from

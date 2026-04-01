@@ -1,4 +1,5 @@
 """Cache in-RAM e proxy immagini creatività Meta."""
+import base64
 import hashlib
 import logging
 import time
@@ -15,6 +16,12 @@ from services.utils.crypto import decrypt_token
 
 logger = logging.getLogger('services.api.ui')
 router = APIRouter(include_in_schema=False)
+
+# PNG 1×1 trasparente: niente 404/502 in <img> se Meta/token/creatività non disponibili
+_PLACEHOLDER_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+_PLACEHOLDER_ETAG = f'"{hashlib.md5(_PLACEHOLDER_PNG).hexdigest()}"'
 
 # Cache in-memory per immagini proxy (riduce richieste duplicate a Meta/CDN)
 PROXY_IMAGE_CACHE_TTL_SECONDS = 1800  # 30 minuti
@@ -71,19 +78,41 @@ def _set_cached_proxy_image(ad_id: int, image_bytes: bytes, content_type: str, e
         }
         _cleanup_proxy_image_cache_if_needed()
 
+
+def _fallback_thumbnail_response(request: Request) -> Response:
+    """200 + pixel trasparente: le thumb non bloccano la pagina né generano errori in rete."""
+    if request.headers.get("if-none-match") == _PLACEHOLDER_ETAG:
+        return Response(
+            status_code=304,
+            headers={
+                "ETag": _PLACEHOLDER_ETAG,
+                "Cache-Control": "private, max-age=120",
+            },
+        )
+    return Response(
+        content=_PLACEHOLDER_PNG,
+        media_type="image/png",
+        headers={
+            "ETag": _PLACEHOLDER_ETAG,
+            "Cache-Control": "private, max-age=120",
+        },
+    )
+
+
 @router.get("/api/marketing/proxy-image")
 async def proxy_creative_image(request: Request, db: Session = Depends(get_db)):
     """
     Proxy per le thumbnail delle creatività Meta.
     Ottiene un URL fresco dalla Graph API (con token) poi scarica l'immagine.
+    Se l'anteprima non è disponibile, risponde 200 con PNG trasparente (no 404 in tabella).
     """
     ad_id_param = request.query_params.get("ad_id")
     if not ad_id_param:
-        return Response(status_code=400)
+        return _fallback_thumbnail_response(request)
     try:
         ad_id_int = int(ad_id_param)
     except ValueError:
-        return Response(status_code=400)
+        return _fallback_thumbnail_response(request)
 
     cached_image = _get_cached_proxy_image(ad_id_int)
     if cached_image:
@@ -107,16 +136,17 @@ async def proxy_creative_image(request: Request, db: Session = Depends(get_db)):
 
     ad = db.query(MetaAd).filter(MetaAd.id == ad_id_int).first()
     if not ad or not ad.creative_id:
-        return Response(status_code=404)
+        return _fallback_thumbnail_response(request)
     account = None
     if ad.adset and ad.adset.campaign:
         account = ad.adset.campaign.account
     if not account or not account.access_token:
-        return Response(status_code=404)
+        return _fallback_thumbnail_response(request)
     try:
         access_token = decrypt_token(account.access_token)
     except Exception:
-        return Response(status_code=500)
+        logger.debug("Proxy image: decrypt token failed, fallback thumbnail")
+        return _fallback_thumbnail_response(request)
 
     # Ottieni URL fresco dalla Graph API (evita URL scaduti/signed)
     graph_url = f"https://graph.facebook.com/v21.0/{ad.creative_id}/?fields=thumbnail_url,image_url&access_token={access_token}"
@@ -127,7 +157,7 @@ async def proxy_creative_image(request: Request, db: Session = Depends(get_db)):
             data = r.json()
             thumbnail_url = data.get("thumbnail_url") or data.get("image_url")
             if not thumbnail_url:
-                return Response(status_code=404)
+                return _fallback_thumbnail_response(request)
             # Scarica l'immagine (URL dalla Graph API è valido)
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
             r2 = await client.get(thumbnail_url, headers=headers, follow_redirects=True)
@@ -159,7 +189,7 @@ async def proxy_creative_image(request: Request, db: Session = Depends(get_db)):
             )
     except httpx.HTTPStatusError as e:
         logger.debug(f"Proxy image HTTP error: {e}")
-        return Response(status_code=502)
+        return _fallback_thumbnail_response(request)
     except Exception as e:
         logger.debug(f"Proxy image failed: {e}")
-        return Response(status_code=502)
+        return _fallback_thumbnail_response(request)
