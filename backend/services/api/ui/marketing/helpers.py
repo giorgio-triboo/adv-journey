@@ -34,18 +34,21 @@ def _get_mag_to_pay(db: Session) -> dict:
     return mag_to_pay
 
 
-def _get_pay_for_leads(db: Session, leads: list) -> float | None:
+def _get_pay_for_leads(
+    db: Session, leads: list, mag_to_pay: dict | None = None
+) -> float | None:
     """
     Ottiene il pay più frequente tra le lead (moda).
     Usato per pay_level di riferimento; per ricavo effettivo usare _compute_ricavo_for_leads.
+    Se mag_to_pay è passato, evita query ripetute su ManagedCampaign (batch API).
     """
     if not leads:
         return None
-    mag_to_pay = _get_mag_to_pay(db)
+    mtp = mag_to_pay if mag_to_pay is not None else _get_mag_to_pay(db)
     pays = []
     for l in leads:
-        if l.magellano_campaign_id and str(l.magellano_campaign_id) in mag_to_pay:
-            pays.append(mag_to_pay[str(l.magellano_campaign_id)])
+        if l.magellano_campaign_id and str(l.magellano_campaign_id) in mtp:
+            pays.append(mtp[str(l.magellano_campaign_id)])
     if not pays:
         return None
     from collections import Counter
@@ -53,17 +56,20 @@ def _get_pay_for_leads(db: Session, leads: list) -> float | None:
     return counts.most_common(1)[0][0]
 
 
-def _compute_ricavo_for_leads(db: Session, leads: list) -> float:
+def _compute_ricavo_for_leads(
+    db: Session, leads: list, mag_to_pay: dict | None = None
+) -> float:
     """
     Ricavo = somma del pay di ogni lead (ogni lead ha magellano_campaign_id -> campagna -> pay).
+    Se mag_to_pay è passato, evita query ripetute su ManagedCampaign (batch API).
     """
     if not leads:
         return 0.0
-    mag_to_pay = _get_mag_to_pay(db)
+    mtp = mag_to_pay if mag_to_pay is not None else _get_mag_to_pay(db)
     total = 0.0
     for l in leads:
-        if l.magellano_campaign_id and str(l.magellano_campaign_id) in mag_to_pay:
-            total += mag_to_pay[str(l.magellano_campaign_id)]
+        if l.magellano_campaign_id and str(l.magellano_campaign_id) in mtp:
+            total += mtp[str(l.magellano_campaign_id)]
     return total
 
 

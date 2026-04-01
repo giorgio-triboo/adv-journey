@@ -12,6 +12,8 @@
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
     --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --sidebar-rail-width: 48px;
+    --sidebar-flyout-width: 280px;
 }
 
 * {
@@ -32,25 +34,147 @@ body.login-body {
     color: #fff;
 }
 
-/* Sidebar Styling */
-.sidebar {
-    width: 280px;
-    height: 100vh;
+/* Sidebar: rail stretta + flyout su hover (desktop) o tap (touch) */
+.sidebar-root {
     position: fixed;
     top: 0;
     left: 0;
+    height: 100vh;
+    width: var(--sidebar-rail-width);
+    z-index: 40;
+    transition: width 0.22s ease;
+}
+
+/* Aperto: larghezza pannello (hover mouse, focus tastiera, tap touch) */
+.sidebar-root.sidebar-flyout-hover,
+.sidebar-root:focus-within,
+.sidebar-root.sidebar-flyout-open {
+    width: var(--sidebar-flyout-width);
+}
+
+/* Solo hamburger in alto a sinistra, niente barra bianca a tutta altezza */
+.sidebar-rail {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--sidebar-rail-width);
+    height: auto;
+    padding: 2rem 0.25rem 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    z-index: 2;
+}
+
+/* Con menu aperto: nascondi hamburger isolato, resta quello accanto al titolo */
+.sidebar-root.sidebar-flyout-hover .sidebar-rail,
+.sidebar-root:focus-within .sidebar-rail,
+.sidebar-root.sidebar-flyout-open .sidebar-rail {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.sidebar-hamburger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: none;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.sidebar-hamburger:hover {
+    background: #F1F5F9;
+    color: var(--primary);
+}
+
+.sidebar-hamburger-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.sidebar-flyout {
+    position: absolute;
+    left: var(--sidebar-rail-width);
+    top: 0;
+    width: var(--sidebar-flyout-width);
+    height: 100vh;
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    z-index: 40;
-    transition: all 0.3s ease;
+    overflow: hidden;
+    z-index: 1;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateX(-100%);
+    pointer-events: none;
+    box-shadow: none;
+    transition:
+        transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.22s ease,
+        visibility 0s linear 0.3s,
+        box-shadow 0.22s ease,
+        left 0.22s ease,
+        width 0.22s ease;
+}
+
+/* Pannello visibile: slide da sinistra; visibility immediata in apertura */
+@media (hover: hover) and (pointer: fine) {
+    .sidebar-root.sidebar-flyout-hover .sidebar-flyout,
+    .sidebar-root:focus-within .sidebar-flyout {
+        visibility: visible;
+        opacity: 1;
+        transform: translateX(0);
+        pointer-events: auto;
+        box-shadow: var(--shadow-lg);
+        left: 0;
+        width: 100%;
+        transition:
+            transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+            opacity 0.22s ease,
+            visibility 0s linear 0s,
+            box-shadow 0.22s ease,
+            left 0.22s ease,
+            width 0.22s ease;
+    }
+}
+
+@media (hover: none), (pointer: coarse) {
+    .sidebar-root.sidebar-flyout-open .sidebar-flyout {
+        visibility: visible;
+        opacity: 1;
+        transform: translateX(0);
+        pointer-events: auto;
+        box-shadow: var(--shadow-lg);
+        left: 0;
+        width: 100%;
+        transition:
+            transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+            opacity 0.22s ease,
+            visibility 0s linear 0s,
+            box-shadow 0.22s ease,
+            left 0.22s ease,
+            width 0.22s ease;
+    }
 }
 
 .sidebar-header {
     padding: 2rem 1.5rem;
     display: flex;
     align-items: center;
+}
+
+.sidebar-brand {
+    min-width: 0;
 }
 
 .sidebar-content {
@@ -129,8 +253,8 @@ body.login-body {
 
 /* Main Content */
 .main-layout {
-    margin-left: 280px;
-    padding: 2rem;
+    margin-left: var(--sidebar-rail-width);
+    padding: 2rem 1rem;
     min-height: 100vh;
 }
 

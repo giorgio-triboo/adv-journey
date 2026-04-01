@@ -1,9 +1,8 @@
 """Celery task per sync completo (orchestrator)."""
-from datetime import datetime
 from celery_app import celery_app
 from database import SessionLocal
 from models import IngestionJob, now_rome
-from services.sync_orchestrator import SyncOrchestrator
+from services.sync_orchestrator import SyncOrchestrator, pipeline_outcome
 
 
 @celery_app.task(name="tasks.sync.full_pipeline")
@@ -32,9 +31,11 @@ def run_full_sync_task(job_id: int | None = None):
         result = orchestrator.run_all()
 
         if job:
-            job.status = "SUCCESS"
+            ordered = [j["name"] for j in orchestrator.jobs]
+            st, msg = pipeline_outcome(result, ordered)
+            job.status = st
             job.completed_at = now_rome()
-            job.message = "Full pipeline completata"
+            job.message = msg
             db.commit()
 
         return result

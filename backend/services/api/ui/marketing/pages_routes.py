@@ -3,7 +3,7 @@ import logging
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 from models import MetaAccount, MetaCampaign, User
@@ -67,9 +67,14 @@ async def marketing(request: Request, db: Session = Depends(get_db)):
         logger.debug(f"Trovati {len(accounts)} accounts")
         
         # Get all campaigns from accessible accounts
-        campaigns = db.query(MetaCampaign).join(MetaAccount).filter(
-            MetaAccount.is_active == True,
-        ).order_by(MetaCampaign.name).all()
+        campaigns = (
+            db.query(MetaCampaign)
+            .join(MetaAccount)
+            .filter(MetaAccount.is_active == True)
+            .options(joinedload(MetaCampaign.account))
+            .order_by(MetaCampaign.name)
+            .all()
+        )
         logger.debug(f"Trovate {len(campaigns)} campaigns")
         
         logger.debug(f"Rendering template marketing.html")

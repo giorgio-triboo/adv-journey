@@ -1,6 +1,6 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from services.sync_orchestrator import SyncOrchestrator
+from services.sync_orchestrator import SyncOrchestrator, pipeline_outcome
 from services.sync.ulixe_sync import run as ulixe_sync_job
 from services.sync.ulixe_rcrm_period import resolve_ulixe_rcrm_sync_period
 from services.sync.ulixe_rcrm_google_sync import run_ulixe_rcrm_sync
@@ -39,11 +39,12 @@ def nightly_sync_job():
         db.commit()
 
         orchestrator = SyncOrchestrator()
-        orchestrator.run_all()
-
-        job.status = "SUCCESS"
+        result = orchestrator.run_all()
+        ordered = [j["name"] for j in orchestrator.jobs]
+        st, msg = pipeline_outcome(result, ordered)
+        job.status = st
         job.completed_at = now_rome()
-        job.message = "Nightly orchestrator completed"
+        job.message = msg
         db.commit()
     except Exception as e:
         logger.error("Errore in nightly_sync_job: %s", e, exc_info=True)

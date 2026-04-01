@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request, Depends
 from markupsafe import Markup
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import func, desc, and_, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 from models import (
@@ -119,6 +119,133 @@ def _apply_analysis_platform_meta_marketing_placement(q, analysis_platform: str)
     if pk in ("facebook", "instagram"):
         return q.filter(_placement_publisher_platform_eq(MetaMarketingPlacement.publisher_platform, pk))
     return q
+
+
+def _mmd_filtered_base_query(db: Session, date_from, date_to, af: dict, analysis_platform: str):
+    """Query MetaMarketingData con join account e filtri entity/piattaforma (layer A)."""
+    q = (
+        db.query(MetaMarketingData)
+        .join(MetaAd, MetaMarketingData.ad_id == MetaAd.id)
+        .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+        .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+        .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+        .filter(
+            MetaAccount.is_active == True,
+            MetaMarketingData.date >= date_from,
+            MetaMarketingData.date <= date_to,
+        )
+    )
+    q = _apply_analysis_entity_filters(q, **af)
+    q = _apply_analysis_platform_meta_marketing_data(q, analysis_platform)
+    return q
+
+
+def _compute_mmd_kpis_from_aggregate(db: Session, date_from, date_to, af: dict, analysis_platform: str) -> dict:
+    """Somme e medie SQL su meta_marketing_data nello scope filtri (evita .all() su milioni di righe)."""
+    base = _mmd_filtered_base_query(db, date_from, date_to, af, analysis_platform)
+    row = (
+        base.with_entities(
+            func.coalesce(func.sum(MetaMarketingData.spend), 0).label("total_spend"),
+            func.coalesce(func.sum(MetaMarketingData.impressions), 0).label("total_impressions"),
+            func.coalesce(func.sum(MetaMarketingData.clicks), 0).label("total_clicks"),
+            func.coalesce(func.sum(MetaMarketingData.conversions), 0).label("total_conversions"),
+            func.avg(MetaMarketingData.ctr).label("avg_ctr"),
+            func.avg(MetaMarketingData.cpc).label("avg_cpc"),
+            func.avg(MetaMarketingData.cpm).label("avg_cpm"),
+        ).first()
+    )
+    if not row:
+        return {
+            "total_spend": 0.0,
+            "total_impressions": 0,
+            "total_clicks": 0,
+            "total_conversions": 0,
+            "avg_ctr": 0.0,
+            "avg_cpc": 0.0,
+            "avg_cpm": 0.0,
+        }
+    return {
+        "total_spend": _parse_amount(row.total_spend),
+        "total_impressions": int(row.total_impressions or 0),
+        "total_clicks": int(row.total_clicks or 0),
+        "total_conversions": int(row.total_conversions or 0),
+        "avg_ctr": float(row.avg_ctr) if row.avg_ctr is not None else 0.0,
+        "avg_cpc": float(row.avg_cpc) if row.avg_cpc is not None else 0.0,
+        "avg_cpm": float(row.avg_cpm) if row.avg_cpm is not None else 0.0,
+    }
+
+
+def _mmd_scope_campaign_adset_ids(
+    db: Session, date_from, date_to, af: dict, analysis_platform: str
+) -> tuple[set[str], set[str]]:
+    """campaign_id e adset_id Meta distinti nello scope (per correlazione Lead)."""
+    base = _mmd_filtered_base_query(db, date_from, date_to, af, analysis_platform)
+    c_rows = base.with_entities(MetaCampaign.campaign_id).distinct().all()
+    a_rows = base.with_entities(MetaAdSet.adset_id).distinct().all()
+    campaign_ids = {str(r[0]).strip() for r in c_rows if r[0]}
+    adset_ids = {str(r[0]).strip() for r in a_rows if r[0]}
+    return campaign_ids, adset_ids
+
+
+def _mpp_filtered_base_query(db: Session, date_from, date_to, af: dict, platform_key: str):
+    """Layer B: placement per publisher_platform (facebook / instagram)."""
+    q = (
+        db.query(MetaMarketingPlacement)
+        .join(MetaAd, MetaMarketingPlacement.ad_id == MetaAd.id)
+        .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+        .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+        .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+        .filter(
+            MetaAccount.is_active == True,
+            MetaMarketingPlacement.date >= date_from,
+            MetaMarketingPlacement.date <= date_to,
+            _placement_publisher_platform_eq(MetaMarketingPlacement.publisher_platform, platform_key),
+        )
+    )
+    q = _apply_analysis_entity_filters(q, **af)
+    return q
+
+
+def _compute_mpp_kpis_from_aggregate(
+    db: Session, date_from, date_to, af: dict, platform_key: str
+) -> dict:
+    base = _mpp_filtered_base_query(db, date_from, date_to, af, platform_key)
+    row = (
+        base.with_entities(
+            func.coalesce(func.sum(MetaMarketingPlacement.spend), 0).label("total_spend"),
+            func.coalesce(func.sum(MetaMarketingPlacement.impressions), 0).label("total_impressions"),
+            func.coalesce(func.sum(MetaMarketingPlacement.clicks), 0).label("total_clicks"),
+            func.coalesce(func.sum(MetaMarketingPlacement.conversions), 0).label("total_conversions"),
+            func.avg(MetaMarketingPlacement.ctr).label("avg_ctr"),
+            func.avg(MetaMarketingPlacement.cpc).label("avg_cpc"),
+            func.avg(MetaMarketingPlacement.cpm).label("avg_cpm"),
+        ).first()
+    )
+    if not row:
+        return {
+            "total_spend": 0.0,
+            "total_impressions": 0,
+            "total_clicks": 0,
+            "total_conversions": 0,
+            "avg_ctr": 0.0,
+            "avg_cpc": 0.0,
+            "avg_cpm": 0.0,
+        }
+    return {
+        "total_spend": _parse_amount(row.total_spend),
+        "total_impressions": int(row.total_impressions or 0),
+        "total_clicks": int(row.total_clicks or 0),
+        "total_conversions": int(row.total_conversions or 0),
+        "avg_ctr": float(row.avg_ctr) if row.avg_ctr is not None else 0.0,
+        "avg_cpc": float(row.avg_cpc) if row.avg_cpc is not None else 0.0,
+        "avg_cpm": float(row.avg_cpm) if row.avg_cpm is not None else 0.0,
+    }
+
+
+def _mpp_scope_campaign_ids(db: Session, date_from, date_to, af: dict, platform_key: str) -> set[str]:
+    base = _mpp_filtered_base_query(db, date_from, date_to, af, platform_key)
+    rows = base.with_entities(MetaCampaign.campaign_id).distinct().all()
+    return {str(r[0]).strip() for r in rows if r[0]}
 
 
 def _meta_marketing_conversions_sum_by_campaign(
@@ -337,6 +464,7 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             db.query(MetaCampaign)
             .join(MetaAccount)
             .filter(MetaAccount.is_active == True)
+            .options(joinedload(MetaCampaign.account))
             .order_by(MetaCampaign.name)
             .all()
         )
@@ -345,30 +473,30 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             .join(MetaCampaign)
             .join(MetaAccount)
             .filter(MetaAccount.is_active == True)
+            .options(joinedload(MetaAdSet.campaign).joinedload(MetaCampaign.account))
             .order_by(MetaAdSet.name)
             .all()
         )
 
-        # Query principale sui MetaMarketingData
-        query = (
-            db.query(MetaMarketingData, MetaAd, MetaAdSet, MetaCampaign, MetaAccount)
-            .join(MetaAd, MetaMarketingData.ad_id == MetaAd.id)
-            .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
-            .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
-            .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
-            .filter(
-                MetaAccount.is_active == True,
-                MetaMarketingData.date >= date_from,
-                MetaMarketingData.date <= date_to,
-            )
-        )
+        # KPI principali: una query aggregata (niente .all() su tutte le righe giornaliere)
+        mmd_kpis = _compute_mmd_kpis_from_aggregate(db, date_from, date_to, af, analysis_platform)
+        total_spend = mmd_kpis["total_spend"]
+        total_impressions = mmd_kpis["total_impressions"]
+        total_clicks = mmd_kpis["total_clicks"]
+        total_conversions = mmd_kpis["total_conversions"]
+        global_cpl = (total_spend / total_conversions) if total_conversions > 0 else 0.0
 
-        query = _apply_analysis_entity_filters(query, **af)
-        query = _apply_analysis_platform_meta_marketing_data(query, analysis_platform)
+        totals = {
+            "total_spend": round(total_spend, 2),
+            "total_impressions": total_impressions,
+            "total_clicks": total_clicks,
+            "total_conversions": total_conversions,
+            "global_cpl": round(global_cpl, 2),
+            "avg_ctr": round(mmd_kpis["avg_ctr"], 2),
+            "avg_cpc": round(mmd_kpis["avg_cpc"], 4),
+            "avg_cpm": round(mmd_kpis["avg_cpm"], 2),
+        }
 
-        marketing_rows = query.all()
-
-        # Breakdown per piattaforma (facebook / instagram)
         platform_totals = {
             "facebook": {},
             "instagram": {},
@@ -380,46 +508,6 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
         platform_distribution_points = {
             "facebook": [],
             "instagram": [],
-        }
-
-
-        # Calcolo KPI aggregati base
-        total_spend = 0.0
-        total_impressions = 0
-        total_clicks = 0
-        total_conversions = 0
-        ctr_values = []
-        cpc_values = []
-        cpm_values = []
-
-        for md, _ad, _adset, _campaign, _account in marketing_rows:
-            total_spend += _parse_amount(md.spend)
-            total_impressions += md.impressions or 0
-            total_clicks += md.clicks or 0
-            total_conversions += md.conversions or 0
-
-            if md.ctr is not None:
-                ctr_values.append(float(md.ctr))
-            if md.cpc is not None:
-                cpc_values.append(float(md.cpc))
-            if md.cpm is not None:
-                cpm_values.append(float(md.cpm))
-
-        def _avg(values):
-            return float(sum(values) / len(values)) if values else 0.0
-
-        # CPL aggregato (spend totale / lead totali)
-        global_cpl = (total_spend / total_conversions) if total_conversions > 0 else 0.0
-
-        totals = {
-            "total_spend": round(total_spend, 2),
-            "total_impressions": total_impressions,
-            "total_clicks": total_clicks,
-            "total_conversions": total_conversions,
-            "global_cpl": round(global_cpl, 2),
-            "avg_ctr": round(_avg(ctr_values), 2),
-            "avg_cpc": round(_avg(cpc_values), 4),
-            "avg_cpm": round(_avg(cpm_values), 2),
         }
 
         # Serie giornaliera per grafico Spend vs CPL
@@ -572,14 +660,10 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             }
         ]
 
-        # Metriche Magellano/Ulixe: scope da campaign_ids/adset_ids presenti in marketing_rows
-        campaign_ids = set()
-        adset_ids = set()
-        for md, ad, adset, campaign, account in marketing_rows:
-            if campaign and campaign.campaign_id:
-                campaign_ids.add(str(campaign.campaign_id))
-            if adset and adset.adset_id:
-                adset_ids.add(str(adset.adset_id))
+        # Metriche Magellano/Ulixe: scope = campagne/adset presenti nello stesso filtro layer A
+        campaign_ids, adset_ids = _mmd_scope_campaign_adset_ids(
+            db, date_from, date_to, af, analysis_platform
+        )
 
         total_magellano_entrate = 0
         total_magellano_doppioni = 0
@@ -655,50 +739,15 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
         totals["magellano_scartate_pct"] = round((total_magellano_scartate / leads_count * 100), 1) if leads_count > 0 else 0
         totals["ulixe_scartate_pct"] = round((total_ulixe_scartate / leads_count * 100), 1) if leads_count > 0 else 0
 
-        # Calcolo breakdown per piattaforma (Meta only + Magellano/Ulixe)
+        # Breakdown per piattaforma: aggregate SQL su meta_marketing_placement (layer B)
         for platform_key in ("facebook", "instagram"):
-            # Meta KPI per piattaforma (layer B: meta_marketing_placement)
-            p_query = (
-                db.query(MetaMarketingPlacement, MetaAd, MetaAdSet, MetaCampaign, MetaAccount)
-                .join(MetaAd, MetaMarketingPlacement.ad_id == MetaAd.id)
-                .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
-                .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
-                .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
-                .filter(
-                    MetaAccount.is_active == True,
-                    MetaMarketingPlacement.date >= date_from,
-                    MetaMarketingPlacement.date <= date_to,
-                    _placement_publisher_platform_eq(MetaMarketingPlacement.publisher_platform, platform_key),
-                )
-            )
-            p_query = _apply_analysis_entity_filters(p_query, **af)
-
-            p_rows = p_query.all()
-
-            p_spend = 0.0
-            p_impr = 0
-            p_clicks = 0
-            p_convs = 0
-            p_ctr_vals: list[float] = []
-            p_cpc_vals: list[float] = []
-            p_cpm_vals: list[float] = []
-
-            p_campaign_ids: set[str] = set()
-            for md, ad, adset, campaign, account in p_rows:
-                p_spend += _parse_amount(md.spend)
-                p_impr += md.impressions or 0
-                p_clicks += md.clicks or 0
-                p_convs += md.conversions or 0
-                if md.ctr is not None:
-                    p_ctr_vals.append(float(md.ctr))
-                if md.cpc is not None:
-                    p_cpc_vals.append(float(md.cpc))
-                if md.cpm is not None:
-                    p_cpm_vals.append(float(md.cpm))
-                if campaign and campaign.campaign_id:
-                    p_campaign_ids.add(str(campaign.campaign_id))
-
+            p_kpis = _compute_mpp_kpis_from_aggregate(db, date_from, date_to, af, platform_key)
+            p_spend = p_kpis["total_spend"]
+            p_impr = p_kpis["total_impressions"]
+            p_clicks = p_kpis["total_clicks"]
+            p_convs = p_kpis["total_conversions"]
             p_cpl = (p_spend / p_convs) if p_convs > 0 else 0.0
+            p_campaign_ids = _mpp_scope_campaign_ids(db, date_from, date_to, af, platform_key)
 
             # Serie giornaliera per piattaforma
             p_daily_query = (
@@ -789,9 +838,9 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
                 "total_clicks": p_clicks,
                 "total_conversions": p_convs,
                 "global_cpl": round(p_cpl, 2),
-                "avg_ctr": round(_avg(p_ctr_vals), 2),
-                "avg_cpc": round(_avg(p_cpc_vals), 4),
-                "avg_cpm": round(_avg(p_cpm_vals), 2),
+                "avg_ctr": round(p_kpis["avg_ctr"], 2),
+                "avg_cpc": round(p_kpis["avg_cpc"], 4),
+                "avg_cpm": round(p_kpis["avg_cpm"], 2),
                 "total_magellano_entrate": p_total_mag_entrate,
                 "total_magellano_inviate": p_total_mag_inviate,
                 "total_ulixe_approvate": p_total_ulixe_approvate,

@@ -107,7 +107,7 @@ class SyncLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     started_at = Column(DateTime, default=now_rome)
     completed_at = Column(DateTime)
-    status = Column(String) # SUCCESS, ERROR
+    status = Column(String)  # RUNNING, SUCCESS, PARTIAL, ERROR
     details = Column(JSON)
 
 
@@ -122,7 +122,7 @@ class IngestionJob(Base):
     # Tipo di job: magellano, ulixe, meta_marketing, orchestrator, ecc.
     job_type = Column(String, index=True)
 
-    # Stato corrente del job: PENDING, QUEUED, RUNNING, SUCCESS, ERROR
+    # Stato corrente del job: PENDING, QUEUED, RUNNING, SUCCESS, PARTIAL, ERROR
     status = Column(String, index=True)
 
     # ID della task Celery associata (se presente)

@@ -45,7 +45,8 @@ async def ingestion_summary(request: Request, db: Session = Depends(get_db)):
             if isinstance(stats, dict):
                 for job_name, job_data in stats.items():
                     if isinstance(job_data, dict):
-                        has_errors = job_data.get('errors', 0) > 0
+                        # job_failed = step terminato in eccezione; errors > 0 può essere esito parziale (es. CAPI)
+                        has_errors = job_data.get('job_failed', False) or job_data.get('errors', 0) > 0
                         status = 'error' if has_errors else 'success'
                         label = JOB_LABELS.get(job_name, job_name)
                         jobs_summary.append({

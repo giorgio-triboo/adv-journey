@@ -17,9 +17,17 @@
 </head>
 <body class="{% if not user %}login-body{% endif %}">
     {% if user %}
-    <aside class="sidebar">
+    <aside class="sidebar-root" id="app-sidebar" aria-label="Menu di navigazione">
+        <div class="sidebar-rail">
+            <button type="button" class="sidebar-hamburger sidebar-hamburger--rail sidebar-menu-trigger" title="Menu" aria-label="Apri o chiudi menu" aria-expanded="false" aria-controls="sidebar-flyout-panel">
+                <svg class="sidebar-hamburger-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+            </button>
+        </div>
+        <div class="sidebar-flyout" id="sidebar-flyout-panel">
         <div class="sidebar-header">
-            <h1 class="text-2xl font-bold gradient-text">ADV Journey</h1>
+            <h1 class="text-2xl font-bold gradient-text sidebar-brand">ADV Journey</h1>
         </div>
         
         <div class="sidebar-content">
@@ -261,10 +269,11 @@
                 Logout
             </a>
         </div>
+        </div>
     </aside>
     {% endif %}
     
-    <main class="{% if user %}main-layout{% else %}login-main{% endif %}">
+    <main class="{% if user %}main-layout{% else %}login-main{% endif %}" id="app-main">
         {% if user and request.session.get("_impersonate_original_user_id") %}
         <div class="mb-4 mx-4 mt-4 p-3 rounded-lg bg-amber-100 border border-amber-400 text-amber-800 text-sm flex items-center justify-between gap-4 flex-wrap">
             <span class="flex items-center gap-2">
@@ -343,6 +352,52 @@
                 return origFetch.call(this, url, options);
             };
         })();
+
+        // Sidebar: desktop = hover rail + chiusura mouseleave dal pannello; touch = tap
+        document.addEventListener('DOMContentLoaded', function () {
+            var root = document.querySelector('.sidebar-root');
+            var rail = root ? root.querySelector('.sidebar-rail') : null;
+            var triggers = root ? root.querySelectorAll('.sidebar-menu-trigger') : [];
+            if (!root || !triggers.length) return;
+
+            function useClickToggle() {
+                return window.matchMedia('(hover: none), (pointer: coarse)').matches;
+            }
+
+            function useFinePointerHover() {
+                return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+            }
+
+            function setOpen(open) {
+                root.classList.toggle('sidebar-flyout-open', open);
+                triggers.forEach(function (b) {
+                    b.setAttribute('aria-expanded', open ? 'true' : 'false');
+                });
+            }
+
+            if (rail && useFinePointerHover()) {
+                rail.addEventListener('mouseenter', function () {
+                    root.classList.add('sidebar-flyout-hover');
+                });
+                root.addEventListener('mouseleave', function () {
+                    root.classList.remove('sidebar-flyout-hover');
+                });
+            }
+
+            triggers.forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    if (!useClickToggle()) return;
+                    e.stopPropagation();
+                    setOpen(!root.classList.contains('sidebar-flyout-open'));
+                });
+            });
+
+            document.addEventListener('click', function (e) {
+                if (!useClickToggle()) return;
+                if (!root.classList.contains('sidebar-flyout-open')) return;
+                if (!root.contains(e.target)) setOpen(false);
+            });
+        });
 
         let submenuAnimationTimeout = null;
         function toggleSubmenu(id) {

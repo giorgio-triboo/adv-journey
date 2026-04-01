@@ -12,6 +12,24 @@ import logging
 
 logger = logging.getLogger('services.sync_orchestrator')
 
+
+def pipeline_outcome(all_stats: dict, ordered_job_names: list[str]) -> tuple[str, str]:
+    """
+    Deriva stato e messaggio per IngestionJob / log da all_stats.
+    Ritorna (SUCCESS | PARTIAL | ERROR, messaggio leggibile).
+    """
+    failed = [
+        n
+        for n in ordered_job_names
+        if isinstance(all_stats.get(n), dict) and all_stats[n].get("job_failed")
+    ]
+    if not failed:
+        return ("SUCCESS", "Pipeline completata con successo")
+    if len(failed) == len(ordered_job_names):
+        return ("ERROR", "Tutti gli step sono falliti: " + ", ".join(failed))
+    return ("PARTIAL", "Completata con errori parziali: " + ", ".join(failed))
+
+
 class SyncOrchestrator:
     """
     Orchestrator che gestisce l'esecuzione sequenziale di tutti i sync job.
@@ -74,16 +92,27 @@ class SyncOrchestrator:
                     logger.info(f"[{job_name.upper()}] ✅ Completed")
                 except Exception as e:
                     logger.error(f"[{job_name.upper()}] ❌ Failed: {e}", exc_info=True)
-                    all_stats[job_name] = {"errors": 1}
-            
-            # Update sync log
-            sync_log.status = "SUCCESS"
+                    all_stats[job_name] = {
+                        "job_failed": True,
+                        "errors": 1,
+                        "error": str(e),
+                    }
+
+            ordered_names = [j["name"] for j in self.jobs]
+            pipeline_status, pipeline_message = pipeline_outcome(all_stats, ordered_names)
+
+            sync_log.status = pipeline_status
             sync_log.completed_at = now_rome()
             sync_log.details = all_stats
             db.commit()
-            
+
             logger.info("=" * 80)
-            logger.info("✅ Sync Orchestrator completed successfully!")
+            if pipeline_status == "SUCCESS":
+                logger.info("✅ Sync Orchestrator completed successfully!")
+            elif pipeline_status == "PARTIAL":
+                logger.warning("⚠️ Sync Orchestrator completed with partial failures: %s", pipeline_message)
+            else:
+                logger.error("❌ Sync Orchestrator: all steps failed — %s", pipeline_message)
             self._log_summary(all_stats)
             logger.info("=" * 80)
             
@@ -102,19 +131,33 @@ class SyncOrchestrator:
         """Log delle statistiche aggregate."""
         if "ulixe" in stats:
             u = stats["ulixe"]
-            logger.info(f"  Ulixe: {u.get('checked', 0)} checked, {u.get('updated', 0)} updated")
-        
+            if isinstance(u, dict) and u.get("job_failed"):
+                logger.error(f"  Ulixe: FAILED — {u.get('error', '')}")
+            else:
+                logger.info(f"  Ulixe: {u.get('checked', 0)} checked, {u.get('updated', 0)} updated")
+
         if "meta_marketing" in stats:
             mm = stats["meta_marketing"]
-            logger.info(f"  Meta Marketing: {mm.get('accounts_synced', 0)} accounts synced")
-        
+            if isinstance(mm, dict) and mm.get("job_failed"):
+                logger.error(f"  Meta Marketing: FAILED — {mm.get('error', '')}")
+            else:
+                logger.info(f"  Meta Marketing: {mm.get('accounts_synced', 0)} accounts synced")
+
         if "meta_conversion_marker" in stats:
             mcm = stats["meta_conversion_marker"]
-            logger.info(f"  Meta Conversion Marker: {mcm.get('marked', 0)} marked")
-        
+            if isinstance(mcm, dict) and mcm.get("job_failed"):
+                logger.error(f"  Meta Conversion Marker: FAILED — {mcm.get('error', '')}")
+            else:
+                logger.info(f"  Meta Conversion Marker: {mcm.get('marked', 0)} marked")
+
         if "meta_conversion" in stats:
             mc = stats["meta_conversion"]
-            logger.info(f"  Meta Conversion: {mc.get('events_sent', 0)} events sent, {mc.get('errors', 0)} errors")
+            if isinstance(mc, dict) and mc.get("job_failed"):
+                logger.error(f"  Meta Conversion: FAILED — {mc.get('error', '')}")
+            else:
+                logger.info(
+                    f"  Meta Conversion: {mc.get('events_sent', 0)} events sent, {mc.get('errors', 0)} errors"
+                )
     
     def add_job(self, name: str, job_func, description: str):
         """
