@@ -1,7 +1,7 @@
 """API gerarchia account / campagne / adset / ads (dati come maschera Marketing)."""
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
@@ -23,10 +23,41 @@ from models import (
 from services.integrations.meta_marketing import MetaMarketingService
 from services.utils.crypto import decrypt_token
 
-from .helpers import _get_mag_to_pay, _lead_date_filter, _parse_amount, _compute_ricavo_for_leads, _get_pay_for_leads
+from .helpers import (
+    _get_mag_to_pay,
+    _lead_date_filter,
+    _parse_amount,
+    _compute_ricavo_for_leads,
+    _get_pay_for_leads,
+    default_marketing_filter_date_range,
+)
 
 logger = logging.getLogger('services.api.ui')
 router = APIRouter(include_in_schema=False)
+
+
+def _marketing_date_range_from_request(request: Request) -> tuple[datetime, datetime]:
+    """date_from / date_to da query; default = inizio mese corrente → ieri (allineato alle altre viste marketing)."""
+    date_from = request.query_params.get("date_from")
+    date_to = request.query_params.get("date_to")
+    date_from_obj = None
+    date_to_obj = None
+    if date_from:
+        try:
+            date_from_obj = datetime.strptime(date_from, "%Y-%m-%d")
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            date_to_obj = datetime.strptime(date_to, "%Y-%m-%d")
+        except ValueError:
+            pass
+    d_def_f, d_def_t = default_marketing_filter_date_range()
+    if not date_from_obj:
+        date_from_obj = d_def_f
+    if not date_to_obj:
+        date_to_obj = d_def_t
+    return date_from_obj, date_to_obj
 
 
 def _marketing_metrics_block(leads: list, marketing_data: list, mag_to_pay: dict, db: Session) -> dict:
@@ -302,27 +333,7 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
         # Piattaforma (facebook / instagram / all)
         platform = request.query_params.get('platform', 'all')
 
-        # Date filters
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
-        date_from_obj = None
-        date_to_obj = None
-        
-        if date_from:
-            try:
-                date_from_obj = datetime.strptime(date_from, '%Y-%m-%d')
-            except:
-                pass
-        if date_to:
-            try:
-                date_to_obj = datetime.strptime(date_to, '%Y-%m-%d')
-            except:
-                pass
-        
-        if not date_from_obj:
-            date_from_obj = datetime.now() - timedelta(days=30)
-        if not date_to_obj:
-            date_to_obj = datetime.now()
+        date_from_obj, date_to_obj = _marketing_date_range_from_request(request)
 
         campaigns = campaigns_query.options(joinedload(MetaCampaign.account)).all()
         result = []
@@ -531,28 +542,8 @@ async def api_marketing_campaign_adsets(campaign_id: int, request: Request, db: 
     # Piattaforma (facebook / instagram / all)
     platform = request.query_params.get('platform', 'all')
 
-    # Date filters
-    date_from = request.query_params.get('date_from')
-    date_to = request.query_params.get('date_to')
-    date_from_obj = None
-    date_to_obj = None
-    
-    if date_from:
-        try:
-            date_from_obj = datetime.strptime(date_from, '%Y-%m-%d')
-        except:
-            pass
-    if date_to:
-        try:
-            date_to_obj = datetime.strptime(date_to, '%Y-%m-%d')
-        except:
-            pass
-    
-    if not date_from_obj:
-        date_from_obj = datetime.now() - timedelta(days=30)
-    if not date_to_obj:
-        date_to_obj = datetime.now()
-    
+    date_from_obj, date_to_obj = _marketing_date_range_from_request(request)
+
     adsets = db.query(MetaAdSet).filter(MetaAdSet.campaign_id == campaign_id).all()
     result = []
 
@@ -596,28 +587,8 @@ async def api_marketing_adset_ads(adset_id: int, request: Request, db: Session =
     # Piattaforma (facebook / instagram / all)
     platform = request.query_params.get('platform', 'all')
 
-    # Date filters
-    date_from = request.query_params.get('date_from')
-    date_to = request.query_params.get('date_to')
-    date_from_obj = None
-    date_to_obj = None
-    
-    if date_from:
-        try:
-            date_from_obj = datetime.strptime(date_from, '%Y-%m-%d')
-        except:
-            pass
-    if date_to:
-        try:
-            date_to_obj = datetime.strptime(date_to, '%Y-%m-%d')
-        except:
-            pass
-    
-    if not date_from_obj:
-        date_from_obj = datetime.now() - timedelta(days=30)
-    if not date_to_obj:
-        date_to_obj = datetime.now()
-    
+    date_from_obj, date_to_obj = _marketing_date_range_from_request(request)
+
     ads = db.query(MetaAd).filter(MetaAd.adset_id == adset_id).all()
     result = []
 
@@ -671,28 +642,8 @@ async def api_marketing_adsets(request: Request, db: Session = Depends(get_db)):
     # Piattaforma (facebook / instagram / all)
     platform = request.query_params.get('platform', 'all')
 
-    # Date filters
-    date_from = request.query_params.get('date_from')
-    date_to = request.query_params.get('date_to')
-    date_from_obj = None
-    date_to_obj = None
-    
-    if date_from:
-        try:
-            date_from_obj = datetime.strptime(date_from, '%Y-%m-%d')
-        except:
-            pass
-    if date_to:
-        try:
-            date_to_obj = datetime.strptime(date_to, '%Y-%m-%d')
-        except:
-            pass
-    
-    if not date_from_obj:
-        date_from_obj = datetime.now() - timedelta(days=30)
-    if not date_to_obj:
-        date_to_obj = datetime.now()
-    
+    date_from_obj, date_to_obj = _marketing_date_range_from_request(request)
+
     adsets_q = (
         db.query(MetaAdSet, MetaCampaign)
         .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
@@ -772,27 +723,7 @@ async def api_marketing_ads(request: Request, db: Session = Depends(get_db)):
     # Piattaforma (facebook / instagram / all)
     platform = request.query_params.get('platform', 'all')
 
-    # Date filters
-    date_from = request.query_params.get('date_from')
-    date_to = request.query_params.get('date_to')
-    date_from_obj = None
-    date_to_obj = None
-    
-    if date_from:
-        try:
-            date_from_obj = datetime.strptime(date_from, '%Y-%m-%d')
-        except:
-            pass
-    if date_to:
-        try:
-            date_to_obj = datetime.strptime(date_to, '%Y-%m-%d')
-        except:
-            pass
-    
-    if not date_from_obj:
-        date_from_obj = datetime.now() - timedelta(days=30)
-    if not date_to_obj:
-        date_to_obj = datetime.now()
+    date_from_obj, date_to_obj = _marketing_date_range_from_request(request)
 
     triples_q = (
         db.query(MetaAd, MetaAdSet, MetaCampaign)

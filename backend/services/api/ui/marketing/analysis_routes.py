@@ -4,6 +4,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request, Depends
 from markupsafe import Markup
@@ -39,6 +40,13 @@ from .helpers import (
     _compute_ricavo_for_leads,
     _get_pay_for_leads,
     _get_ricavo_from_rcrm_temp,
+    _get_mag_to_pay,
+    default_marketing_filter_date_range,
+)
+from .hierarchy_routes import (
+    _bulk_leads_by_meta_adset,
+    _bulk_marketing_by_adset_pk,
+    _marketing_metrics_block,
 )
 
 logger = logging.getLogger('services.api.ui')
@@ -119,6 +127,552 @@ def _apply_analysis_platform_meta_marketing_placement(q, analysis_platform: str)
     if pk in ("facebook", "instagram"):
         return q.filter(_placement_publisher_platform_eq(MetaMarketingPlacement.publisher_platform, pk))
     return q
+
+
+def _extract_interests_from_targeting(targeting: Any) -> list[tuple[str, str]]:
+    """
+    (chiave_stabile, nome_display) dagli interessi nel JSON targeting Meta (ad set).
+    flexible_spec[].interests e interests top-level.
+    """
+    if not targeting or not isinstance(targeting, dict):
+        return []
+
+    by_key: dict[str, str] = {}
+
+    def absorb_interest_list(items: Any) -> None:
+        if not items or not isinstance(items, list):
+            return
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            raw_id = it.get("id")
+            iid = str(raw_id).strip() if raw_id is not None else ""
+            name = (it.get("name") or "").strip()
+            if not iid and not name:
+                continue
+            key = iid if iid else f"name:{name.lower()}"
+            if key not in by_key:
+                by_key[key] = name if name else (iid or key)
+
+    absorb_interest_list(targeting.get("interests"))
+    flex = targeting.get("flexible_spec")
+    if isinstance(flex, list):
+        for block in flex:
+            if isinstance(block, dict):
+                absorb_interest_list(block.get("interests"))
+
+    return list(by_key.items())
+
+
+def _names_from_targeting_objects(items: Any, *, max_items: int = 25) -> list[str]:
+    """Estrae etichette testuali da liste di dict Meta (id/name o name solo)."""
+    if not items or not isinstance(items, list):
+        return []
+    out: list[str] = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = (it.get("name") or "").strip()
+        raw_id = it.get("id")
+        sid = str(raw_id).strip() if raw_id is not None else ""
+        if name:
+            label = name if not sid else f"{name} ({sid})"
+        elif sid:
+            label = sid
+        else:
+            continue
+        if label not in out:
+            out.append(label)
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def _geo_locations_summary(geo: Any, *, max_items: int = 12) -> str:
+    """Sintesi geo_locations / excluded_geo_locations (countries, regions, cities, custom_locations)."""
+    if not geo or not isinstance(geo, dict):
+        return ""
+    parts: list[str] = []
+    countries = geo.get("countries")
+    if isinstance(countries, list) and countries:
+        parts.append("Paesi: " + ", ".join(str(c) for c in countries[:max_items]))
+    regions = geo.get("regions")
+    if isinstance(regions, list) and regions:
+        reg_bits = []
+        for r in regions[:max_items]:
+            if isinstance(r, dict):
+                reg_bits.append((r.get("name") or r.get("key") or str(r.get("country", ""))).strip() or "?")
+            else:
+                reg_bits.append(str(r))
+        if reg_bits:
+            parts.append("Regioni: " + ", ".join(reg_bits))
+    cities = geo.get("cities")
+    if isinstance(cities, list) and cities:
+        c_bits = []
+        for c in cities[:max_items]:
+            if isinstance(c, dict):
+                c_bits.append((c.get("name") or c.get("key") or "").strip() or "?")
+            else:
+                c_bits.append(str(c))
+        if c_bits:
+            parts.append("Città: " + ", ".join(c_bits))
+    zips = geo.get("zips")
+    if isinstance(zips, list) and zips:
+        parts.append("CAP/ZIP: " + ", ".join(str(z) for z in zips[:8]))
+    loc_types = geo.get("location_types")
+    if isinstance(loc_types, list) and loc_types:
+        parts.append("Tipo luogo: " + ", ".join(str(x) for x in loc_types))
+    custom = geo.get("custom_locations")
+    if isinstance(custom, list) and custom:
+        parts.append(f"Custom locations: {len(custom)} area/i")
+    return " · ".join(parts) if parts else ""
+
+
+def _flexible_spec_collect_specs(targeting: dict) -> dict[str, list[str]]:
+    """
+    Da flexible_spec[], raccoglie etichette per behaviors, work_*, education_*, ecc.
+    Chiavi interne: behaviors, work_employers, industries, education_schools, education_majors,
+    college_years, income, family_statuses, life_events, relationship_statuses, user_adclusters.
+    """
+    keys = (
+        "behaviors",
+        "work_employers",
+        "work_positions",
+        "industries",
+        "education_schools",
+        "education_majors",
+        "education_statuses",
+        "college_years",
+        "income",
+        "family_statuses",
+        "life_events",
+        "relationship_statuses",
+        "user_adclusters",
+    )
+    acc: dict[str, list[str]] = {k: [] for k in keys}
+    flex = targeting.get("flexible_spec")
+    if not isinstance(flex, list):
+        return acc
+    for block in flex:
+        if not isinstance(block, dict):
+            continue
+        for k in keys:
+            acc[k].extend(_names_from_targeting_objects(block.get(k), max_items=40))
+    # dedupe mantenendo ordine
+    for k in keys:
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for x in acc[k]:
+            if x not in seen:
+                seen.add(x)
+                deduped.append(x)
+        acc[k] = deduped[:25]
+    return acc
+
+
+def _extract_excluded_interests_from_targeting(targeting: dict) -> list[str]:
+    """Interessi esclusi: chiavi note + flexible_spec[].exclusions (se presenti)."""
+    names: list[str] = []
+    top = targeting.get("excluded_interests")
+    if isinstance(top, list):
+        names.extend(_names_from_targeting_objects(top))
+    excl = targeting.get("exclusions")
+    if isinstance(excl, dict):
+        ei = excl.get("interests")
+        if isinstance(ei, list):
+            names.extend(_names_from_targeting_objects(ei))
+    flex = targeting.get("flexible_spec")
+    if isinstance(flex, list):
+        for block in flex:
+            if not isinstance(block, dict):
+                continue
+            sub = block.get("exclusions")
+            if isinstance(sub, dict):
+                ei2 = sub.get("interests")
+                if isinstance(ei2, list):
+                    names.extend(_names_from_targeting_objects(ei2))
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out[:40]
+
+
+def _summarize_meta_targeting_detailed(targeting: Any) -> dict[str, Any]:
+    """
+    Campi leggibili per UI (età, genere, geo, piattaforme, audience, esclusioni, behaviors, ecc.).
+    Valori assenti = stringa vuota o lista vuota (mai 0 al posto di mancante per testi).
+    """
+    empty: dict[str, Any] = {
+        "age_range": "",
+        "genders": "",
+        "locales": "",
+        "geo_included": "",
+        "geo_excluded": "",
+        "publisher_platforms": "",
+        "facebook_positions": "",
+        "instagram_positions": "",
+        "audience_network_positions": "",
+        "messenger_positions": "",
+        "device_platforms": "",
+        "custom_audiences_in": "",
+        "custom_audiences_ex": "",
+        "interests_included_labels": [],
+        "interests_excluded_labels": [],
+        "behaviors": "",
+        "work_and_industries": "",
+        "education": "",
+        "demographics_other": "",
+        "brand_safety": "",
+        "targeting_automation": "",
+        "advantage_audience": "",
+        "other_notable": "",
+    }
+    if not targeting or not isinstance(targeting, dict):
+        return empty
+
+    t = targeting
+    out = dict(empty)
+
+    amin = t.get("age_min")
+    amax = t.get("age_max")
+    if amin is not None or amax is not None:
+        a1 = str(amin).strip() if amin is not None else ""
+        a2 = str(amax).strip() if amax is not None else ""
+        if a1 and a2:
+            out["age_range"] = f"{a1}–{a2}"
+        elif a1:
+            out["age_range"] = f"min {a1}"
+        elif a2:
+            out["age_range"] = f"max {a2}"
+
+    genders = t.get("genders")
+    if isinstance(genders, list) and genders:
+        gl: list[str] = []
+        for g in genders:
+            if g in (1, "1"):
+                gl.append("Maschio")
+            elif g in (2, "2"):
+                gl.append("Femmina")
+            else:
+                gl.append(str(g))
+        out["genders"] = ", ".join(gl)
+
+    locs = t.get("locales")
+    if isinstance(locs, list) and locs:
+        out["locales"] = ", ".join(str(x) for x in locs[:20])
+
+    out["geo_included"] = _geo_locations_summary(t.get("geo_locations"))
+    out["geo_excluded"] = _geo_locations_summary(t.get("excluded_geo_locations"))
+
+    pp = t.get("publisher_platforms")
+    if isinstance(pp, list) and pp:
+        out["publisher_platforms"] = ", ".join(str(x) for x in pp)
+
+    for key, label in (
+        ("facebook_positions", "facebook_positions"),
+        ("instagram_positions", "instagram_positions"),
+        ("audience_network_positions", "audience_network_positions"),
+        ("messenger_positions", "messenger_positions"),
+    ):
+        v = t.get(label)
+        if isinstance(v, list) and v:
+            out[key] = ", ".join(str(x) for x in v[:30])
+
+    dp = t.get("device_platforms")
+    if isinstance(dp, list) and dp:
+        out["device_platforms"] = ", ".join(str(x) for x in dp)
+
+    ca = t.get("custom_audiences")
+    if isinstance(ca, list) and ca:
+        out["custom_audiences_in"] = " · ".join(_names_from_targeting_objects(ca, max_items=15))
+    ex_ca = t.get("excluded_custom_audiences")
+    if isinstance(ex_ca, list) and ex_ca:
+        out["custom_audiences_ex"] = " · ".join(_names_from_targeting_objects(ex_ca, max_items=15))
+
+    inc_int = [iname for _k, iname in _extract_interests_from_targeting(t)]
+    out["interests_included_labels"] = inc_int[:40]
+    out["interests_excluded_labels"] = _extract_excluded_interests_from_targeting(t)
+
+    flex_specs = _flexible_spec_collect_specs(t)
+    if flex_specs["behaviors"]:
+        out["behaviors"] = " · ".join(flex_specs["behaviors"])
+    work_bits = flex_specs["work_employers"] + flex_specs["work_positions"] + flex_specs["industries"]
+    if work_bits:
+        out["work_and_industries"] = " · ".join(work_bits[:25])
+    edu_bits = (
+        flex_specs["education_schools"]
+        + flex_specs["education_majors"]
+        + flex_specs["education_statuses"]
+        + flex_specs["college_years"]
+    )
+    if edu_bits:
+        out["education"] = " · ".join(edu_bits[:25])
+    demo_rest = (
+        flex_specs["income"]
+        + flex_specs["family_statuses"]
+        + flex_specs["life_events"]
+        + flex_specs["relationship_statuses"]
+        + flex_specs["user_adclusters"]
+    )
+    if demo_rest:
+        out["demographics_other"] = " · ".join(demo_rest[:25])
+
+    bsf = t.get("brand_safety_content_filter_levels")
+    if isinstance(bsf, list) and bsf:
+        out["brand_safety"] = ", ".join(str(x) for x in bsf)
+    elif isinstance(bsf, str) and bsf.strip():
+        out["brand_safety"] = bsf.strip()
+
+    ta = t.get("targeting_automation")
+    if isinstance(ta, dict) and ta:
+        parts = [f"{k}={ta[k]}" for k in sorted(ta.keys())[:12]]
+        out["targeting_automation"] = ", ".join(parts)
+    elif isinstance(ta, (str, int, float)):
+        out["targeting_automation"] = str(ta)
+
+    aa = t.get("targeting_optimization")
+    if isinstance(aa, str) and aa.strip():
+        out["advantage_audience"] = aa.strip()
+    taa = t.get("targeting_relaxation_types")
+    if isinstance(taa, list) and taa:
+        out["advantage_audience"] = (
+            (out["advantage_audience"] + " · ") if out["advantage_audience"] else ""
+        ) + "relaxation: " + ", ".join(str(x) for x in taa)
+
+    # Chiavi “utili” non ancora mappate (brevi)
+    skip = {
+        "age_min",
+        "age_max",
+        "genders",
+        "locales",
+        "geo_locations",
+        "excluded_geo_locations",
+        "publisher_platforms",
+        "facebook_positions",
+        "instagram_positions",
+        "audience_network_positions",
+        "messenger_positions",
+        "device_platforms",
+        "custom_audiences",
+        "excluded_custom_audiences",
+        "interests",
+        "flexible_spec",
+        "excluded_interests",
+        "exclusions",
+    }
+    extra_keys = [k for k in t.keys() if k not in skip and not str(k).startswith("_")]
+    if extra_keys:
+        out["other_notable"] = ", ".join(sorted(extra_keys)[:18])
+
+    return out
+
+
+def _interests_adset_metrics_fallback(spend: float, conversions: int) -> dict[str, Any]:
+    """Se _marketing_metrics_block segnala _skip ma l'ad set ha spend/conv da aggregato Insights, mostra almeno il blocco Meta coerente."""
+    cv = int(conversions or 0)
+    sp = float(spend or 0.0)
+    cpl = round(sp / cv, 2) if cv else 0.0
+    sp_r = round(sp, 2)
+    return {
+        "total_leads": cv,
+        "cpl_meta": cpl,
+        "spend": sp_r,
+        "conversions": cv,
+        "magellano_entrate": 0,
+        "magellano_scartate": cv,
+        "magellano_scarto_pct_ingresso": round(100.0, 2) if cv else 0.0,
+        "cpl_ingresso": round(cpl, 2) if cv else 0.0,
+        "magellano_inviate": 0,
+        "magellano_rifiutate": 0,
+        "magellano_scarto_pct_uscita": 0.0,
+        "cpl_uscita": 0.0,
+        "ulixe_lavorazione": 0,
+        "ulixe_rifiutate": 0,
+        "ulixe_approvate": 0,
+        "revenue": 0.0,
+        "margine_singola_lead": None,
+        "margine_lordo": None,
+        "margine_pct": None,
+        "scarto_totale_pct": round(100.0, 2) if cv else 0.0,
+    }
+
+
+def _build_interests_marketing_analysis(
+    db: Session,
+    date_from,
+    date_to,
+    af: dict[str, Any],
+    *,
+    analysis_platform: str = "all",
+    interest_name_q: str = "",
+    page: int = 1,
+    page_size: int = 10,
+) -> dict[str, Any]:
+    """
+    Ad set con metriche nel periodo e targeting Meta completo (JSON + riepilogo).
+    Filtro opzionale interest_name: solo ad set il cui targeting contiene almeno un interesse che matcha il testo.
+    Paginazione sugli ad set.
+    """
+    adset_agg = (
+        db.query(
+            MetaAdSet.id.label("adset_internal_id"),
+            func.coalesce(func.sum(MetaMarketingData.spend), 0).label("tot_spend"),
+            func.coalesce(func.sum(MetaMarketingData.conversions), 0).label("tot_conv"),
+        )
+        .select_from(MetaMarketingData)
+        .join(MetaAd, MetaMarketingData.ad_id == MetaAd.id)
+        .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+        .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+        .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+        .filter(
+            MetaAccount.is_active == True,
+            MetaMarketingData.date >= date_from,
+            MetaMarketingData.date <= date_to,
+        )
+    )
+    adset_agg = _apply_analysis_entity_filters(adset_agg, **af)
+    adset_agg = _apply_analysis_platform_meta_marketing_data(adset_agg, analysis_platform)
+    adset_agg = adset_agg.group_by(MetaAdSet.id)
+    agg_rows = adset_agg.all()
+
+    if not agg_rows:
+        return {
+            "adset_detail_rows": [],
+            "adset_page": 1,
+            "adset_page_size": max(1, min(int(page_size), 50)),
+            "adset_total_count": 0,
+            "adset_total_pages": 0,
+            "unique_adset_count": 0,
+            "unique_total_spend": 0.0,
+            "unique_total_conversions": 0,
+            "unique_cpl": 0.0,
+        }
+
+    ids = [int(r.adset_internal_id) for r in agg_rows]
+    targeting_map = dict(db.query(MetaAdSet.id, MetaAdSet.targeting).filter(MetaAdSet.id.in_(ids)).all())
+
+    iq = (interest_name_q or "").strip().lower()
+
+    def _adset_matches_interest_filter(aid: int) -> bool:
+        if not iq:
+            return True
+        interests = _extract_interests_from_targeting(targeting_map.get(aid))
+        if not interests:
+            interests = [("__no_interests__", "Senza interessi nel targeting")]
+        for ikey, iname in interests:
+            if iq in (str(ikey) or "").lower() or iq in (str(iname) or "").lower():
+                return True
+        return False
+
+    agg_rows = [r for r in agg_rows if _adset_matches_interest_filter(int(r.adset_internal_id))]
+    if not agg_rows:
+        return {
+            "adset_detail_rows": [],
+            "adset_page": 1,
+            "adset_page_size": max(1, min(int(page_size), 50)),
+            "adset_total_count": 0,
+            "adset_total_pages": 0,
+            "unique_adset_count": 0,
+            "unique_total_spend": 0.0,
+            "unique_total_conversions": 0,
+            "unique_cpl": 0.0,
+        }
+
+    ids = [int(r.adset_internal_id) for r in agg_rows]
+
+    agg_by_adset: dict[int, tuple[float, int]] = {}
+    for r in agg_rows:
+        aid = int(r.adset_internal_id)
+        sp = float(_parse_amount(r.tot_spend) if r.tot_spend is not None else 0.0)
+        cv = int(r.tot_conv or 0)
+        agg_by_adset[aid] = (sp, cv)
+
+    unique_spend = 0.0
+    unique_conv = 0
+    for r in agg_rows:
+        unique_spend += float(_parse_amount(r.tot_spend) if r.tot_spend is not None else 0.0)
+        unique_conv += int(r.tot_conv or 0)
+
+    unique_cpl = (unique_spend / unique_conv) if unique_conv > 0 else 0.0
+
+    plat = (analysis_platform or "all").strip().lower()
+    adset_pairs = (
+        db.query(MetaAdSet, MetaCampaign.name)
+        .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+        .filter(MetaAdSet.id.in_(ids))
+        .all()
+    )
+    meta_adset_ids_ordered: list[str] = []
+    for a, _ in adset_pairs:
+        if a.adset_id:
+            s = str(a.adset_id).strip()
+            if s:
+                meta_adset_ids_ordered.append(s)
+    meta_adset_ids_unique = list(dict.fromkeys(meta_adset_ids_ordered))
+    mag_to_pay = _get_mag_to_pay(db)
+    leads_by_as = _bulk_leads_by_meta_adset(db, meta_adset_ids_unique, date_from, date_to, plat)
+    md_by_as = _bulk_marketing_by_adset_pk(db, ids, date_from, date_to, plat)
+
+    adset_detail_rows: list[dict[str, Any]] = []
+    for adset, campaign_name in adset_pairs:
+        aid_meta = str(adset.adset_id).strip() if adset.adset_id else ""
+        leads = leads_by_as.get(aid_meta, []) if aid_meta else []
+        marketing_data = md_by_as.get(adset.id, [])
+        m = _marketing_metrics_block(leads, marketing_data, mag_to_pay, db)
+        if m.pop("_skip"):
+            sp_fb, cv_fb = agg_by_adset.get(adset.id, (0.0, 0))
+            m = _interests_adset_metrics_fallback(sp_fb, cv_fb)
+        raw_t = targeting_map.get(adset.id)
+        raw_dict = raw_t if isinstance(raw_t, dict) else {}
+        row: dict[str, Any] = {
+            "adset_internal_id": adset.id,
+            "adset_meta_id": aid_meta,
+            "adset_name": (adset.name or "").strip(),
+            "campaign_name": (campaign_name or "").strip(),
+            "status": (adset.status or "").strip(),
+            "targeting_detail": _summarize_meta_targeting_detailed(raw_dict),
+            "targeting_raw": raw_dict,
+        }
+        row.update(m)
+        row["total_spend"] = m["spend"]
+        row["total_conversions"] = m["total_leads"]
+        row["cpl"] = m["cpl_meta"]
+        adset_detail_rows.append(row)
+    adset_detail_rows.sort(key=lambda x: (x["total_spend"], x["total_conversions"]), reverse=True)
+
+    ps = max(1, min(int(page_size), 50))
+    pg = max(1, int(page))
+    total_adsets = len(adset_detail_rows)
+    total_pages = max(1, (total_adsets + ps - 1) // ps) if total_adsets else 1
+    if pg > total_pages:
+        pg = total_pages
+    start = (pg - 1) * ps
+    page_rows = adset_detail_rows[start : start + ps]
+
+    return {
+        "adset_detail_rows": page_rows,
+        "adset_page": pg,
+        "adset_page_size": ps,
+        "adset_total_count": total_adsets,
+        "adset_total_pages": total_pages,
+        "unique_adset_count": len(agg_rows),
+        "unique_total_spend": round(unique_spend, 2),
+        "unique_total_conversions": unique_conv,
+        "unique_cpl": round(unique_cpl, 2),
+    }
+
+
+def _marketing_redirect_preserve_query(path: str, request: Request, tab: str | None = None) -> RedirectResponse:
+    """Redirect con stessi query param; opzionalmente imposta/sostituisce tab=."""
+    pairs: list[tuple[str, str]] = [(k, v) for k, v in request.query_params.multi_items() if k != "tab"]
+    if tab is not None:
+        pairs.append(("tab", tab))
+    qs = urlencode(pairs)
+    url = f"{path}?{qs}" if qs else path
+    return RedirectResponse(url=url, status_code=302)
 
 
 def _empty_totals_for_analysis_template() -> dict[str, Any]:
@@ -659,191 +1213,100 @@ def _meta_marketing_conversions_sum_by_day(
     return out
 
 
-@router.get("/marketing/analysis")
-async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
+async def _marketing_analysis_page(request: Request, db: Session, *, layout: str):
     """
-    Vista Analysis: filtri + KPI aggregati sui MetaMarketingData.
-    I grafici verranno definiti in una fase successiva.
+    layout='main': tab Analisi + Lavorazioni lead (/marketing/analysis).
+    layout='posizionamenti': tab Breakdown + Creatività per posizionamenti.
     """
+    user = request.session.get('user')
+    if not user:
+        return RedirectResponse(url='/')
+
+    current_user = db.query(User).filter(User.email == user.get('email')).first()
+    if not current_user:
+        return RedirectResponse(url='/')
+
+    params = request.query_params
+    _tab_raw = (params.get("tab") or "").strip().lower()
+
+    if layout == "main":
+        if _tab_raw in ("breakdown", "placement_creative"):
+            return _marketing_redirect_preserve_query("/marketing/analysis-posizionamenti", request, _tab_raw)
+        analysis_tab = _tab_raw if _tab_raw in ("analysis", "lead_wip") else "analysis"
+    else:
+        if _tab_raw in ("analysis", "lead_wip"):
+            return _marketing_redirect_preserve_query("/marketing/analysis", request, _tab_raw)
+        analysis_tab = _tab_raw if _tab_raw in ("breakdown", "placement_creative") else "breakdown"
+
+    selected_account_id = params.get("account_id") or ""
+    selected_campaign_id = params.get("campaign_id") or ""
+    selected_adset_id_param = params.get("adset_id") or ""
     try:
-        user = request.session.get('user')
-        if not user:
-            return RedirectResponse(url='/')
+        selected_adset_id = int(selected_adset_id_param) if selected_adset_id_param else None
+    except ValueError:
+        selected_adset_id = None
 
-        current_user = db.query(User).filter(User.email == user.get('email')).first()
-        if not current_user:
-            return RedirectResponse(url='/')
+    campaign_name_q = (params.get("campaign_name") or "").strip()
+    adset_name_q = (params.get("adset_name") or "").strip()
+    creative_name_q = (params.get("creative_name") or "").strip()
+    # Nessun filtro stato/piattaforma in UI: sempre tutte le campagne e tutte le piattaforme nei dati aggregati.
+    analysis_status = "all"
+    analysis_platform = "all"
 
-        # Filtri base
-        params = request.query_params
-        _tab_raw = (params.get("tab") or "analysis").strip().lower()
-        analysis_tab = _tab_raw if _tab_raw in (
-            "analysis",
-            "breakdown",
-            "placement_creative",
-            "lead_wip",
-        ) else "analysis"
+    af = dict(
+        selected_account_id=selected_account_id,
+        selected_campaign_id=selected_campaign_id,
+        selected_adset_id=selected_adset_id,
+        campaign_name_q=campaign_name_q,
+        adset_name_q=adset_name_q,
+        creative_name_q=creative_name_q,
+        analysis_status=analysis_status,
+    )
+    placement_creative_expand_by_ad = bool(selected_adset_id) or bool(adset_name_q)
 
-        selected_account_id = params.get("account_id") or ""
-        selected_campaign_id = params.get("campaign_id") or ""
-        selected_adset_id_param = params.get("adset_id") or ""
-        try:
-            selected_adset_id = int(selected_adset_id_param) if selected_adset_id_param else None
-        except ValueError:
-            selected_adset_id = None
+    # Date range: default inizio mese corrente → ieri (allineato a /marketing)
+    date_from_str = params.get('date_from')
+    date_to_str = params.get('date_to')
+    _def_from, _def_to = default_marketing_filter_date_range()
 
-        campaign_name_q = (params.get("campaign_name") or "").strip()
-        adset_name_q = (params.get("adset_name") or "").strip()
-        creative_name_q = (params.get("creative_name") or "").strip()
-        # Nessun filtro stato/piattaforma in UI: sempre tutte le campagne e tutte le piattaforme nei dati aggregati.
-        analysis_status = "all"
-        analysis_platform = "all"
+    try:
+        date_from = datetime.strptime(date_from_str, '%Y-%m-%d') if date_from_str else _def_from
+    except Exception:
+        date_from = _def_from
 
-        af = dict(
-            selected_account_id=selected_account_id,
-            selected_campaign_id=selected_campaign_id,
-            selected_adset_id=selected_adset_id,
-            campaign_name_q=campaign_name_q,
-            adset_name_q=adset_name_q,
-            creative_name_q=creative_name_q,
-            analysis_status=analysis_status,
-        )
-        placement_creative_expand_by_ad = bool(selected_adset_id) or bool(adset_name_q)
-
-        # Date range con default ultimi 30 giorni
-        date_from_str = params.get('date_from')
-        date_to_str = params.get('date_to')
-
-        try:
-            date_from = datetime.strptime(date_from_str, '%Y-%m-%d') if date_from_str else datetime.now() - timedelta(days=30)
-        except Exception:
-            date_from = datetime.now() - timedelta(days=30)
-
-        try:
-            if date_to_str:
-                date_to = datetime.strptime(date_to_str, '%Y-%m-%d').replace(
-                    hour=23, minute=59, second=59, microsecond=999999
-                )
-            else:
-                date_to = datetime.now()
-        except Exception:
-            date_to = datetime.now()
-
-        # Dati per JSON gerarchia (filtri combobox / export lato client se presenti)
-        accounts = (
-            db.query(MetaAccount).filter(MetaAccount.is_active == True).order_by(MetaAccount.name).all()
-        )
-        campaigns = (
-            db.query(MetaCampaign)
-            .join(MetaAccount)
-            .filter(MetaAccount.is_active == True)
-            .options(joinedload(MetaCampaign.account))
-            .order_by(MetaCampaign.name)
-            .all()
-        )
-        adsets = (
-            db.query(MetaAdSet)
-            .join(MetaCampaign)
-            .join(MetaAccount)
-            .filter(MetaAccount.is_active == True)
-            .options(joinedload(MetaAdSet.campaign).joinedload(MetaCampaign.account))
-            .order_by(MetaAdSet.name)
-            .all()
-        )
-
-        # Tab solo placement/creative: evita lead .all(), breakdown e serie giornaliere (timeout proxy).
-        # Un solo aggregato Meta per i KPI in tab Analisi se l'utente cambia tab senza ricaricare (pushState).
-        if analysis_tab == "placement_creative":
-            mmd_kpis_pc = _compute_mmd_kpis_from_aggregate(db, date_from, date_to, af, analysis_platform)
-            ts_pc = mmd_kpis_pc["total_spend"]
-            tcv_pc = mmd_kpis_pc["total_conversions"]
-            g_cpl_pc = (ts_pc / tcv_pc) if tcv_pc > 0 else 0.0
-            totals_pc = _empty_totals_for_analysis_template()
-            totals_pc.update(
-                {
-                    "total_spend": round(ts_pc, 2),
-                    "total_impressions": mmd_kpis_pc["total_impressions"],
-                    "total_clicks": mmd_kpis_pc["total_clicks"],
-                    "total_conversions": tcv_pc,
-                    "global_cpl": round(g_cpl_pc, 2),
-                    "avg_ctr": round(mmd_kpis_pc["avg_ctr"], 2),
-                    "avg_cpc": round(mmd_kpis_pc["avg_cpc"], 4),
-                    "avg_cpm": round(mmd_kpis_pc["avg_cpm"], 2),
-                }
+    try:
+        if date_to_str:
+            date_to = datetime.strptime(date_to_str, '%Y-%m-%d').replace(
+                hour=23, minute=59, second=59, microsecond=999999
             )
-            (
-                placement_creative_by_platform,
-                placement_position_options_facebook,
-                placement_position_options_instagram,
-                selected_pc_position_facebook,
-                selected_pc_position_instagram,
-            ) = _compute_placement_creative_tab_data(
-                db, date_from, date_to, af, placement_creative_expand_by_ad, params
-            )
-            analysis_filter_hierarchy: dict[str, Any] = {
-                "accounts": [
-                    {"account_id": str(a.account_id or "").strip(), "name": (a.name or "").strip()}
-                    for a in accounts
-                ],
-                "campaigns": [
-                    {
-                        "campaign_id": str(c.campaign_id or "").strip(),
-                        "name": (c.name or "").strip(),
-                        "account_id": str(c.account.account_id or "").strip() if c.account else "",
-                    }
-                    for c in campaigns
-                ],
-                "adsets": [
-                    {
-                        "id": int(ad.id),
-                        "name": (ad.name or "").strip(),
-                        "campaign_id": str(ad.campaign.campaign_id or "").strip() if ad.campaign else "",
-                        "account_id": str(ad.campaign.account.account_id or "").strip()
-                        if ad.campaign and ad.campaign.account
-                        else "",
-                    }
-                    for ad in adsets
-                ],
-            }
-            return templates.TemplateResponse(
-                request,
-                "marketing_analysis.html",
-                {
-                    "request": request,
-                    "title": "Marketing Analysis",
-                    "user": user,
-                    "accounts": accounts,
-                    "campaigns": campaigns,
-                    "adsets": adsets,
-                    "analysis_filter_hierarchy_json": _htmlsafe_json_for_script(analysis_filter_hierarchy),
-                    "totals": totals_pc,
-                    "chart_points": [],
-                    "distribution_points": [],
-                    "platform_totals": {"facebook": {}, "instagram": {}},
-                    "platform_chart_points": {"facebook": [], "instagram": []},
-                    "platform_distribution_points": {"facebook": [], "instagram": []},
-                    "placement_insights_by_platform": {"facebook": [], "instagram": []},
-                    "placement_creative_by_platform": placement_creative_by_platform,
-                    "placement_cpl_by_platform": {"facebook": None, "instagram": None},
-                    "selected_pc_position_facebook": selected_pc_position_facebook,
-                    "selected_pc_position_instagram": selected_pc_position_instagram,
-                    "placement_position_options_facebook": placement_position_options_facebook,
-                    "placement_position_options_instagram": placement_position_options_instagram,
-                    "placement_creative_expand_by_ad": placement_creative_expand_by_ad,
-                    "selected_account_id": selected_account_id,
-                    "selected_campaign_id": selected_campaign_id,
-                    "selected_adset_id": selected_adset_id,
-                    "selected_campaign_name": campaign_name_q,
-                    "selected_adset_name": adset_name_q,
-                    "selected_creative_name": creative_name_q,
-                    "date_from": date_from.strftime('%Y-%m-%d'),
-                    "date_to": date_to.strftime('%Y-%m-%d'),
-                    "active_page": "marketing_analysis",
-                    "analysis_tab": analysis_tab,
-                    "lavorazione_filter_ui": lavorazioni_heatmap_lavorazione_filter_ui_payload(),
-                },
-            )
+        else:
+            date_to = _def_to
+    except Exception:
+        date_to = _def_to
 
+    # Dati per JSON gerarchia (filtri combobox / export lato client se presenti)
+    accounts = (
+        db.query(MetaAccount).filter(MetaAccount.is_active == True).order_by(MetaAccount.name).all()
+    )
+    campaigns = (
+        db.query(MetaCampaign)
+        .join(MetaAccount)
+        .filter(MetaAccount.is_active == True)
+        .options(joinedload(MetaCampaign.account))
+        .order_by(MetaCampaign.name)
+        .all()
+    )
+    adsets = (
+        db.query(MetaAdSet)
+        .join(MetaCampaign)
+        .join(MetaAccount)
+        .filter(MetaAccount.is_active == True)
+        .options(joinedload(MetaAdSet.campaign).joinedload(MetaCampaign.account))
+        .order_by(MetaAdSet.name)
+        .all()
+    )
+
+    if layout == "main":
         # KPI principali: una query aggregata (niente .all() su tutte le righe giornaliere)
         mmd_kpis = _compute_mmd_kpis_from_aggregate(db, date_from, date_to, af, analysis_platform)
         total_spend = mmd_kpis["total_spend"]
@@ -1104,7 +1567,41 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
         totals["magellano_doppioni_pct"] = round((total_magellano_doppioni / total_conversions * 100), 1) if total_conversions > 0 else 0
         totals["magellano_scartate_pct"] = round((total_magellano_scartate / leads_count * 100), 1) if leads_count > 0 else 0
         totals["ulixe_scartate_pct"] = round((total_ulixe_scartate / leads_count * 100), 1) if leads_count > 0 else 0
+    else:
+        mmd_kpis = _compute_mmd_kpis_from_aggregate(db, date_from, date_to, af, analysis_platform)
+        totals = _empty_totals_for_analysis_template()
+        ts = mmd_kpis["total_spend"]
+        tcv = mmd_kpis["total_conversions"]
+        g_cpl = (ts / tcv) if tcv > 0 else 0.0
+        totals.update(
+            {
+                "total_spend": round(ts, 2),
+                "total_impressions": mmd_kpis["total_impressions"],
+                "total_clicks": mmd_kpis["total_clicks"],
+                "total_conversions": tcv,
+                "global_cpl": round(g_cpl, 2),
+                "avg_ctr": round(mmd_kpis["avg_ctr"], 2),
+                "avg_cpc": round(mmd_kpis["avg_cpc"], 4),
+                "avg_cpm": round(mmd_kpis["avg_cpm"], 2),
+            }
+        )
+        chart_points = []
+        distribution_points = []
 
+
+    if layout == "posizionamenti":
+        platform_totals = {
+            "facebook": {},
+            "instagram": {},
+        }
+        platform_chart_points = {
+            "facebook": [],
+            "instagram": [],
+        }
+        platform_distribution_points = {
+            "facebook": [],
+            "instagram": [],
+        }
         # Breakdown per piattaforma: aggregate SQL su meta_marketing_placement (layer B)
         for platform_key in ("facebook", "instagram"):
             p_kpis = _compute_mpp_kpis_from_aggregate(db, date_from, date_to, af, platform_key)
@@ -1410,73 +1907,229 @@ async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
             "facebook": _build_platform_placement_chart("facebook"),
             "instagram": _build_platform_placement_chart("instagram"),
         }
+    else:
+        platform_totals = {"facebook": {}, "instagram": {}}
+        platform_chart_points = {"facebook": [], "instagram": []}
+        platform_distribution_points = {"facebook": [], "instagram": []}
+        placement_insights_by_platform = {"facebook": [], "instagram": []}
+        placement_creative_by_platform = {"facebook": [], "instagram": []}
+        placement_position_options_facebook = []
+        placement_position_options_instagram = []
+        selected_pc_position_facebook = (params.get("pc_position_facebook") or "").strip()
+        selected_pc_position_instagram = (params.get("pc_position_instagram") or "").strip()
+        placement_cpl_by_platform = {"facebook": None, "instagram": None}
 
-        analysis_filter_hierarchy: dict[str, Any] = {
-            "accounts": [
-                {"account_id": str(a.account_id or "").strip(), "name": (a.name or "").strip()}
-                for a in accounts
-            ],
-            "campaigns": [
-                {
-                    "campaign_id": str(c.campaign_id or "").strip(),
-                    "name": (c.name or "").strip(),
-                    "account_id": str(c.account.account_id or "").strip() if c.account else "",
-                }
-                for c in campaigns
-            ],
-            "adsets": [
-                {
-                    "id": int(ad.id),
-                    "name": (ad.name or "").strip(),
-                    "campaign_id": str(ad.campaign.campaign_id or "").strip() if ad.campaign else "",
-                    "account_id": str(ad.campaign.account.account_id or "").strip()
-                    if ad.campaign and ad.campaign.account
-                    else "",
-                }
-                for ad in adsets
-            ],
-        }
+
+    analysis_filter_hierarchy: dict[str, Any] = {
+        "accounts": [
+            {"account_id": str(a.account_id or "").strip(), "name": (a.name or "").strip()}
+            for a in accounts
+        ],
+        "campaigns": [
+            {
+                "campaign_id": str(c.campaign_id or "").strip(),
+                "name": (c.name or "").strip(),
+                "account_id": str(c.account.account_id or "").strip() if c.account else "",
+            }
+            for c in campaigns
+        ],
+        "adsets": [
+            {
+                "id": int(ad.id),
+                "name": (ad.name or "").strip(),
+                "campaign_id": str(ad.campaign.campaign_id or "").strip() if ad.campaign else "",
+                "account_id": str(ad.campaign.account.account_id or "").strip()
+                if ad.campaign and ad.campaign.account
+                else "",
+            }
+            for ad in adsets
+        ],
+    }
+
+    page_title = "Marketing Analysis" if layout == "main" else "Analisi Posizionamenti"
+    active_pg = "marketing_analysis" if layout == "main" else "marketing_analysis_posizionamenti"
+    analysis_allowed_tabs = ["analysis", "lead_wip"] if layout == "main" else ["breakdown", "placement_creative"]
+    analysis_default_tab = "analysis" if layout == "main" else "breakdown"
+    filters_reset_path = "/marketing/analysis" if layout == "main" else "/marketing/analysis-posizionamenti"
+
+    return templates.TemplateResponse(
+        request,
+        "marketing_analysis.html",
+        {
+            "request": request,
+            "title": page_title,
+            "user": user,
+            "accounts": accounts,
+            "campaigns": campaigns,
+            "adsets": adsets,
+            "analysis_filter_hierarchy_json": _htmlsafe_json_for_script(analysis_filter_hierarchy),
+            "totals": totals,
+            "chart_points": chart_points,
+            "distribution_points": distribution_points,
+            "platform_totals": platform_totals,
+            "platform_chart_points": platform_chart_points,
+            "platform_distribution_points": platform_distribution_points,
+            "placement_insights_by_platform": placement_insights_by_platform,
+            "placement_creative_by_platform": placement_creative_by_platform,
+            "placement_cpl_by_platform": placement_cpl_by_platform,
+            "selected_pc_position_facebook": selected_pc_position_facebook,
+            "selected_pc_position_instagram": selected_pc_position_instagram,
+            "placement_position_options_facebook": placement_position_options_facebook,
+            "placement_position_options_instagram": placement_position_options_instagram,
+            "placement_creative_expand_by_ad": placement_creative_expand_by_ad,
+            "selected_account_id": selected_account_id,
+            "selected_campaign_id": selected_campaign_id,
+            "selected_adset_id": selected_adset_id,
+            "selected_campaign_name": campaign_name_q,
+            "selected_adset_name": adset_name_q,
+            "selected_creative_name": creative_name_q,
+            "date_from": date_from.strftime('%Y-%m-%d'),
+            "date_to": date_to.strftime('%Y-%m-%d'),
+            "active_page": active_pg,
+            "analysis_tab": analysis_tab,
+            "analysis_layout": layout,
+            "analysis_allowed_tabs": analysis_allowed_tabs,
+            "analysis_default_tab": analysis_default_tab,
+            "analysis_filters_reset_path": filters_reset_path,
+            "lavorazione_filter_ui": lavorazioni_heatmap_lavorazione_filter_ui_payload(),
+        },
+    )
+
+
+@router.get("/marketing/analysis")
+async def marketing_analysis(request: Request, db: Session = Depends(get_db)):
+    try:
+        return await _marketing_analysis_page(request, db, layout="main")
+    except Exception as e:
+        logger.error(f"Errore nel route /marketing/analysis: {e}", exc_info=True)
+        raise
+
+
+@router.get("/marketing/analysis-posizionamenti")
+async def marketing_analysis_posizionamenti(request: Request, db: Session = Depends(get_db)):
+    try:
+        return await _marketing_analysis_page(request, db, layout="posizionamenti")
+    except Exception as e:
+        logger.error(f"Errore nel route /marketing/analysis-posizionamenti: {e}", exc_info=True)
+        raise
+
+
+def _interessi_pagination_urls(request: Request, total_pages: int, current_page: int) -> dict[str, Any]:
+    """Link prev/next per GET /marketing/analysis-interessi preservando i query param."""
+    base = "/marketing/analysis-interessi"
+    pairs = [(k, v) for k, v in request.query_params.multi_items() if k not in ("page", "tab")]
+
+    def _url(p: int) -> str:
+        q = list(pairs)
+        if p > 1:
+            q.append(("page", str(p)))
+        return f"{base}?{urlencode(q)}" if q else base
+
+    return {
+        "prev_url": _url(current_page - 1) if current_page > 1 else None,
+        "next_url": _url(current_page + 1) if current_page < total_pages else None,
+        "first_url": _url(1),
+    }
+
+
+@router.get("/marketing/analysis-interessi")
+async def marketing_analysis_interessi(request: Request, db: Session = Depends(get_db)):
+    """Ad set con metriche Meta nel periodo e targeting completo (stessi filtri Analysis; filtro opzionale su interessi nel targeting)."""
+    try:
+        user = request.session.get("user")
+        if not user:
+            return RedirectResponse(url="/")
+        if not db.query(User).filter(User.email == user.get("email")).first():
+            return RedirectResponse(url="/")
+
+        params = request.query_params
+        selected_account_id = params.get("account_id") or ""
+        selected_campaign_id = params.get("campaign_id") or ""
+        selected_adset_id_param = params.get("adset_id") or ""
+        try:
+            selected_adset_id = int(selected_adset_id_param) if selected_adset_id_param else None
+        except ValueError:
+            selected_adset_id = None
+
+        campaign_name_q = (params.get("campaign_name") or "").strip()
+        adset_name_q = (params.get("adset_name") or "").strip()
+        interest_name_q = (params.get("interest_name") or "").strip()
+        analysis_status = "all"
+        analysis_platform = "all"
+
+        try:
+            page = int(params.get("page") or "1")
+        except ValueError:
+            page = 1
+        try:
+            page_size = int(params.get("page_size") or "10")
+        except ValueError:
+            page_size = 10
+
+        af = dict(
+            selected_account_id=selected_account_id,
+            selected_campaign_id=selected_campaign_id,
+            selected_adset_id=selected_adset_id,
+            campaign_name_q=campaign_name_q,
+            adset_name_q=adset_name_q,
+            creative_name_q="",
+            analysis_status=analysis_status,
+        )
+
+        date_from_str = params.get("date_from")
+        date_to_str = params.get("date_to")
+        _def_from_i, _def_to_i = default_marketing_filter_date_range()
+        try:
+            date_from = datetime.strptime(date_from_str, "%Y-%m-%d") if date_from_str else _def_from_i
+        except Exception:
+            date_from = _def_from_i
+        try:
+            if date_to_str:
+                date_to = datetime.strptime(date_to_str, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59, microsecond=999999
+                )
+            else:
+                date_to = _def_to_i
+        except Exception:
+            date_to = _def_to_i
+
+        interest_payload = _build_interests_marketing_analysis(
+            db,
+            date_from,
+            date_to,
+            af,
+            analysis_platform=analysis_platform,
+            interest_name_q=interest_name_q,
+            page=page,
+            page_size=page_size,
+        )
+
+        tp = int(interest_payload.get("adset_total_pages") or 1)
+        cp = int(interest_payload.get("adset_page") or 1)
+        interessi_pagination = _interessi_pagination_urls(request, tp, cp)
 
         return templates.TemplateResponse(
             request,
-            "marketing_analysis.html",
+            "marketing_analysis_interessi.html",
             {
                 "request": request,
-                "title": "Marketing Analysis",
+                "title": "Targeting ad set",
                 "user": user,
-                "accounts": accounts,
-                "campaigns": campaigns,
-                "adsets": adsets,
-                "analysis_filter_hierarchy_json": _htmlsafe_json_for_script(analysis_filter_hierarchy),
-                "totals": totals,
-                "chart_points": chart_points,
-                "distribution_points": distribution_points,
-                "platform_totals": platform_totals,
-                "platform_chart_points": platform_chart_points,
-                "platform_distribution_points": platform_distribution_points,
-                "placement_insights_by_platform": placement_insights_by_platform,
-                "placement_creative_by_platform": placement_creative_by_platform,
-                "placement_cpl_by_platform": placement_cpl_by_platform,
-                "selected_pc_position_facebook": selected_pc_position_facebook,
-                "selected_pc_position_instagram": selected_pc_position_instagram,
-                "placement_position_options_facebook": placement_position_options_facebook,
-                "placement_position_options_instagram": placement_position_options_instagram,
-                "placement_creative_expand_by_ad": placement_creative_expand_by_ad,
+                "active_page": "marketing_analysis_interessi",
+                "date_from": date_from.strftime("%Y-%m-%d"),
+                "date_to": date_to.strftime("%Y-%m-%d"),
                 "selected_account_id": selected_account_id,
                 "selected_campaign_id": selected_campaign_id,
                 "selected_adset_id": selected_adset_id,
                 "selected_campaign_name": campaign_name_q,
                 "selected_adset_name": adset_name_q,
-                "selected_creative_name": creative_name_q,
-                "date_from": date_from.strftime('%Y-%m-%d'),
-                "date_to": date_to.strftime('%Y-%m-%d'),
-                "active_page": "marketing_analysis",
-                "analysis_tab": analysis_tab,
-                "lavorazione_filter_ui": lavorazioni_heatmap_lavorazione_filter_ui_payload(),
+                "selected_interest_name": interest_name_q,
+                "interest_payload": interest_payload,
+                "interessi_pagination": interessi_pagination,
             },
         )
     except Exception as e:
-        logger.error(f"Errore nel route /marketing/analysis: {e}", exc_info=True)
+        logger.error(f"Errore nel route /marketing/analysis-interessi: {e}", exc_info=True)
         raise
 
 
@@ -1491,19 +2144,20 @@ def _lavorazioni_scope_from_request(request: Request, db: Session) -> dict | Non
     params = request.query_params
     date_from_s = params.get("date_from") or ""
     date_to_s = params.get("date_to") or ""
+    _def_from_l, _def_to_l = default_marketing_filter_date_range()
     try:
-        date_from_obj = datetime.strptime(date_from_s, "%Y-%m-%d") if date_from_s else datetime.now() - timedelta(days=30)
+        date_from_obj = datetime.strptime(date_from_s, "%Y-%m-%d") if date_from_s else _def_from_l
     except ValueError:
-        date_from_obj = datetime.now() - timedelta(days=30)
+        date_from_obj = _def_from_l
     try:
         if date_to_s:
             date_to_obj = datetime.strptime(date_to_s, "%Y-%m-%d").replace(
                 hour=23, minute=59, second=59, microsecond=999999
             )
         else:
-            date_to_obj = datetime.now()
+            date_to_obj = _def_to_l
     except ValueError:
-        date_to_obj = datetime.now()
+        date_to_obj = _def_to_l
 
     meta_account_id = (params.get("account_id") or "").strip() or None
     meta_campaign_id = (params.get("campaign_id") or "").strip() or None

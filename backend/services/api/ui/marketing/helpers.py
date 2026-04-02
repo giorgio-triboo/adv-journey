@@ -127,6 +127,22 @@ def _get_ricavo_from_rcrm_temp(db: Session, date_from, date_to) -> float:
     return total
 
 
+def default_marketing_filter_date_range(now: datetime | None = None) -> tuple[datetime, datetime]:
+    """
+    Periodo predefinito filtri marketing: dal primo giorno del mese corrente a ieri (fine giornata).
+    Il 1° del mese, «inizio mese» è dopo ieri: si usa solo ieri come estremo inferiore (intervallo di un giorno).
+    """
+    n = now or datetime.now()
+    yesterday_d = n.date() - timedelta(days=1)
+    month_start_d = n.replace(day=1, hour=0, minute=0, second=0, microsecond=0).date()
+    from_d = month_start_d
+    if from_d > yesterday_d:
+        from_d = yesterday_d
+    date_from = datetime.combine(from_d, datetime.min.time())
+    date_to = datetime.combine(yesterday_d, datetime.max.time()).replace(microsecond=999999)
+    return date_from, date_to
+
+
 def _lead_date_filter(date_from_obj, date_to_obj):
     """Filtra lead per data: usa SEMPRE magellano_subscr_date (lead senza data subscr. escluse)."""
     date_from_d = date_from_obj.date() if hasattr(date_from_obj, "date") else date_from_obj

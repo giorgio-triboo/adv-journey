@@ -137,17 +137,26 @@ def _safe(value: Any) -> str:
     return str(value)
 
 
-def _parse_date_range(filters: dict[str, Any]) -> tuple[datetime, datetime]:
+def _parse_date_range(
+    filters: dict[str, Any], *, marketing_defaults: bool = False
+) -> tuple[datetime, datetime]:
     date_from = filters.get("date_from")
     date_to = filters.get("date_to")
+    if marketing_defaults:
+        from services.api.ui.marketing.helpers import default_marketing_filter_date_range
+
+        def_from, def_to = default_marketing_filter_date_range()
+    else:
+        def_from = datetime.now() - timedelta(days=30)
+        def_to = datetime.now()
     try:
-        from_obj = datetime.strptime(date_from, "%Y-%m-%d") if date_from else datetime.now() - timedelta(days=30)
+        from_obj = datetime.strptime(date_from, "%Y-%m-%d") if date_from else def_from
     except Exception:
-        from_obj = datetime.now() - timedelta(days=30)
+        from_obj = def_from
     try:
-        to_obj = datetime.strptime(date_to, "%Y-%m-%d") if date_to else datetime.now()
+        to_obj = datetime.strptime(date_to, "%Y-%m-%d") if date_to else def_to
     except Exception:
-        to_obj = datetime.now()
+        to_obj = def_to
     return from_obj, to_obj
 
 
@@ -364,7 +373,7 @@ def _export_lavorazioni(db, subsection: str, filters: dict[str, Any]) -> tuple[l
 
 
 def _export_marketing(db, filters: dict[str, Any]) -> tuple[list[str], list[dict[str, Any]], str]:
-    date_from_obj, date_to_obj = _parse_date_range(filters)
+    date_from_obj, date_to_obj = _parse_date_range(filters, marketing_defaults=True)
     # Requisito utente: per Marketing usare SOLO il filtro data.
     # Export sempre completo su 3 livelli: campagna, adset, ad.
     campaigns_query = db.query(MetaCampaign).join(MetaAccount).filter(MetaAccount.is_active == True)
@@ -514,7 +523,7 @@ def _export_marketing_analysis_placement(db, filters: dict[str, Any]) -> tuple[l
     Export righe giornaliere da meta_marketing_placement (breakdown publisher_platform + platform_position),
     con gli stessi filtri della pagina /marketing/analysis (account / campagna / adset / periodo).
     """
-    date_from_obj, date_to_obj = _parse_date_range(filters)
+    date_from_obj, date_to_obj = _parse_date_range(filters, marketing_defaults=True)
 
     q = (
         db.query(

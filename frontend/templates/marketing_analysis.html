@@ -1,17 +1,22 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% set alayout = analysis_layout|default('main') %}
 <div class="animate-fadeInUp">
     <div class="mb-8">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <h1 class="text-3xl font-bold gradient-text leading-none">Marketing Analysis</h1>
+            <h1 class="text-3xl font-bold gradient-text leading-none">{{ title|default('Marketing Analysis', true) }}</h1>
             <button type="button" id="marketingAnalysisExportButton"
                     class="w-full sm:w-auto shrink-0 whitespace-nowrap px-5 py-2.5 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition-all active:scale-95 shadow-sm sm:self-center">
                 Export CSV
             </button>
         </div>
         <p class="text-neutral-500 mt-2">
+            {% if alayout == 'posizionamenti' %}
+            Breakdown per piattaforma e creatività per posizionamento (stessi filtri della pagina Analysis). I grafici sono una prima bozza e verranno raffinati in seguito.
+            {% else %}
             Analisi avanzata delle performance ADV con filtri e grafici di sintesi. I grafici sono una prima bozza e verranno raffinati in seguito.
+            {% endif %}
         </p>
     </div>
 
@@ -19,7 +24,7 @@
     <div class="glass-card mb-6 p-4 sticky top-4 z-20 bg-white/90 backdrop-blur border border-neutral-200">
         <form method="GET" id="analysisFiltersForm">
             <div class="hidden" aria-hidden="true">
-                <input type="hidden" name="tab" id="analysisActiveTab" value="{{ analysis_tab|default('analysis') }}">
+                <input type="hidden" name="tab" id="analysisActiveTab" value="{{ analysis_tab|default(analysis_default_tab|default('analysis'), true) }}">
             </div>
             <div class="flex flex-col gap-3 lg:flex-row lg:flex-nowrap lg:items-end lg:gap-3 lg:w-full">
                 <div class="w-full min-w-0 shrink-0 lg:w-[14rem] lg:flex-none">
@@ -53,7 +58,7 @@
                             class="w-full sm:flex-1 lg:w-auto whitespace-nowrap px-4 py-2.5 text-sm bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all active:scale-95">
                         Applica Filtri
                     </button>
-                    <a href="/marketing/analysis"
+                    <a href="{{ analysis_filters_reset_path|default('/marketing/analysis', true) }}"
                        class="w-full sm:flex-1 lg:w-auto whitespace-nowrap inline-flex items-center justify-center px-4 py-2.5 text-sm border border-neutral-300 bg-white text-neutral-800 font-semibold rounded-lg hover:bg-neutral-50 transition-all active:scale-95">
                         Azzera filtri
                     </a>
@@ -63,29 +68,35 @@
     </div>
 
     <div class="flex flex-wrap gap-2 mb-6" role="tablist" aria-label="Sezioni Marketing Analysis">
+        {% set def_tab = analysis_default_tab|default('analysis', true) %}
+        {% set cur_tab = analysis_tab|default(def_tab, true) %}
+        {% if alayout == 'main' %}
         <button type="button" id="tabBtnAnalysis" role="tab" data-analysis-tab="analysis"
-                class="px-4 py-2 rounded-lg font-medium transition-all {% if (analysis_tab|default('analysis')) == 'analysis' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
-                aria-selected="{{ 'true' if (analysis_tab|default('analysis')) == 'analysis' else 'false' }}">
+                class="px-4 py-2 rounded-lg font-medium transition-all {% if cur_tab == 'analysis' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
+                aria-selected="{{ 'true' if cur_tab == 'analysis' else 'false' }}">
             Analisi
         </button>
+        <button type="button" id="tabBtnLeadLavorazioni" role="tab" data-analysis-tab="lead_wip"
+                class="px-4 py-2 rounded-lg font-medium transition-all {% if cur_tab == 'lead_wip' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
+                aria-selected="{{ 'true' if cur_tab == 'lead_wip' else 'false' }}">
+            Lavorazioni lead
+        </button>
+        {% else %}
         <button type="button" id="tabBtnBreakdown" role="tab" data-analysis-tab="breakdown"
-                class="px-4 py-2 rounded-lg font-medium transition-all {% if (analysis_tab|default('analysis')) == 'breakdown' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
-                aria-selected="{{ 'true' if (analysis_tab|default('analysis')) == 'breakdown' else 'false' }}">
+                class="px-4 py-2 rounded-lg font-medium transition-all {% if cur_tab == 'breakdown' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
+                aria-selected="{{ 'true' if cur_tab == 'breakdown' else 'false' }}">
             Breakdown
         </button>
         <button type="button" id="tabBtnPlacementCreative" role="tab" data-analysis-tab="placement_creative"
-                class="px-4 py-2 rounded-lg font-medium transition-all {% if (analysis_tab|default('analysis')) == 'placement_creative' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
-                aria-selected="{{ 'true' if (analysis_tab|default('analysis')) == 'placement_creative' else 'false' }}">
+                class="px-4 py-2 rounded-lg font-medium transition-all {% if cur_tab == 'placement_creative' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
+                aria-selected="{{ 'true' if cur_tab == 'placement_creative' else 'false' }}">
             Creatività per posizionamento
         </button>
-        <button type="button" id="tabBtnLeadLavorazioni" role="tab" data-analysis-tab="lead_wip"
-                class="px-4 py-2 rounded-lg font-medium transition-all {% if (analysis_tab|default('analysis')) == 'lead_wip' %}bg-indigo-600 text-white shadow-sm{% else %}bg-neutral-100 text-neutral-700 hover:bg-neutral-200{% endif %}"
-                aria-selected="{{ 'true' if (analysis_tab|default('analysis')) == 'lead_wip' else 'false' }}">
-            Lavorazioni lead
-        </button>
+        {% endif %}
     </div>
 
-    <div id="panelAnalysis" class="{% if (analysis_tab|default('analysis')) != 'analysis' %}hidden{% endif %}">
+    {% if alayout == 'main' %}
+    <div id="panelAnalysis" class="{% if cur_tab != 'analysis' %}hidden{% endif %}">
     <!-- KPI Cards (nascoste, sostituite dalle card sottostanti) -->
     <div class="hidden">
         <!-- Speso -->
@@ -308,8 +319,10 @@
         </div>
     </div>
     </div>
+    {% endif %}
 
-    <div id="panelBreakdown" class="{% if (analysis_tab|default('analysis')) != 'breakdown' %}hidden{% endif %} mt-2">
+    {% if alayout == 'posizionamenti' %}
+    <div id="panelBreakdown" class="{% if cur_tab != 'breakdown' %}hidden{% endif %} mt-2">
     <!-- Breakdown: una card per piattaforma (totali Meta + tabella posizionamenti) -->
     <div class="mt-6">
         {% set fb = platform_totals.facebook if platform_totals is defined and platform_totals.facebook else {} %}
@@ -511,7 +524,7 @@
     </div>
     </div>
 
-    <div id="panelPlacementCreative" class="{% if (analysis_tab|default('analysis')) != 'placement_creative' %}hidden{% endif %} mt-2">
+    <div id="panelPlacementCreative" class="{% if cur_tab != 'placement_creative' %}hidden{% endif %} mt-2">
         <div class="mt-6">
             {% set pc_fb = placement_creative_by_platform.facebook if placement_creative_by_platform is defined and placement_creative_by_platform.facebook else [] %}
             {% set pc_ig = placement_creative_by_platform.instagram if placement_creative_by_platform is defined and placement_creative_by_platform.instagram else [] %}
@@ -663,8 +676,10 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
-    <div id="panelLeadLavorazioni" class="{% if (analysis_tab|default('analysis')) != 'lead_wip' %}hidden{% endif %} mt-2">
+    {% if alayout == 'main' %}
+    <div id="panelLeadLavorazioni" class="{% if cur_tab != 'lead_wip' %}hidden{% endif %} mt-2">
         <div class="glass-card p-6 bg-white border border-neutral-200 rounded-xl shadow-sm">
             <h2 class="text-lg font-semibold text-neutral-900">Lavorazioni lead</h2>
 
@@ -734,8 +749,10 @@
             <p id="leadLavorazioniChartsError" class="hidden mt-4 text-sm text-red-600"></p>
         </div>
     </div>
+    {% endif %}
 </div>
 
+<script type="application/json" id="marketingAnalysisTabConfig">{{ {"allowed": analysis_allowed_tabs|default(["analysis","lead_wip"]), "defaultTab": analysis_default_tab|default("analysis")} | tojson }}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 {% if placement_cpl_by_platform and (placement_cpl_by_platform.facebook or placement_cpl_by_platform.instagram) %}
@@ -1076,8 +1093,19 @@
         if (rangeInput && hiddenFrom && hiddenTo && window.DateRangePicker && window.moment) {
             const form = rangeInput.closest('form');
 
-            const start = hiddenFrom.value ? moment(hiddenFrom.value, 'YYYY-MM-DD') : moment().subtract(29, 'days');
-            const end = hiddenTo.value ? moment(hiddenTo.value, 'YYYY-MM-DD') : moment();
+            function marketingDefaultRangeMoments() {
+                const yesterday = moment().subtract(1, 'days');
+                let s = moment().startOf('month');
+                if (s.isAfter(yesterday, 'day')) {
+                    s = yesterday.clone();
+                }
+                return { start: s, end: yesterday };
+            }
+            const dr = marketingDefaultRangeMoments();
+            const start = hiddenFrom.value ? moment(hiddenFrom.value, 'YYYY-MM-DD') : dr.start;
+            const end = hiddenTo.value ? moment(hiddenTo.value, 'YYYY-MM-DD') : dr.end;
+            hiddenFrom.value = start.format('YYYY-MM-DD');
+            hiddenTo.value = end.format('YYYY-MM-DD');
 
             new DateRangePicker(rangeInput, {
                 startDate: start,
@@ -1103,6 +1131,12 @@
                     'Ultimi 14 giorni': [moment().subtract(13, 'days'), moment()],
                     'Ultimi 28 giorni': [moment().subtract(27, 'days'), moment()],
                     'Ultimi 30 giorni': [moment().subtract(29, 'days'), moment()],
+                    'Mese → ieri': (function () {
+                        const y = moment().subtract(1, 'days');
+                        let s = moment().startOf('month');
+                        if (s.isAfter(y, 'day')) s = y.clone();
+                        return [s, y];
+                    })(),
                     'Questa settimana': [moment().startOf('week').add(1, 'days'), moment().endOf('week').add(1, 'days')],
                     'Settimana scorsa': [
                         moment().subtract(1, 'week').startOf('week').add(1, 'days'),
@@ -1170,6 +1204,24 @@
             }
         }
 
+        function getMarketingAnalysisTabConfig() {
+            const el = document.getElementById('marketingAnalysisTabConfig');
+            if (!el) {
+                return { allowedMap: { analysis: 1, lead_wip: 1 }, defaultTab: 'analysis' };
+            }
+            try {
+                const o = JSON.parse(el.textContent || '{}');
+                const list = o.allowed || ['analysis', 'lead_wip'];
+                const allowedMap = {};
+                list.forEach(function (k) {
+                    allowedMap[String(k).toLowerCase()] = 1;
+                });
+                return { allowedMap: allowedMap, defaultTab: (o.defaultTab || 'analysis').toLowerCase() };
+            } catch (e) {
+                return { allowedMap: { analysis: 1, lead_wip: 1 }, defaultTab: 'analysis' };
+            }
+        }
+
         function applyMarketingAnalysisTabPanels(which) {
             const panelA = document.getElementById('panelAnalysis');
             const panelB = document.getElementById('panelBreakdown');
@@ -1200,11 +1252,11 @@
 
         /** Dopo indietro/avanti: riallinea form + pannelli al query string corrente. */
         function applyMarketingAnalysisStateFromLocation() {
+            const tabCfg = getMarketingAnalysisTabConfig();
             const params = new URLSearchParams(window.location.search);
-            let t = (params.get('tab') || 'analysis').toLowerCase();
-            const allowed = { analysis: 1, breakdown: 1, placement_creative: 1, lead_wip: 1 };
-            if (!allowed[t]) {
-                t = 'analysis';
+            let t = (params.get('tab') || tabCfg.defaultTab || 'analysis').toLowerCase();
+            if (!tabCfg.allowedMap[t]) {
+                t = tabCfg.defaultTab || 'analysis';
             }
             const hiddenInput = document.getElementById('analysisActiveTab');
             if (hiddenInput) {

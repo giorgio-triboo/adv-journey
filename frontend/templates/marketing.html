@@ -147,8 +147,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const rangeInput = document.getElementById('marketingDateRange');
 
     if (hiddenFrom && hiddenTo && rangeInput && window.DateRangePicker && window.moment) {
-        const start = hiddenFrom.value ? moment(hiddenFrom.value, 'YYYY-MM-DD') : moment('2026-01-01');
-        const end = hiddenTo.value ? moment(hiddenTo.value, 'YYYY-MM-DD') : moment('2026-01-31');
+        function marketingDefaultRangeMoments() {
+            const yesterday = moment().subtract(1, 'days');
+            let start = moment().startOf('month');
+            if (start.isAfter(yesterday, 'day')) {
+                start = yesterday.clone();
+            }
+            return { start: start, end: yesterday };
+        }
+        const dr = marketingDefaultRangeMoments();
+        const start = hiddenFrom.value ? moment(hiddenFrom.value, 'YYYY-MM-DD') : dr.start;
+        const end = hiddenTo.value ? moment(hiddenTo.value, 'YYYY-MM-DD') : dr.end;
 
         hiddenFrom.value = start.format('YYYY-MM-DD');
         hiddenTo.value = end.format('YYYY-MM-DD');
@@ -178,6 +187,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 'Ultimi 28 giorni': [moment().subtract(27, 'days'), moment()],
                 'Ultimi 30 giorni': [moment().subtract(29, 'days'), moment()],
                 'Ultimi 60 giorni': [moment().subtract(59, 'days'), moment()],
+                'Mese → ieri': (function () {
+                    const y = moment().subtract(1, 'days');
+                    let s = moment().startOf('month');
+                    if (s.isAfter(y, 'day')) s = y.clone();
+                    return [s, y];
+                })(),
                 'Gennaio 2026': [moment('2026-01-01'), moment('2026-01-31')],
                 'Questa settimana': [moment().startOf('week').add(1, 'days'), moment().endOf('week').add(1, 'days')],
                 'Settimana scorsa': [
@@ -197,10 +212,16 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     } else if (hiddenFrom && hiddenTo) {
         const today = new Date();
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(today.getDate() - 30);
-        hiddenFrom.value = thirtyDaysAgo.toISOString().split('T')[0];
-        hiddenTo.value = today.toISOString().split('T')[0];
+        today.setHours(0, 0, 0, 0);
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        let fromD = monthStart;
+        if (fromD > yesterday) {
+            fromD = new Date(yesterday);
+        }
+        hiddenFrom.value = fromD.toISOString().split('T')[0];
+        hiddenTo.value = yesterday.toISOString().split('T')[0];
     }
     
     // Load thresholds, accounts and campaigns on page load
