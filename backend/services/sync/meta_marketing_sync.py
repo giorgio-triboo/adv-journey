@@ -265,7 +265,7 @@ def run(db: Session = None) -> dict:
     """
     Esegue il job di ingestion dati marketing Meta.
     
-    Returns: dict con statistiche {"accounts_synced": int, "errors": int}
+    Returns: dict con statistiche incl. ``failed_accounts`` (lista dict per alert email).
     """
     if db is None:
         db = SessionLocal()
@@ -273,7 +273,12 @@ def run(db: Session = None) -> dict:
     else:
         close_db = False
     
-    stats = {"accounts_synced": 0, "campaigns_synced": 0, "errors": 0}
+    stats = {
+        "accounts_synced": 0,
+        "campaigns_synced": 0,
+        "errors": 0,
+        "failed_accounts": [],
+    }
     
     try:
         # Auto sync allineata al comportamento manuale:
@@ -330,6 +335,13 @@ def run(db: Session = None) -> dict:
                     stats["accounts_synced"] += 1
                 else:
                     stats["errors"] += account_errors
+                    stats["failed_accounts"].append(
+                        {
+                            "account_id": account.account_id,
+                            "name": (account.name or "").strip(),
+                            "reason": f"{account_errors} errori nella sync marketing (vedi log)",
+                        }
+                    )
                     logger.warning(
                         "Meta Marketing Sync: account %s completed with %s errors",
                         account.account_id,
@@ -339,17 +351,36 @@ def run(db: Session = None) -> dict:
             except Exception as e:
                 logger.error(f"Error syncing Meta account {account.account_id}: {e}", exc_info=True)
                 stats["errors"] += 1
+                stats["failed_accounts"].append(
+                    {
+                        "account_id": account.account_id,
+                        "name": (getattr(account, "name", None) or "").strip(),
+                        "reason": str(e)[:500],
+                    }
+                )
         
         logger.info(f"Meta Marketing Sync ✅: {stats['accounts_synced']} accounts synced")
         
         # Invia alert se configurato (canale cron job meta_marketing_sync)
         from services.utils.alert_sender import send_sync_alert_if_needed
+        err_msg = None
+        if stats.get("errors", 0):
+            err_msg = f"{stats['errors']} errori durante la sync"
+            failed = stats.get("failed_accounts") or []
+            if failed:
+                parts = []
+                for fa in failed:
+                    aid = fa.get("account_id", "")
+                    nm = (fa.get("name") or "").strip()
+                    parts.append(f"{aid}" + (f" ({nm})" if nm else ""))
+                err_msg += f". Account interessati: {', '.join(parts)}"
+
         send_sync_alert_if_needed(
             db,
             "meta_marketing_sync",
             stats.get("errors", 0) == 0,
             {**stats, "target_date": target_date.isoformat()},
-            None if stats.get("errors", 0) == 0 else f"{stats['errors']} errori durante la sync",
+            err_msg,
         )
         
     except Exception as e:

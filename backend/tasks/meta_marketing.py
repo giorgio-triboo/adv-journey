@@ -116,6 +116,28 @@ def meta_manual_sync_task(
             from services.utils.alert_sender import send_sync_alert_if_needed
 
             err_count = int(stats.get("errors", 0) or 0)
+            acc_row = (
+                db.query(MetaAccount)
+                .filter(MetaAccount.account_id == account_id)
+                .first()
+            )
+            acc_name = (acc_row.name or "").strip() if acc_row else ""
+            failed_accounts = (
+                [
+                    {
+                        "account_id": account_id,
+                        "name": acc_name,
+                        "reason": f"{err_count} errori durante la sync manuale (vedi log)",
+                    }
+                ]
+                if err_count
+                else []
+            )
+            err_msg = None
+            if err_count:
+                err_msg = f"{err_count} errori durante la sync manuale. Account: {account_id}"
+                if acc_name:
+                    err_msg += f" ({acc_name})"
             send_sync_alert_if_needed(
                 db,
                 "meta_marketing_sync",
@@ -127,12 +149,9 @@ def meta_manual_sync_task(
                     "end_date": end_date_str,
                     "campaigns_synced": stats.get("campaigns_synced", 0),
                     "errors": err_count,
+                    "failed_accounts": failed_accounts,
                 },
-                error_message=(
-                    None
-                    if err_count == 0
-                    else f"{err_count} errori durante la sync manuale"
-                ),
+                error_message=err_msg,
             )
         except Exception:
             pass
@@ -152,6 +171,12 @@ def meta_manual_sync_task(
         try:
             from services.utils.alert_sender import send_sync_alert_if_needed
 
+            acc_row = (
+                db.query(MetaAccount)
+                .filter(MetaAccount.account_id == account_id)
+                .first()
+            )
+            acc_name = (acc_row.name or "").strip() if acc_row else ""
             send_sync_alert_if_needed(
                 db,
                 "meta_marketing_sync",
@@ -161,6 +186,13 @@ def meta_manual_sync_task(
                     "account_id": account_id,
                     "start_date": start_date_str,
                     "end_date": end_date_str,
+                    "failed_accounts": [
+                        {
+                            "account_id": account_id,
+                            "name": acc_name,
+                            "reason": str(e)[:500],
+                        }
+                    ],
                 },
                 str(e),
             )

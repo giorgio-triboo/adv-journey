@@ -2,6 +2,7 @@
 Servizio per invio email di alert e notifiche.
 Usa configurazione SMTP da variabili d'ambiente (.env).
 """
+from html import escape as html_escape
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -203,8 +204,10 @@ class EmailService:
                         <h3 style="margin-top: 0;">Statistiche</h3>
         """
         
-        # Aggiungi statistiche
+        # Aggiungi statistiche (liste strutturate es. failed_accounts gestite sotto)
         for key, value in stats.items():
+            if key == "failed_accounts":
+                continue
             if isinstance(value, (int, float)):
                 html += f"""
                         <div class="stat-row">
@@ -217,16 +220,41 @@ class EmailService:
                     html += f"""
                         <div class="stat-row">
                             <span class="stat-label">{key} - {sub_key.replace('_', ' ').title()}:</span>
-                            <span class="stat-value">{sub_val}</span>
+                            <span class="stat-value">{html_escape(str(sub_val))}</span>
                         </div>
-                """
+                    """
             elif value is not None and value != "":
                 html += f"""
                         <div class="stat-row">
                             <span class="stat-label">{key.replace('_', ' ').title()}:</span>
-                            <span class="stat-value">{value}</span>
+                            <span class="stat-value">{html_escape(str(value))}</span>
                         </div>
                 """
+        
+        failed_accounts = stats.get("failed_accounts") or []
+        if isinstance(failed_accounts, list) and failed_accounts:
+            html += """
+                        <div class="stat-row" style="display: block; border-bottom: none;">
+                            <span class="stat-label">Account in errore</span>
+                            <ul style="margin: 10px 0 0 0; padding-left: 20px; font-weight: 600; color: #111827;">
+            """
+            for item in failed_accounts:
+                if isinstance(item, dict):
+                    aid = html_escape(str(item.get("account_id", "")))
+                    nm = (item.get("name") or "").strip()
+                    reason = (item.get("reason") or "").strip()
+                    line = aid
+                    if nm:
+                        line += f" — {html_escape(nm)}"
+                    if reason:
+                        line += f"<br><span style=\"font-weight: 400; color: #4b5563; font-size: 13px;\">{html_escape(reason)}</span>"
+                    html += f"<li style=\"margin: 8px 0;\">{line}</li>"
+                else:
+                    html += f"<li style=\"margin: 8px 0;\">{html_escape(str(item))}</li>"
+            html += """
+                            </ul>
+                        </div>
+            """
         
         html += """
                     </div>
