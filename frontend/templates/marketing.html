@@ -565,6 +565,7 @@ function createCampaignRow(campaign) {
                 </svg>
                 <div class="flex-1">
                     <div class="font-semibold text-neutral-900">${escapeHtml(campaign.name)}</div>
+                    ${metaIdHtmlLine(campaign.campaign_id)}
                     <div class="text-sm text-neutral-500 flex items-center gap-2">
                         ${statusDot}
                         Campagna
@@ -778,6 +779,7 @@ function createAdsetRow(campaignId, adset) {
                 </svg>
                 <div class="flex-1">
                     <div class="font-medium text-neutral-800">${escapeHtml(adset.name)}</div>
+                    ${metaIdHtmlLine(adset.adset_id)}
                     <div class="text-sm text-neutral-500 flex items-center gap-2">
                         ${statusDot}
                         AdSet
@@ -989,6 +991,7 @@ function createAdRow(ad) {
                 ${(ad.creative_id && ad.id) ? `<div class="w-16 h-16 rounded border border-neutral-200 bg-neutral-100 overflow-hidden shrink-0"><img data-src="/api/marketing/proxy-image?ad_id=${ad.id}" alt="Creative" loading="lazy" class="lazy-creative-image w-16 h-16 object-cover" onerror="this.closest('div').style.display='none'"></div>` : ''}
                 <div class="flex-1">
                     <div class="font-medium text-neutral-700">${escapeHtml(ad.name)}</div>
+                    ${metaIdHtmlLine(ad.ad_id)}
                     <div class="text-sm text-neutral-500 flex items-center gap-2">
                         ${statusDot}
                         Creatività
@@ -1106,6 +1109,14 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+/** ID Meta tra nome e badge; nessun markup se il valore manca (stringa vuota). */
+function metaIdHtmlLine(metaId) {
+    if (metaId == null || String(metaId).trim() === '') {
+        return '';
+    }
+    return `<div class="text-xs text-neutral-400 font-mono tracking-tight">${escapeHtml(String(metaId))}</div>`;
 }
 
 function updateSummaryCards(totals) {
@@ -1354,6 +1365,7 @@ function createAdsetRowDirectly(adset) {
             <div class="flex items-center gap-3 flex-1">
                 <div class="flex-1">
                     <div class="font-medium text-neutral-800">${escapeHtml(adset.name)}</div>
+                    ${metaIdHtmlLine(adset.adset_id)}
                     <div class="text-sm text-neutral-500 flex items-center gap-2">
                         ${statusDot}
                         AdSet
