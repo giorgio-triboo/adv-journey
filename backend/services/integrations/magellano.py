@@ -403,6 +403,22 @@ class MagellanoService:
             read_kwargs = {"dtype": str}
             if lower_path.endswith(".csv"):
                 df = pd.read_csv(xls_path, **read_kwargs)
+                # Export Magellano / Excel (locale EU): spesso separatore `;` invece di `,`.
+                # Con sep sbagliato si ottiene una sola colonna → colonne core assenti → 0 lead.
+                probe_cols = {
+                    str(c).lstrip("\ufeff").strip().lower(): c for c in df.columns
+                }
+                has_email = bool(probe_cols.get("email"))
+                has_id_user = bool(
+                    probe_cols.get("id user")
+                    or probe_cols.get("id_user")
+                    or probe_cols.get("iduser")
+                )
+                if not (has_email and has_id_user):
+                    logger.info(
+                        "CSV: colonne core assenti con separatore predefinito, riprovo con sep=';'"
+                    )
+                    df = pd.read_csv(xls_path, sep=";", **read_kwargs)
             else:
                 df = pd.read_excel(xls_path, **read_kwargs)
             leads = []
