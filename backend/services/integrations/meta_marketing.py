@@ -8,11 +8,13 @@ from facebook_business.adobjects.campaign import Campaign
 from facebook_business.adobjects.adset import AdSet
 from facebook_business.adobjects.ad import Ad
 from facebook_business.adobjects.adsinsights import AdsInsights
+from facebook_business.adobjects.customaudience import CustomAudience
 from config import settings
 from models import now_rome
 import logging
 import time
 import json
+import copy
 import requests
 import traceback
 from typing import List, Dict, Optional, Any, Iterator
@@ -46,6 +48,8 @@ class MetaMarketingService:
         else:
             logger.warning("META_ACCESS_TOKEN not set. Meta Marketing service disabled.")
         self.last_quota_snapshot: Dict[str, Any] = {}
+        # Cache nomi Custom Audience per sync (stesso ID ripetuto su più ad set → una sola chiamata).
+        self._custom_audience_name_cache: Dict[str, str] = {}
 
     def _extract_usage_headers(self, headers: Dict[str, str]) -> Dict[str, Any]:
         """
@@ -498,9 +502,108 @@ class MetaMarketingService:
             logger.error(f"Error fetching tags for campaign {campaign_id}: {e}")
             return []
 
-    def get_adsets(self, campaign_id: str) -> List[Dict]:
+    def _get_custom_audience_name_cached(self, audience_id: str) -> str:
+        """
+        Legge il nome di una Custom Audience via Marketing API (campo name).
+        Usa cache in-memory sulla stessa istanza del service per ridurre chiamate e rispettare rate limit.
+        """
+        aid = str(audience_id).strip() if audience_id is not None else ""
+        if not aid:
+            return ""
+        if aid in self._custom_audience_name_cache:
+            return self._custom_audience_name_cache[aid]
+        if not self.access_token:
+            self._custom_audience_name_cache[aid] = ""
+            return ""
+
+        def _fetch_name() -> str:
+            obj = CustomAudience(aid)
+            obj.api_get(fields=["name"])
+            if hasattr(obj, "export_all_data"):
+                data = obj.export_all_data()
+                if isinstance(data, dict):
+                    return (data.get("name") or "").strip()
+            raw = obj.get("name") if hasattr(obj, "get") else ""
+            return (raw or "").strip() if isinstance(raw, str) else ""
+
+        try:
+            name = self._make_api_call_with_retry(_fetch_name)
+            self._custom_audience_name_cache[aid] = name
+            return name
+        except Exception as e:
+            logger.warning(
+                "Impossibile leggere nome Custom Audience %s: %s",
+                aid,
+                e,
+            )
+            self._custom_audience_name_cache[aid] = ""
+            return ""
+
+    def _enrich_custom_audience_list_in_place(self, entries: Any) -> None:
+        """Aggiunge name agli elementi {id} senza nome (muta la lista in place)."""
+        if not isinstance(entries, list):
+            return
+        for i, it in enumerate(entries):
+            if not isinstance(it, dict):
+                continue
+            raw_id = it.get("id")
+            sid = str(raw_id).strip() if raw_id is not None else ""
+            existing = (it.get("name") or "").strip()
+            if not sid or existing:
+                continue
+            resolved = self._get_custom_audience_name_cached(sid)
+            if resolved:
+                entries[i] = {**it, "name": resolved}
+
+    def enrich_targeting_custom_audience_names(self, targeting: Any) -> Dict[str, Any]:
+        """
+        Copia profonda del targeting con nomi Custom Audience risolti dove l'API ad set restituisce solo id.
+        """
+        if not targeting or not isinstance(targeting, dict):
+            return targeting if isinstance(targeting, dict) else {}
+        t = copy.deepcopy(targeting)
+        for key in ("custom_audiences", "excluded_custom_audiences"):
+            if key in t:
+                self._enrich_custom_audience_list_in_place(t[key])
+        flex = t.get("flexible_spec")
+        if isinstance(flex, list):
+            for block in flex:
+                if not isinstance(block, dict):
+                    continue
+                for key in ("custom_audiences", "excluded_custom_audiences"):
+                    if key in block:
+                        self._enrich_custom_audience_list_in_place(block[key])
+                excl = block.get("exclusions")
+                if isinstance(excl, dict):
+                    for key in ("custom_audiences", "excluded_custom_audiences"):
+                        if key in excl:
+                            self._enrich_custom_audience_list_in_place(excl[key])
+        return t
+
+    def _targeting_to_dict(self, targeting: Any) -> Dict[str, Any]:
+        """Normalizza il campo targeting dell'API (dict o oggetto SDK) in dict JSON-serializzabile."""
+        if not targeting:
+            return {}
+        if isinstance(targeting, dict):
+            return targeting
+        try:
+            if hasattr(targeting, "export_all_data"):
+                exported = targeting.export_all_data()
+                return exported if isinstance(exported, dict) else {}
+            if hasattr(targeting, "__dict__"):
+                return dict(targeting.__dict__)
+            return dict(targeting) if targeting else {}
+        except Exception as e:
+            logger.warning("Error converting targeting to dict: %s, using empty dict", e)
+            return {}
+
+    def get_adsets(self, campaign_id: str, enrich_custom_audience_names: bool = True) -> List[Dict]:
         """
         Recupera adset per una campagna.
+
+        Args:
+            campaign_id: ID campagna Meta.
+            enrich_custom_audience_names: Se True, risolve i name delle Custom Audience via API (default sync).
         """
         if not self.access_token:
             return []
@@ -514,22 +617,11 @@ class MetaMarketingService:
             
             result = []
             for adset in adsets:
-                # Convert targeting object to dict if it's not already a dict
-                targeting = adset.get('targeting', {})
-                if targeting and not isinstance(targeting, dict):
-                    # If it's a Targeting object, convert to dict
-                    try:
-                        if hasattr(targeting, 'export_all_data'):
-                            targeting = targeting.export_all_data()
-                        elif hasattr(targeting, '__dict__'):
-                            targeting = dict(targeting.__dict__)
-                        else:
-                            # Try to convert using dict() constructor
-                            targeting = dict(targeting) if targeting else {}
-                    except Exception as e:
-                        logger.warning(f"Error converting targeting to dict: {e}, using empty dict")
-                        targeting = {}
+                targeting = self._targeting_to_dict(adset.get("targeting", {}))
                 
+                if enrich_custom_audience_names and isinstance(targeting, dict):
+                    targeting = self.enrich_targeting_custom_audience_names(targeting)
+
                 effective = adset.get('effective_status') or adset.get('status')
                 result.append({
                     "adset_id": adset.get('id'),
@@ -543,6 +635,44 @@ class MetaMarketingService:
         except Exception as e:
             logger.error(f"Error fetching adsets for campaign {campaign_id}: {e}")
             return []
+
+    def get_adset_snapshot(
+        self, adset_id: str, enrich_custom_audience_names: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Un singolo ad set (stessa forma di un elemento di get_adsets).
+        Utile quando si conosce solo l'ID ad set senza la campagna.
+        """
+        if not self.access_token:
+            return None
+        try:
+            adset = AdSet(adset_id)
+            row = self._make_api_call_with_retry(
+                lambda: adset.api_get(
+                    fields=[
+                        "id",
+                        "name",
+                        "status",
+                        "effective_status",
+                        "optimization_goal",
+                        "targeting",
+                    ]
+                )
+            )
+            targeting = self._targeting_to_dict(row.get("targeting", {}))
+            if enrich_custom_audience_names and isinstance(targeting, dict):
+                targeting = self.enrich_targeting_custom_audience_names(targeting)
+            effective = row.get("effective_status") or row.get("status")
+            return {
+                "adset_id": row.get("id"),
+                "name": row.get("name", ""),
+                "status": effective if effective else "UNKNOWN",
+                "optimization_goal": row.get("optimization_goal", ""),
+                "targeting": targeting if isinstance(targeting, dict) else {},
+            }
+        except Exception as e:
+            logger.error("Error fetching ad set %s: %s", adset_id, e)
+            return None
 
     def get_ads(self, adset_id: str) -> List[Dict]:
         """
