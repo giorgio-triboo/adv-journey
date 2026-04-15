@@ -235,6 +235,12 @@ let campaignsData = [];
 let accountsData = [];
 let adsetsData = {}; // campaignId -> adsets array
 let adsData = {}; // adsetId -> ads array
+
+/** Invalida cache gerarchia: date/piattaforma/filtri cambiano ma campaign viene refetchata; adset/ads no senza questo. */
+function clearMarketingHierarchyCache() {
+    adsetsData = {};
+    adsData = {};
+}
 let creativeImageObserver = null;
 let thresholdsConfig = {
     margine_rosso_fino: 0,
@@ -365,6 +371,8 @@ async function applyFilters() {
 }
 
 async function loadAllCampaigns() {
+    clearMarketingHierarchyCache();
+
     const container = document.getElementById('hierarchicalContainer');
     container.innerHTML = '<div class="p-4 text-center text-neutral-500">Caricamento...</div>';
     
