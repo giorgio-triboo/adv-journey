@@ -90,15 +90,24 @@ def _marketing_metrics_block(leads: list, marketing_data: list, mag_to_pay: dict
     ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
     ulixe_approvate = len([l for l in leads if l.status_category == StatusCategory.FINALE])
     ulixe_ws_scartate = len([l for l in leads if ulixe_ws_scartata_lead(l)])
-    # Scarto totale %: tutte le lead Meta che non risultano approvate in Ulixe (incl. rifiuti Ulixe).
-    scarto_totale_pct = ((total_leads - ulixe_approvate) / total_leads * 100) if total_leads > 0 else 0
+    # Scarto totale %: sulle lead CRM nel periodo (stesso insieme delle approvate), non sulle sole conversioni Meta
+    # (evita 100% artefatti quando Insights ha più conversioni di lead importate).
+    n_leads_tracked = len(leads)
+    if n_leads_tracked > 0:
+        approv_eff = min(ulixe_approvate, n_leads_tracked)
+        scarto_totale_pct = round((n_leads_tracked - approv_eff) / n_leads_tracked * 100, 2)
+    elif total_leads > 0:
+        scarto_totale_pct = None
+    else:
+        scarto_totale_pct = 0.0
 
     leads_approvate = [l for l in leads if l.status_category == StatusCategory.FINALE]
 
     revenue = _compute_ricavo_for_leads(db, leads_approvate, mag_to_pay)
     pay_campagna = _get_pay_for_leads(db, leads, mag_to_pay)
     cpl_approvate = (total_spend_meta / ulixe_approvate) if ulixe_approvate > 0 else 0
-    cpl_finale_reale = round(cpl_approvate, 2) if ulixe_approvate > 0 else None
+    # CPL «finale»: Speso Meta ÷ lead inviate al WS Ulixe (stesso denominatore di CPL uscita Magellano).
+    cpl_finale_reale = round(total_spend_meta / magellano_inviate, 2) if magellano_inviate > 0 else None
     margine_singola = (pay_campagna - cpl_approvate) if pay_campagna and ulixe_approvate else None
     margine_lordo = (revenue - total_spend_meta) if revenue > 0 else None
     margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
@@ -126,7 +135,7 @@ def _marketing_metrics_block(leads: list, marketing_data: list, mag_to_pay: dict
         "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
         "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
         "margine_pct": round(margine_pct, 2) if margine_pct is not None else None,
-        "scarto_totale_pct": round(scarto_totale_pct, 2),
+        "scarto_totale_pct": round(scarto_totale_pct, 2) if scarto_totale_pct is not None else None,
     }
 
 

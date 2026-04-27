@@ -33,13 +33,14 @@
                 <li><span class="font-medium text-neutral-800">Rifiutate</span>: stati inclusi = Rifiutata (bloccata nel firewall), In attesa nel firewall, Waiting Marketing Automation, Stato non riconosciuto/altro.</li>
                 <li><span class="font-medium text-neutral-800">% Scarto</span>: Rifiutate ÷ (Inviate + Rifiutate) × 100.</li>
                 {% elif key == 'scarto_totale' %}
-                <li><span class="font-medium text-neutral-800">Scarto totale</span>: Lead prodotte da Meta − Approvate Ulixe (include tutti gli scarti, anche rifiuti Ulixe).</li>
-                <li><span class="font-medium text-neutral-800">Scarto totale %</span>: Scarto totale ÷ Lead × 100.</li>
+                <li><span class="font-medium text-neutral-800">Scarto totale %</span>: (Lead CRM nel periodo − Approvate Ulixe) ÷ Lead CRM × 100.</li>
+                <li>Se ci sono conversioni Meta ma nessuna lead CRM per la riga, viene mostrato <span class="font-medium text-neutral-800">N/D</span>.</li>
                 {% elif key == 'cpl_finale' %}
-                <li><span class="font-medium text-neutral-800">CPL finale reale</span>: Speso Meta ÷ Approvate Ulixe.</li>
-                <li>Se non ci sono approvate nel periodo, viene mostrato <span class="font-medium text-neutral-800">N/D</span>.</li>
+                <li><span class="font-medium text-neutral-800">CPL finale</span>: Speso Meta ÷ Inviate Ulixe (Magellano sent).</li>
+                <li>Se non ci sono inviate al WS, viene mostrato <span class="font-medium text-neutral-800">N/D</span>.</li>
                 {% elif key == 'ulixe' %}
-                <li><span class="font-medium text-neutral-800">Scartate WS</span>: lead inviate da Magellano e poi scartate dal WS Ulixe (rifiuto categoria o testo stato).</li>
+                <li><span class="font-medium text-neutral-800">Inviate Ulixe</span>: lead inviate al WS (stato Magellano sent).</li>
+                <li><span class="font-medium text-neutral-800">Scartate WS</span>: Refused (from WS) in Magellano oppure inviate al WS e rifiutate lato Ulixe.</li>
                 {% endif %}
             </ul>
         </span>
@@ -308,6 +309,10 @@
                                     </div>
                                     <div class="flex items-center gap-3">
                                         <div>
+                                            <div class="text-neutral-400 text-xs">Inviate Ulixe</div>
+                                            <div class="font-semibold text-neutral-900">{{ fmt_int_it(ar.magellano_inviate|default(0)) }}</div>
+                                        </div>
+                                        <div>
                                             <div class="text-neutral-400 text-xs">Scartate WS</div>
                                             <div class="font-semibold text-neutral-900">{{ fmt_int_it(ar.ulixe_ws_scartate|default(0)) }}</div>
                                         </div>
@@ -320,7 +325,7 @@
                                         <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
                                         {{ metric_legend('scarto_totale', 'Scarto totale') }}
                                     </div>
-                                    <div class="font-semibold text-neutral-900">{% if ar.scarto_totale_pct is defined and ar.scarto_totale_pct is not none %}{{ fmt_eur2(ar.scarto_totale_pct) }}%{% else %}0,00%{% endif %}</div>
+                                    <div class="font-semibold text-neutral-900">{% if ar.scarto_totale_pct is defined and ar.scarto_totale_pct is not none %}{{ fmt_eur2(ar.scarto_totale_pct) }}%{% else %}N/D{% endif %}</div>
                                 </div>
                                 <div class="text-right">
                                     <div class="mb-1 flex items-center justify-end gap-1">
