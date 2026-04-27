@@ -113,8 +113,8 @@
                 </svg>
             </div>
             <div>
-                <p class="text-sm font-medium text-neutral-500">In Lavorazione Ulixe</p>
-                <p class="text-2xl font-bold text-neutral-900" id="totalUlixeLavorazione">0</p>
+                <p class="text-sm font-medium text-neutral-500">Scartate WS Ulixe</p>
+                <p class="text-2xl font-bold text-neutral-900" id="totalUlixeWsScartate">0</p>
             </div>
         </div>
         <div class="glass-card p-6 flex items-center bg-white border border-neutral-200">
@@ -327,16 +327,6 @@ async function loadThresholds() {
     }
 }
 
-function getMargineColorClass(val) {
-    if (val == null || val === undefined || isNaN(val)) return '';
-    const v = parseFloat(val);
-    const bothActive = thresholdsConfig.colori_margine_rosso && thresholdsConfig.colori_margine_verde;
-    if (v <= thresholdsConfig.margine_rosso_fino && thresholdsConfig.colori_margine_rosso) return 'text-red-600 font-semibold';
-    if (v >= thresholdsConfig.margine_verde_da && thresholdsConfig.colori_margine_verde) return 'text-green-600 font-semibold';
-    if (bothActive) return 'text-orange-500 font-semibold';  // arancione solo se verde + rosso entrambi attivi
-    return 'font-semibold text-neutral-900';
-}
-
 function getScartoColorClass(val) {
     if (val == null || val === undefined || isNaN(val)) return '';
     const v = parseFloat(val);
@@ -365,28 +355,26 @@ const MARKETING_COLUMN_LEGENDS_HTML = {
         '<li><span class="font-medium text-neutral-800">Inviate</span>: lead inviate in uscita da Magellano.</li>' +
         '<li><span class="font-medium text-neutral-800">CPL</span>: Speso Meta ÷ Inviate.</li>' +
         '<li><span class="font-medium text-neutral-800">Rifiutate</span>: stati inclusi = Rifiutata (bloccata nel firewall), In attesa nel firewall, Waiting Marketing Automation, Stato non riconosciuto/altro.</li>' +
-        '<li><span class="font-medium text-neutral-800">% Scarto</span>: Rifiutate ÷ Entrate × 100.</li></ul>',
-    margine:
-        '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
-        '<li><span class="font-medium text-neutral-800">Margine %</span>: margine lordo rispetto al ricavo delle lead approvate in Ulixe, (Ricavo − Speso Meta) ÷ Ricavo × 100.</li>' +
-        '<li>Il ricavo deriva dai pay configurati per le lead in stato finale. Se il ricavo non è calcolabile o è zero, viene mostrato N/D.</li></ul>',
+        '<li><span class="font-medium text-neutral-800">% Scarto</span>: Rifiutate ÷ (Inviate + Rifiutate) × 100.</li></ul>',
     scarto_totale:
         '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
-        '<li><span class="font-medium text-neutral-800">Scarto totale</span>: Lead prodotte − Inviate Magellano.</li>' +
+        '<li><span class="font-medium text-neutral-800">Scarto totale</span>: Lead prodotte da Meta − Approvate Ulixe (include tutti gli scarti, anche rifiuti Ulixe).</li>' +
         '<li><span class="font-medium text-neutral-800">Scarto totale %</span>: Scarto totale ÷ Lead × 100.</li></ul>',
+    cpl_finale:
+        '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
+        '<li><span class="font-medium text-neutral-800">CPL finale reale</span>: Speso Meta ÷ Approvate Ulixe.</li>' +
+        '<li>Se non ci sono approvate nel periodo, viene mostrato N/D.</li></ul>',
     ulixe:
         '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
-        '<li><span class="font-medium text-neutral-800">Lavorazione</span>: lead con stato Ulixe in lavorazione.</li>' +
-        '<li><span class="font-medium text-neutral-800">Rifiutate</span>: lead con esito rifiutato in Ulixe.</li>' +
-        '<li><span class="font-medium text-neutral-800">Approvate</span>: lead con stato finale (approvate) in Ulixe.</li></ul>',
+        '<li><span class="font-medium text-neutral-800">Scartate WS</span>: lead inviate da Magellano e poi scartate dal WS Ulixe (rifiuto categoria o testo stato).</li></ul>',
 };
 
 const MARKETING_COLUMN_LEGEND_LABELS = {
     dati_meta: 'Dati Meta',
     ingresso_magellano: 'Ingresso Magellano',
     uscita_magellano: 'Uscita Magellano',
-    margine: 'Margine',
     scarto_totale: 'Scarto totale',
+    cpl_finale: 'CPL finale',
     ulixe: 'Ulixe',
 };
 
@@ -495,7 +483,7 @@ async function loadAllCampaigns() {
             updateSummaryCards({ 
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
-                total_ulixe_lavorazione: 0, 
+                total_ulixe_ws_scartate: 0, 
                 total_ulixe_approvate: 0 
             });
             return;
@@ -510,7 +498,7 @@ async function loadAllCampaigns() {
             updateSummaryCards({ 
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
-                total_ulixe_lavorazione: 0, 
+                total_ulixe_ws_scartate: 0, 
                 total_ulixe_approvate: 0 
             });
             return;
@@ -527,7 +515,7 @@ async function loadAllCampaigns() {
             updateSummaryCards({ 
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
-                total_ulixe_lavorazione: 0, 
+                total_ulixe_ws_scartate: 0, 
                 total_ulixe_approvate: 0 
             });
             return;
@@ -554,7 +542,7 @@ async function loadAllCampaigns() {
             updateSummaryCards({ 
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
-                total_ulixe_lavorazione: 0, 
+                total_ulixe_ws_scartate: 0, 
                 total_ulixe_approvate: 0 
             });
             return;
@@ -601,7 +589,7 @@ async function loadAllCampaigns() {
         updateSummaryCards({ 
             total_magellano_entrate: 0, 
             total_magellano_inviate: 0, 
-            total_ulixe_lavorazione: 0, 
+            total_ulixe_ws_scartate: 0, 
             total_ulixe_approvate: 0 
         });
     }
@@ -723,25 +711,8 @@ function createCampaignRow(campaign) {
                         </div>
                     </div>
                 </div>
-                <!-- Margine % + Scarto tot. -->
-                <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
-                    <div class="text-right">
-                        <div class="mb-1 flex items-center justify-end gap-0.5">
-                            <span class="text-xs font-semibold text-neutral-900 uppercase">Margine</span>
-                            ${marketingMetricLegendDetails('margine')}
-                        </div>
-                        <div class="${getMargineColorClass(campaign.margine_pct) || 'font-semibold text-neutral-900'}">${campaign.margine_pct != null ? campaign.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
-                    </div>
-                    <div class="text-right">
-                        <div class="mb-1 flex items-center justify-end gap-0.5">
-                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
-                            ${marketingMetricLegendDetails('scarto_totale')}
-                        </div>
-                        <div class="${getScartoColorClass(campaign.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${campaign.scarto_totale_pct != null ? campaign.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
-                    </div>
-                </div>
-                <!-- Ulixe -->
-                <div class="flex items-center gap-4">
+                <!-- Ulixe (solo scartate WS) -->
+                <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                     <div class="text-right">
                         <div class="mb-1 flex items-center justify-end gap-0.5">
                             <span class="text-xs font-semibold text-neutral-900 uppercase">Ulixe</span>
@@ -749,18 +720,27 @@ function createCampaignRow(campaign) {
                         </div>
                         <div class="flex items-center gap-3">
                             <div>
-                                <div class="text-neutral-400 text-xs">Lavorazione</div>
-                                <div class="font-semibold text-neutral-900">${campaign.ulixe_lavorazione || 0}</div>
-                            </div>
-                            <div>
-                                <div class="text-neutral-400 text-xs">Rifiutate</div>
-                                <div class="font-semibold text-neutral-900">${campaign.ulixe_rifiutate || 0}</div>
-                            </div>
-                            <div>
-                                <div class="text-neutral-400 text-xs">Approvate</div>
-                                <div class="font-semibold text-neutral-900">${campaign.ulixe_approvate || 0}</div>
+                                <div class="text-neutral-400 text-xs">Scartate WS</div>
+                                <div class="font-semibold text-neutral-900">${campaign.ulixe_ws_scartate || 0}</div>
                             </div>
                         </div>
+                    </div>
+                </div>
+                <!-- Scarto totale + CPL finale -->
+                <div class="flex items-center gap-6">
+                    <div class="text-right">
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
+                            ${marketingMetricLegendDetails('scarto_totale')}
+                        </div>
+                        <div class="${getScartoColorClass(campaign.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${campaign.scarto_totale_pct != null ? campaign.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">CPL finale</span>
+                            ${marketingMetricLegendDetails('cpl_finale')}
+                        </div>
+                        <div class="font-semibold text-neutral-900">${campaign.cpl_finale_reale != null && campaign.cpl_finale_reale !== undefined ? '€' + Number(campaign.cpl_finale_reale).toFixed(2).replace('.', ',') : 'N/D'}</div>
                     </div>
                 </div>
             </div>
@@ -955,25 +935,8 @@ function createAdsetRow(campaignId, adset) {
                         </div>
                     </div>
                 </div>
-                <!-- Margine % + Scarto tot. -->
-                <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
-                    <div class="text-right">
-                        <div class="mb-1 flex items-center justify-end gap-0.5">
-                            <span class="text-xs font-semibold text-neutral-900 uppercase">Margine</span>
-                            ${marketingMetricLegendDetails('margine')}
-                        </div>
-                        <div class="${getMargineColorClass(adset.margine_pct) || 'font-semibold text-neutral-900'}">${adset.margine_pct != null ? adset.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
-                    </div>
-                    <div class="text-right">
-                        <div class="mb-1 flex items-center justify-end gap-0.5">
-                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
-                            ${marketingMetricLegendDetails('scarto_totale')}
-                        </div>
-                        <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
-                    </div>
-                </div>
-                <!-- Ulixe -->
-                <div class="flex items-center gap-4">
+                <!-- Ulixe (solo scartate WS) -->
+                <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                     <div class="text-right">
                         <div class="mb-1 flex items-center justify-end gap-0.5">
                             <span class="text-xs font-semibold text-neutral-900 uppercase">Ulixe</span>
@@ -981,18 +944,27 @@ function createAdsetRow(campaignId, adset) {
                         </div>
                         <div class="flex items-center gap-3">
                             <div>
-                                <div class="text-neutral-400 text-xs">Lavorazione</div>
-                                <div class="font-semibold text-neutral-900">${adset.ulixe_lavorazione || 0}</div>
-                            </div>
-                            <div>
-                                <div class="text-neutral-400 text-xs">Rifiutate</div>
-                                <div class="font-semibold text-neutral-900">${adset.ulixe_rifiutate || 0}</div>
-                            </div>
-                            <div>
-                                <div class="text-neutral-400 text-xs">Approvate</div>
-                                <div class="font-semibold text-neutral-900">${adset.ulixe_approvate || 0}</div>
+                                <div class="text-neutral-400 text-xs">Scartate WS</div>
+                                <div class="font-semibold text-neutral-900">${adset.ulixe_ws_scartate || 0}</div>
                             </div>
                         </div>
+                    </div>
+                </div>
+                <!-- Scarto totale + CPL finale -->
+                <div class="flex items-center gap-6">
+                    <div class="text-right">
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
+                            ${marketingMetricLegendDetails('scarto_totale')}
+                        </div>
+                        <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">CPL finale</span>
+                            ${marketingMetricLegendDetails('cpl_finale')}
+                        </div>
+                        <div class="font-semibold text-neutral-900">${adset.cpl_finale_reale != null && adset.cpl_finale_reale !== undefined ? '€' + Number(adset.cpl_finale_reale).toFixed(2).replace('.', ',') : 'N/D'}</div>
                     </div>
                 </div>
             </div>
@@ -1185,25 +1157,8 @@ function createAdRow(ad) {
                         </div>
                     </div>
                 </div>
-                <!-- Margine % + Scarto tot. -->
-                <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
-                    <div class="text-right">
-                        <div class="mb-1 flex items-center justify-end gap-0.5">
-                            <span class="text-xs font-semibold text-neutral-900 uppercase">Margine</span>
-                            ${marketingMetricLegendDetails('margine')}
-                        </div>
-                        <div class="${getMargineColorClass(ad.margine_pct) || 'font-semibold text-neutral-900'}">${ad.margine_pct != null ? ad.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
-                    </div>
-                    <div class="text-right">
-                        <div class="mb-1 flex items-center justify-end gap-0.5">
-                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
-                            ${marketingMetricLegendDetails('scarto_totale')}
-                        </div>
-                        <div class="${getScartoColorClass(ad.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${ad.scarto_totale_pct != null ? ad.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
-                    </div>
-                </div>
-                <!-- Ulixe -->
-                <div class="flex items-center gap-4">
+                <!-- Ulixe (solo scartate WS) -->
+                <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                     <div class="text-right">
                         <div class="mb-1 flex items-center justify-end gap-0.5">
                             <span class="text-xs font-semibold text-neutral-900 uppercase">Ulixe</span>
@@ -1211,18 +1166,27 @@ function createAdRow(ad) {
                         </div>
                         <div class="flex items-center gap-3">
                             <div>
-                                <div class="text-neutral-400 text-xs">Lavorazione</div>
-                                <div class="font-semibold text-neutral-900">${ad.ulixe_lavorazione || 0}</div>
-                            </div>
-                            <div>
-                                <div class="text-neutral-400 text-xs">Rifiutate</div>
-                                <div class="font-semibold text-neutral-900">${ad.ulixe_rifiutate || 0}</div>
-                            </div>
-                            <div>
-                                <div class="text-neutral-400 text-xs">Approvate</div>
-                                <div class="font-semibold text-neutral-900">${ad.ulixe_approvate || 0}</div>
+                                <div class="text-neutral-400 text-xs">Scartate WS</div>
+                                <div class="font-semibold text-neutral-900">${ad.ulixe_ws_scartate || 0}</div>
                             </div>
                         </div>
+                    </div>
+                </div>
+                <!-- Scarto totale + CPL finale -->
+                <div class="flex items-center gap-6">
+                    <div class="text-right">
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
+                            ${marketingMetricLegendDetails('scarto_totale')}
+                        </div>
+                        <div class="${getScartoColorClass(ad.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${ad.scarto_totale_pct != null ? ad.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">CPL finale</span>
+                            ${marketingMetricLegendDetails('cpl_finale')}
+                        </div>
+                        <div class="font-semibold text-neutral-900">${ad.cpl_finale_reale != null && ad.cpl_finale_reale !== undefined ? '€' + Number(ad.cpl_finale_reale).toFixed(2).replace('.', ',') : 'N/D'}</div>
                     </div>
                 </div>
             </div>
@@ -1327,28 +1291,28 @@ function metaIdHtmlLine(metaId) {
 function updateSummaryCards(totals) {
     document.getElementById('totalMagellanoEntrate').textContent = totals.total_magellano_entrate || 0;
     document.getElementById('totalMagellanoInviate').textContent = totals.total_magellano_inviate || 0;
-    document.getElementById('totalUlixeLavorazione').textContent = totals.total_ulixe_lavorazione || 0;
+    document.getElementById('totalUlixeWsScartate').textContent = totals.total_ulixe_ws_scartate || 0;
     document.getElementById('totalUlixeApprovate').textContent = totals.total_ulixe_approvate || 0;
 }
 
 function calculateAndUpdateSummaryCards() {
     let totalMagellanoEntrate = 0;
     let totalMagellanoInviate = 0;
-    let totalUlixeLavorazione = 0;
+    let totalUlixeWsScartate = 0;
     let totalUlixeApprovate = 0;
     
     // Calcola totali delle 4 fasi da tutte le campagne visibili
     campaignsData.forEach(campaign => {
         totalMagellanoEntrate += campaign.magellano_entrate || 0;
         totalMagellanoInviate += campaign.magellano_inviate || 0;
-        totalUlixeLavorazione += campaign.ulixe_lavorazione || 0;
+        totalUlixeWsScartate += campaign.ulixe_ws_scartate || 0;
         totalUlixeApprovate += campaign.ulixe_approvate || 0;
     });
     
     updateSummaryCards({
         total_magellano_entrate: totalMagellanoEntrate,
         total_magellano_inviate: totalMagellanoInviate,
-        total_ulixe_lavorazione: totalUlixeLavorazione,
+        total_ulixe_ws_scartate: totalUlixeWsScartate,
         total_ulixe_approvate: totalUlixeApprovate
     });
 }
@@ -1388,7 +1352,7 @@ async function loadAdsetsDirectly(dateFrom, dateTo, accountId, status, campaignN
             updateSummaryCards({ 
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
-                total_ulixe_lavorazione: 0, 
+                total_ulixe_ws_scartate: 0, 
                 total_ulixe_approvate: 0 
             });
             return;
@@ -1431,7 +1395,7 @@ async function loadAdsetsDirectly(dateFrom, dateTo, accountId, status, campaignN
         const totals = {
             total_magellano_entrate: adsets.reduce((sum, a) => sum + (a.magellano_entrate || 0), 0),
             total_magellano_inviate: adsets.reduce((sum, a) => sum + (a.magellano_inviate || 0), 0),
-            total_ulixe_lavorazione: adsets.reduce((sum, a) => sum + (a.ulixe_lavorazione || 0), 0),
+            total_ulixe_ws_scartate: adsets.reduce((sum, a) => sum + (a.ulixe_ws_scartate || 0), 0),
             total_ulixe_approvate: adsets.reduce((sum, a) => sum + (a.ulixe_approvate || 0), 0)
         };
         updateSummaryCards(totals);
@@ -1441,7 +1405,7 @@ async function loadAdsetsDirectly(dateFrom, dateTo, accountId, status, campaignN
         updateSummaryCards({ 
             total_magellano_entrate: 0, 
             total_magellano_inviate: 0, 
-            total_ulixe_lavorazione: 0, 
+            total_ulixe_ws_scartate: 0, 
             total_ulixe_approvate: 0 
         });
     }
@@ -1485,7 +1449,7 @@ async function loadAdsDirectly(dateFrom, dateTo, accountId, status, campaignName
             updateSummaryCards({ 
                 total_magellano_entrate: 0, 
                 total_magellano_inviate: 0, 
-                total_ulixe_lavorazione: 0, 
+                total_ulixe_ws_scartate: 0, 
                 total_ulixe_approvate: 0 
             });
             return;
@@ -1529,7 +1493,7 @@ async function loadAdsDirectly(dateFrom, dateTo, accountId, status, campaignName
         const totals = {
             total_magellano_entrate: ads.reduce((sum, a) => sum + (a.magellano_entrate || 0), 0),
             total_magellano_inviate: ads.reduce((sum, a) => sum + (a.magellano_inviate || 0), 0),
-            total_ulixe_lavorazione: ads.reduce((sum, a) => sum + (a.ulixe_lavorazione || 0), 0),
+            total_ulixe_ws_scartate: ads.reduce((sum, a) => sum + (a.ulixe_ws_scartate || 0), 0),
             total_ulixe_approvate: ads.reduce((sum, a) => sum + (a.ulixe_approvate || 0), 0)
         };
         updateSummaryCards(totals);
@@ -1539,7 +1503,7 @@ async function loadAdsDirectly(dateFrom, dateTo, accountId, status, campaignName
         updateSummaryCards({ 
             total_magellano_entrate: 0, 
             total_magellano_inviate: 0, 
-            total_ulixe_lavorazione: 0, 
+            total_ulixe_ws_scartate: 0, 
             total_ulixe_approvate: 0 
         });
     }
@@ -1655,25 +1619,8 @@ function createAdsetRowDirectly(adset) {
                         </div>
                     </div>
                 </div>
-                <!-- Margine % + Scarto tot. -->
-                <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
-                    <div class="text-right">
-                        <div class="mb-1 flex items-center justify-end gap-0.5">
-                            <span class="text-xs font-semibold text-neutral-900 uppercase">Margine</span>
-                            ${marketingMetricLegendDetails('margine')}
-                        </div>
-                        <div class="${getMargineColorClass(adset.margine_pct) || 'font-semibold text-neutral-900'}">${adset.margine_pct != null ? adset.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
-                    </div>
-                    <div class="text-right">
-                        <div class="mb-1 flex items-center justify-end gap-0.5">
-                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
-                            ${marketingMetricLegendDetails('scarto_totale')}
-                        </div>
-                        <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
-                    </div>
-                </div>
-                <!-- Ulixe -->
-                <div class="flex items-center gap-4">
+                <!-- Ulixe (solo scartate WS) -->
+                <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                     <div class="text-right">
                         <div class="mb-1 flex items-center justify-end gap-0.5">
                             <span class="text-xs font-semibold text-neutral-900 uppercase">Ulixe</span>
@@ -1681,18 +1628,27 @@ function createAdsetRowDirectly(adset) {
                         </div>
                         <div class="flex items-center gap-3">
                             <div>
-                                <div class="text-neutral-400 text-xs">Lavorazione</div>
-                                <div class="font-semibold text-neutral-900">${adset.ulixe_lavorazione || 0}</div>
-                            </div>
-                            <div>
-                                <div class="text-neutral-400 text-xs">Rifiutate</div>
-                                <div class="font-semibold text-neutral-900">${adset.ulixe_rifiutate || 0}</div>
-                            </div>
-                            <div>
-                                <div class="text-neutral-400 text-xs">Approvate</div>
-                                <div class="font-semibold text-neutral-900">${adset.ulixe_approvate || 0}</div>
+                                <div class="text-neutral-400 text-xs">Scartate WS</div>
+                                <div class="font-semibold text-neutral-900">${adset.ulixe_ws_scartate || 0}</div>
                             </div>
                         </div>
+                    </div>
+                </div>
+                <!-- Scarto totale + CPL finale -->
+                <div class="flex items-center gap-6">
+                    <div class="text-right">
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
+                            ${marketingMetricLegendDetails('scarto_totale')}
+                        </div>
+                        <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">CPL finale</span>
+                            ${marketingMetricLegendDetails('cpl_finale')}
+                        </div>
+                        <div class="font-semibold text-neutral-900">${adset.cpl_finale_reale != null && adset.cpl_finale_reale !== undefined ? '€' + Number(adset.cpl_finale_reale).toFixed(2).replace('.', ',') : 'N/D'}</div>
                     </div>
                 </div>
             </div>

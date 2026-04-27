@@ -411,6 +411,24 @@ def _lavorazioni_sankey_ingresso_magellano_node(lead: Lead) -> str:
     return "Ingresso Magellano · Senza campagna Magellano"
 
 
+def ulixe_ws_scartata_lead(lead: Lead) -> bool:
+    """
+    Lead «scartata dal WS Ulixe»: inviata da Magellano (magellano_sent) e rifiutata
+    lato Ulixe (categoria globale, categoria Ulixe o testo stato NO CRM / rifiuto).
+    """
+    if (lead.magellano_status or "").strip() != "magellano_sent":
+        return False
+    if lead.status_category == StatusCategory.RIFIUTATO:
+        return True
+    if lead.ulixe_status_category == StatusCategory.RIFIUTATO:
+        return True
+    raw = (lead.ulixe_status or "").strip()
+    if not raw:
+        return False
+    u = raw.upper()
+    return "NO CRM" in u or "RIFIUTATO" in u or "NON INTERESSATO" in u
+
+
 def _is_sankey_scartata_ws(lead: Lead) -> bool:
     """
     Chiusura «Scartate WS»: rifiuto da WS (stato Magellano refused-from-WS, oppure post-invio).

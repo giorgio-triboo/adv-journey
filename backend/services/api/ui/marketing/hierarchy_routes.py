@@ -30,6 +30,7 @@ from .helpers import (
     _compute_ricavo_for_leads,
     _get_pay_for_leads,
     default_marketing_filter_date_range,
+    ulixe_ws_scartata_lead,
 )
 
 logger = logging.getLogger('services.api.ui')
@@ -85,16 +86,19 @@ def _marketing_metrics_block(leads: list, marketing_data: list, mag_to_pay: dict
     magellano_scarto_pct_uscita = (
         (magellano_rifiutate / uscita_magellano_totale * 100) if uscita_magellano_totale > 0 else 0
     )
-    scarto_totale_pct = ((total_leads - magellano_inviate) / total_leads * 100) if total_leads > 0 else 0
-
     ulixe_lavorazione = len([l for l in leads if l.status_category == StatusCategory.IN_LAVORAZIONE])
     ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
     ulixe_approvate = len([l for l in leads if l.status_category == StatusCategory.FINALE])
+    ulixe_ws_scartate = len([l for l in leads if ulixe_ws_scartata_lead(l)])
+    # Scarto totale %: tutte le lead Meta che non risultano approvate in Ulixe (incl. rifiuti Ulixe).
+    scarto_totale_pct = ((total_leads - ulixe_approvate) / total_leads * 100) if total_leads > 0 else 0
+
     leads_approvate = [l for l in leads if l.status_category == StatusCategory.FINALE]
 
     revenue = _compute_ricavo_for_leads(db, leads_approvate, mag_to_pay)
     pay_campagna = _get_pay_for_leads(db, leads, mag_to_pay)
     cpl_approvate = (total_spend_meta / ulixe_approvate) if ulixe_approvate > 0 else 0
+    cpl_finale_reale = round(cpl_approvate, 2) if ulixe_approvate > 0 else None
     margine_singola = (pay_campagna - cpl_approvate) if pay_campagna and ulixe_approvate else None
     margine_lordo = (revenue - total_spend_meta) if revenue > 0 else None
     margine_pct = (margine_lordo / revenue * 100) if revenue and margine_lordo is not None else None
@@ -116,6 +120,8 @@ def _marketing_metrics_block(leads: list, marketing_data: list, mag_to_pay: dict
         "ulixe_lavorazione": ulixe_lavorazione,
         "ulixe_rifiutate": ulixe_rifiutate,
         "ulixe_approvate": ulixe_approvate,
+        "ulixe_ws_scartate": ulixe_ws_scartate,
+        "cpl_finale_reale": cpl_finale_reale,
         "revenue": round(revenue, 2),
         "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
         "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
@@ -403,6 +409,7 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
         total_magellano_inviate = sum(c.get('magellano_inviate', 0) for c in result)
         total_ulixe_lavorazione = sum(c.get('ulixe_lavorazione', 0) for c in result)
         total_ulixe_approvate = sum(c.get('ulixe_approvate', 0) for c in result)
+        total_ulixe_ws_scartate = sum(c.get('ulixe_ws_scartate', 0) for c in result)
         
         # Calcola CPL medio
         average_cpl = (total_cpl_sum / campaigns_with_cpl) if campaigns_with_cpl > 0 else 0
@@ -416,7 +423,8 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                 "total_magellano_entrate": total_magellano_entrate,
                 "total_magellano_inviate": total_magellano_inviate,
                 "total_ulixe_lavorazione": total_ulixe_lavorazione,
-                "total_ulixe_approvate": total_ulixe_approvate
+                "total_ulixe_approvate": total_ulixe_approvate,
+                "total_ulixe_ws_scartate": total_ulixe_ws_scartate,
             }
         })
     except Exception as e:
@@ -431,7 +439,8 @@ async def api_marketing_campaigns(request: Request, db: Session = Depends(get_db
                 "total_magellano_entrate": 0,
                 "total_magellano_inviate": 0,
                 "total_ulixe_lavorazione": 0,
-                "total_ulixe_approvate": 0
+                "total_ulixe_approvate": 0,
+                "total_ulixe_ws_scartate": 0,
             }
         }, status_code=500)
 

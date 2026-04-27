@@ -31,17 +31,15 @@
                 <li><span class="font-medium text-neutral-800">Inviate</span>: lead inviate in uscita da Magellano.</li>
                 <li><span class="font-medium text-neutral-800">CPL</span>: Speso Meta ÷ Inviate.</li>
                 <li><span class="font-medium text-neutral-800">Rifiutate</span>: stati inclusi = Rifiutata (bloccata nel firewall), In attesa nel firewall, Waiting Marketing Automation, Stato non riconosciuto/altro.</li>
-                <li><span class="font-medium text-neutral-800">% Scarto</span>: Rifiutate ÷ Entrate × 100.</li>
-                {% elif key == 'margine' %}
-                <li><span class="font-medium text-neutral-800">Margine %</span>: (Ricavo - Speso Meta) ÷ Ricavo × 100.</li>
-                <li>Se il ricavo non è calcolabile o è zero, viene mostrato <span class="font-medium text-neutral-800">N/D</span>.</li>
+                <li><span class="font-medium text-neutral-800">% Scarto</span>: Rifiutate ÷ (Inviate + Rifiutate) × 100.</li>
                 {% elif key == 'scarto_totale' %}
-                <li><span class="font-medium text-neutral-800">Scarto totale</span>: Lead prodotte − Inviate Magellano.</li>
+                <li><span class="font-medium text-neutral-800">Scarto totale</span>: Lead prodotte da Meta − Approvate Ulixe (include tutti gli scarti, anche rifiuti Ulixe).</li>
                 <li><span class="font-medium text-neutral-800">Scarto totale %</span>: Scarto totale ÷ Lead × 100.</li>
+                {% elif key == 'cpl_finale' %}
+                <li><span class="font-medium text-neutral-800">CPL finale reale</span>: Speso Meta ÷ Approvate Ulixe.</li>
+                <li>Se non ci sono approvate nel periodo, viene mostrato <span class="font-medium text-neutral-800">N/D</span>.</li>
                 {% elif key == 'ulixe' %}
-                <li><span class="font-medium text-neutral-800">Lavorazione</span>: lead in lavorazione su Ulixe.</li>
-                <li><span class="font-medium text-neutral-800">Rifiutate</span>: lead con esito rifiutato in Ulixe.</li>
-                <li><span class="font-medium text-neutral-800">Approvate</span>: lead con stato finale (approvate) in Ulixe.</li>
+                <li><span class="font-medium text-neutral-800">Scartate WS</span>: lead inviate da Magellano e poi scartate dal WS Ulixe (rifiuto categoria o testo stato).</li>
                 {% endif %}
             </ul>
         </span>
@@ -113,7 +111,7 @@
 <div class="animate-fadeInUp">
     <div class="mb-8">
         <h1 class="text-3xl font-bold gradient-text leading-none">{{ title|default('Targeting ad set', true) }}</h1>
-        <p class="mt-2 text-sm text-neutral-600 max-w-2xl">Stessa riga metriche della pagina Marketing (Meta, Magellano, margine, Ulixe); aprendo la riga vedi le <strong>specifiche di targeting</strong> dell’ad set (riepilogo + JSON).</p>
+        <p class="mt-2 text-sm text-neutral-600 max-w-2xl">Stessa riga metriche della pagina Marketing (Meta, Magellano, Ulixe, scarto totale e CPL finale); aprendo la riga vedi le <strong>specifiche di targeting</strong> dell’ad set (riepilogo + JSON).</p>
         <p class="mt-2 text-xs text-neutral-500">
             <a href="/marketing/analysis-copy" class="text-indigo-600 hover:text-indigo-800 font-medium underline-offset-2 hover:underline">Analisi copy</a>
             <span class="text-neutral-400 mx-1">·</span>
@@ -314,23 +312,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-6 border-r border-neutral-200 pr-6 shrink-0">
-                                <div class="text-right">
-                                    <div class="mb-1 flex items-center justify-end gap-1">
-                                        <span class="text-xs font-semibold text-neutral-900 uppercase">Margine</span>
-                                        {{ metric_legend('margine', 'Margine') }}
-                                    </div>
-                                    <div class="font-semibold text-neutral-900">{% if ar.margine_pct is defined and ar.margine_pct is not none %}{{ fmt_eur2(ar.margine_pct) }}%{% else %}N/D{% endif %}</div>
-                                </div>
-                                <div class="text-right">
-                                    <div class="mb-1 flex items-center justify-end gap-1">
-                                        <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
-                                        {{ metric_legend('scarto_totale', 'Scarto totale') }}
-                                    </div>
-                                    <div class="font-semibold text-neutral-900">{% if ar.scarto_totale_pct is defined and ar.scarto_totale_pct is not none %}{{ fmt_eur2(ar.scarto_totale_pct) }}%{% else %}0,00%{% endif %}</div>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-4 shrink-0">
+                            <div class="flex items-center gap-4 border-r border-neutral-200 pr-6 shrink-0">
                                 <div class="text-right">
                                     <div class="mb-1 flex items-center justify-end gap-1">
                                         <span class="text-xs font-semibold text-neutral-900 uppercase">Ulixe</span>
@@ -338,18 +320,26 @@
                                     </div>
                                     <div class="flex items-center gap-3">
                                         <div>
-                                            <div class="text-neutral-400 text-xs">Lavorazione</div>
-                                            <div class="font-semibold text-neutral-900">{{ fmt_int_it(ar.ulixe_lavorazione|default(0)) }}</div>
-                                        </div>
-                                        <div>
-                                            <div class="text-neutral-400 text-xs">Rifiutate</div>
-                                            <div class="font-semibold text-neutral-900">{{ fmt_int_it(ar.ulixe_rifiutate|default(0)) }}</div>
-                                        </div>
-                                        <div>
-                                            <div class="text-neutral-400 text-xs">Approvate</div>
-                                            <div class="font-semibold text-neutral-900">{{ fmt_int_it(ar.ulixe_approvate|default(0)) }}</div>
+                                            <div class="text-neutral-400 text-xs">Scartate WS</div>
+                                            <div class="font-semibold text-neutral-900">{{ fmt_int_it(ar.ulixe_ws_scartate|default(0)) }}</div>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-6 shrink-0">
+                                <div class="text-right">
+                                    <div class="mb-1 flex items-center justify-end gap-1">
+                                        <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
+                                        {{ metric_legend('scarto_totale', 'Scarto totale') }}
+                                    </div>
+                                    <div class="font-semibold text-neutral-900">{% if ar.scarto_totale_pct is defined and ar.scarto_totale_pct is not none %}{{ fmt_eur2(ar.scarto_totale_pct) }}%{% else %}0,00%{% endif %}</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="mb-1 flex items-center justify-end gap-1">
+                                        <span class="text-xs font-semibold text-neutral-900 uppercase">CPL finale</span>
+                                        {{ metric_legend('cpl_finale', 'CPL finale') }}
+                                    </div>
+                                    <div class="font-semibold text-neutral-900">{% if ar.cpl_finale_reale is defined and ar.cpl_finale_reale is not none %}€{{ fmt_eur2(ar.cpl_finale_reale) }}{% else %}N/D{% endif %}</div>
                                 </div>
                             </div>
                         </div>

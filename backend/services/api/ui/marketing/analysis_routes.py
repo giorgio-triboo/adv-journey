@@ -494,6 +494,8 @@ def _interests_adset_metrics_fallback(spend: float, conversions: int) -> dict[st
         "ulixe_lavorazione": 0,
         "ulixe_rifiutate": 0,
         "ulixe_approvate": 0,
+        "ulixe_ws_scartate": 0,
+        "cpl_finale_reale": None,
         "revenue": 0.0,
         "margine_singola_lead": None,
         "margine_lordo": None,
