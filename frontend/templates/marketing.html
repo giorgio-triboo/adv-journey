@@ -347,6 +347,71 @@ function getScartoColorClass(val) {
     return 'font-semibold text-neutral-900';
 }
 
+/** Testi legenda colonne metriche (allineati a hierarchy_routes._marketing_metrics_block). */
+const MARKETING_COLUMN_LEGENDS_HTML = {
+    dati_meta:
+        '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
+        '<li><span class="font-medium text-neutral-800">Lead</span>: conversioni lead da Meta (conversions) nel periodo e nei filtri selezionati.</li>' +
+        '<li><span class="font-medium text-neutral-800">CPL</span>: costo per lead = Speso ÷ Lead.</li>' +
+        '<li><span class="font-medium text-neutral-800">Speso</span>: investimento pubblicitario aggregato (spend) da Meta.</li></ul>',
+    ingresso_magellano:
+        '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
+        '<li><span class="font-medium text-neutral-800">Entrate</span>: lead entrate in Magellano.</li>' +
+        '<li><span class="font-medium text-neutral-800">CPL</span>: Speso Meta ÷ Entrate.</li>' +
+        '<li><span class="font-medium text-neutral-800">Scartate</span>: Lead prodotte da Meta - Lead entrate in Magellano.</li>' +
+        '<li><span class="font-medium text-neutral-800">% Scarto</span>: Scartate ÷ Lead × 100.</li></ul>',
+    uscita_magellano:
+        '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
+        '<li><span class="font-medium text-neutral-800">Inviate</span>: lead inviate in uscita da Magellano.</li>' +
+        '<li><span class="font-medium text-neutral-800">CPL</span>: Speso Meta ÷ Inviate.</li>' +
+        '<li><span class="font-medium text-neutral-800">Rifiutate</span>: stati inclusi = Rifiutata (bloccata nel firewall), In attesa nel firewall, Waiting Marketing Automation, Stato non riconosciuto/altro.</li>' +
+        '<li><span class="font-medium text-neutral-800">% Scarto</span>: Rifiutate ÷ Entrate × 100.</li></ul>',
+    margine:
+        '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
+        '<li><span class="font-medium text-neutral-800">Margine %</span>: margine lordo rispetto al ricavo delle lead approvate in Ulixe, (Ricavo − Speso Meta) ÷ Ricavo × 100.</li>' +
+        '<li>Il ricavo deriva dai pay configurati per le lead in stato finale. Se il ricavo non è calcolabile o è zero, viene mostrato N/D.</li></ul>',
+    scarto_totale:
+        '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
+        '<li><span class="font-medium text-neutral-800">Scarto totale</span>: Lead prodotte − Inviate Magellano.</li>' +
+        '<li><span class="font-medium text-neutral-800">Scarto totale %</span>: Scarto totale ÷ Lead × 100.</li></ul>',
+    ulixe:
+        '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
+        '<li><span class="font-medium text-neutral-800">Lavorazione</span>: lead con stato Ulixe in lavorazione.</li>' +
+        '<li><span class="font-medium text-neutral-800">Rifiutate</span>: lead con esito rifiutato in Ulixe.</li>' +
+        '<li><span class="font-medium text-neutral-800">Approvate</span>: lead con stato finale (approvate) in Ulixe.</li></ul>',
+};
+
+const MARKETING_COLUMN_LEGEND_LABELS = {
+    dati_meta: 'Dati Meta',
+    ingresso_magellano: 'Ingresso Magellano',
+    uscita_magellano: 'Uscita Magellano',
+    margine: 'Margine',
+    scarto_totale: 'Scarto totale',
+    ulixe: 'Ulixe',
+};
+
+/**
+ * Icona (i) con pannello legenda solo in hover; onclick sulla riga non attiva espansione campagna/ad set.
+ * pt-1 sul wrapper assorbe il gap tra icona e box così il puntatore resta in “hover” passando al pop-up.
+ */
+function marketingMetricLegendDetails(columnKey) {
+    const body = MARKETING_COLUMN_LEGENDS_HTML[columnKey];
+    if (!body) return '';
+    const label = MARKETING_COLUMN_LEGEND_LABELS[columnKey] || columnKey;
+    const aria = escapeHtmlAttr('Legenda ' + label + ' (passa il mouse sull’icona)');
+    return (
+        '<span class="group relative ml-0.5 inline-block align-middle text-left" onclick="event.stopPropagation()" aria-label="' + aria + '">' +
+        '<span class="inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border border-neutral-300 bg-white text-[10px] font-bold leading-none text-neutral-500 transition-colors group-hover:border-indigo-400 group-hover:text-indigo-600" title="Passa il mouse per la legenda" aria-hidden="true">i</span>' +
+        '<span class="absolute right-0 top-full z-[60] hidden w-72 max-w-[min(18rem,calc(100vw-2rem))] pt-1 group-hover:block">' +
+        '<span class="block rounded-lg border border-neutral-200 bg-white p-3 text-left shadow-lg">' +
+        '<span class="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-neutral-500">' +
+        escapeHtml(label) +
+        '</span>' +
+        body +
+        '</span></span></span>'
+    );
+}
+
 async function loadAccounts() {
     try {
         const response = await fetch('/api/marketing/accounts');
@@ -584,7 +649,10 @@ function createCampaignRow(campaign) {
                 <!-- Dati Meta -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                 <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Dati Meta</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Dati Meta</span>
+                            ${marketingMetricLegendDetails('dati_meta')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Lead</div>
@@ -604,7 +672,10 @@ function createCampaignRow(campaign) {
                 <!-- Ingresso Magellano -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ingresso Magellano</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Ingresso Magellano</span>
+                            ${marketingMetricLegendDetails('ingresso_magellano')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Entrate</div>
@@ -628,7 +699,10 @@ function createCampaignRow(campaign) {
                 <!-- Uscita Magellano -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Uscita Magellano</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Uscita Magellano</span>
+                            ${marketingMetricLegendDetails('uscita_magellano')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Inviate</div>
@@ -652,18 +726,27 @@ function createCampaignRow(campaign) {
                 <!-- Margine % + Scarto tot. -->
                 <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Margine</span>
+                            ${marketingMetricLegendDetails('margine')}
+                        </div>
                         <div class="${getMargineColorClass(campaign.margine_pct) || 'font-semibold text-neutral-900'}">${campaign.margine_pct != null ? campaign.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
                     </div>
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Scarto totale</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
+                            ${marketingMetricLegendDetails('scarto_totale')}
+                        </div>
                         <div class="${getScartoColorClass(campaign.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${campaign.scarto_totale_pct != null ? campaign.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                 </div>
                 <!-- Ulixe -->
                 <div class="flex items-center gap-4">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ulixe</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Ulixe</span>
+                            ${marketingMetricLegendDetails('ulixe')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Lavorazione</div>
@@ -798,7 +881,10 @@ function createAdsetRow(campaignId, adset) {
                 <!-- Dati Meta -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                 <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Dati Meta</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Dati Meta</span>
+                            ${marketingMetricLegendDetails('dati_meta')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Lead</div>
@@ -818,7 +904,10 @@ function createAdsetRow(campaignId, adset) {
                 <!-- Ingresso Magellano -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                 <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ingresso Magellano</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Ingresso Magellano</span>
+                            ${marketingMetricLegendDetails('ingresso_magellano')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Entrate</div>
@@ -842,7 +931,10 @@ function createAdsetRow(campaignId, adset) {
                 <!-- Uscita Magellano -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Uscita Magellano</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Uscita Magellano</span>
+                            ${marketingMetricLegendDetails('uscita_magellano')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Inviate</div>
@@ -866,18 +958,27 @@ function createAdsetRow(campaignId, adset) {
                 <!-- Margine % + Scarto tot. -->
                 <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Margine</span>
+                            ${marketingMetricLegendDetails('margine')}
+                        </div>
                         <div class="${getMargineColorClass(adset.margine_pct) || 'font-semibold text-neutral-900'}">${adset.margine_pct != null ? adset.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
                     </div>
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Scarto totale</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
+                            ${marketingMetricLegendDetails('scarto_totale')}
+                        </div>
                         <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                 </div>
                 <!-- Ulixe -->
                 <div class="flex items-center gap-4">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ulixe</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Ulixe</span>
+                            ${marketingMetricLegendDetails('ulixe')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Lavorazione</div>
@@ -1010,7 +1111,10 @@ function createAdRow(ad) {
                 <!-- Dati Meta -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                 <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Dati Meta</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Dati Meta</span>
+                            ${marketingMetricLegendDetails('dati_meta')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Lead</div>
@@ -1030,7 +1134,10 @@ function createAdRow(ad) {
                 <!-- Ingresso Magellano -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ingresso Magellano</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Ingresso Magellano</span>
+                            ${marketingMetricLegendDetails('ingresso_magellano')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Entrate</div>
@@ -1054,7 +1161,10 @@ function createAdRow(ad) {
                 <!-- Uscita Magellano -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Uscita Magellano</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Uscita Magellano</span>
+                            ${marketingMetricLegendDetails('uscita_magellano')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Inviate</div>
@@ -1078,18 +1188,27 @@ function createAdRow(ad) {
                 <!-- Margine % + Scarto tot. -->
                 <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Margine</span>
+                            ${marketingMetricLegendDetails('margine')}
+                        </div>
                         <div class="${getMargineColorClass(ad.margine_pct) || 'font-semibold text-neutral-900'}">${ad.margine_pct != null ? ad.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
                     </div>
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Scarto totale</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
+                            ${marketingMetricLegendDetails('scarto_totale')}
+                        </div>
                         <div class="${getScartoColorClass(ad.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${ad.scarto_totale_pct != null ? ad.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                 </div>
                 <!-- Ulixe -->
                 <div class="flex items-center gap-4">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ulixe</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Ulixe</span>
+                            ${marketingMetricLegendDetails('ulixe')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Lavorazione</div>
@@ -1462,7 +1581,10 @@ function createAdsetRowDirectly(adset) {
                 <!-- Dati Meta -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                 <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Dati Meta</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Dati Meta</span>
+                            ${marketingMetricLegendDetails('dati_meta')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Lead</div>
@@ -1482,7 +1604,10 @@ function createAdsetRowDirectly(adset) {
                 <!-- Ingresso Magellano -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                 <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ingresso Magellano</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Ingresso Magellano</span>
+                            ${marketingMetricLegendDetails('ingresso_magellano')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Entrate</div>
@@ -1506,7 +1631,10 @@ function createAdsetRowDirectly(adset) {
                 <!-- Uscita Magellano -->
                 <div class="flex items-center gap-4 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Uscita Magellano</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Uscita Magellano</span>
+                            ${marketingMetricLegendDetails('uscita_magellano')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Inviate</div>
@@ -1530,18 +1658,27 @@ function createAdsetRowDirectly(adset) {
                 <!-- Margine % + Scarto tot. -->
                 <div class="flex items-center gap-6 border-r border-neutral-200 pr-6">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Margine</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Margine</span>
+                            ${marketingMetricLegendDetails('margine')}
+                        </div>
                         <div class="${getMargineColorClass(adset.margine_pct) || 'font-semibold text-neutral-900'}">${adset.margine_pct != null ? adset.margine_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
                     </div>
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Scarto totale</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
+                            ${marketingMetricLegendDetails('scarto_totale')}
+                        </div>
                         <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                 </div>
                 <!-- Ulixe -->
                 <div class="flex items-center gap-4">
                     <div class="text-right">
-                        <div class="text-xs font-semibold text-neutral-900 uppercase mb-1">Ulixe</div>
+                        <div class="mb-1 flex items-center justify-end gap-0.5">
+                            <span class="text-xs font-semibold text-neutral-900 uppercase">Ulixe</span>
+                            ${marketingMetricLegendDetails('ulixe')}
+                        </div>
                         <div class="flex items-center gap-3">
                             <div>
                                 <div class="text-neutral-400 text-xs">Lavorazione</div>

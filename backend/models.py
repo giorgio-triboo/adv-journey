@@ -262,6 +262,8 @@ class MetaAd(Base):
     status = Column(String)
     creative_id = Column(String, nullable=True)
     creative_thumbnail_url = Column(String, nullable=True)
+    # JSON object_story_spec Graph (link_data, video_data, child_attachments, …)
+    creative_object_story_spec = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=now_rome)
     updated_at = Column(DateTime, default=now_rome, onupdate=now_rome)
     
