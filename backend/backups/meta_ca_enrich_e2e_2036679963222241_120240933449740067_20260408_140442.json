@@ -1,0 +1,143 @@
+{
+  "account_id": "2036679963222241",
+  "adset_id": "120240933449740067",
+  "adset_name": "GS (383) - 0126- V1 - 123 - form25",
+  "targeting_before_enrich": {
+    "age_max": 65,
+    "age_min": 18,
+    "age_range": [
+      19,
+      37
+    ],
+    "excluded_custom_audiences": [
+      {
+        "id": "120203840246740067",
+        "name": "Cepu Modulo Inviato 90gg"
+      }
+    ],
+    "excluded_geo_locations": {
+      "regions": [
+        {
+          "key": "1858",
+          "name": "Umbria",
+          "country": "IT"
+        }
+      ],
+      "location_types": [
+        "home",
+        "recent"
+      ]
+    },
+    "flexible_spec": [
+      {
+        "interests": [
+          {
+            "id": "6003232228485",
+            "name": "Scuola superiore (istruzione primaria e secondaria)"
+          },
+          {
+            "id": "6003270631848",
+            "name": "Formazione (istruzione)"
+          }
+        ]
+      }
+    ],
+    "geo_locations": {
+      "countries": [
+        "IT"
+      ],
+      "location_types": [
+        "home",
+        "recent"
+      ]
+    },
+    "locales": [
+      10
+    ],
+    "brand_safety_content_filter_levels": [
+      "FACEBOOK_STANDARD"
+    ],
+    "targeting_automation": {
+      "advantage_audience": 0,
+      "individual_setting": {
+        "age": 1
+      }
+    }
+  },
+  "targeting_after_enrich": {
+    "age_max": 65,
+    "age_min": 18,
+    "age_range": [
+      19,
+      37
+    ],
+    "excluded_custom_audiences": [
+      {
+        "id": "120203840246740067",
+        "name": "Cepu Modulo Inviato 90gg"
+      }
+    ],
+    "excluded_geo_locations": {
+      "regions": [
+        {
+          "key": "1858",
+          "name": "Umbria",
+          "country": "IT"
+        }
+      ],
+      "location_types": [
+        "home",
+        "recent"
+      ]
+    },
+    "flexible_spec": [
+      {
+        "interests": [
+          {
+            "id": "6003232228485",
+            "name": "Scuola superiore (istruzione primaria e secondaria)"
+          },
+          {
+            "id": "6003270631848",
+            "name": "Formazione (istruzione)"
+          }
+        ]
+      }
+    ],
+    "geo_locations": {
+      "countries": [
+        "IT"
+      ],
+      "location_types": [
+        "home",
+        "recent"
+      ]
+    },
+    "locales": [
+      10
+    ],
+    "brand_safety_content_filter_levels": [
+      "FACEBOOK_STANDARD"
+    ],
+    "targeting_automation": {
+      "advantage_audience": 0,
+      "individual_setting": {
+        "age": 1
+      }
+    }
+  },
+  "custom_audience_entries_before": [
+    {
+      "scope": "targeting.excluded_custom_audiences",
+      "id": "120203840246740067",
+      "name": "Cepu Modulo Inviato 90gg"
+    }
+  ],
+  "custom_audience_entries_after": [
+    {
+      "scope": "targeting.excluded_custom_audiences",
+      "id": "120203840246740067",
+      "name": "Cepu Modulo Inviato 90gg"
+    }
+  ]
+}

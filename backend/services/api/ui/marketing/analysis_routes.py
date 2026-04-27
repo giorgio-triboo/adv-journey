@@ -45,7 +45,9 @@ from .helpers import (
 )
 from .hierarchy_routes import (
     _bulk_leads_by_meta_adset,
+    _bulk_leads_by_meta_ad_id,
     _bulk_marketing_by_adset_pk,
+    _bulk_marketing_by_ad_pk,
     _marketing_metrics_block,
 )
 
@@ -497,6 +499,299 @@ def _interests_adset_metrics_fallback(spend: float, conversions: int) -> dict[st
         "margine_lordo": None,
         "margine_pct": None,
         "scarto_totale_pct": round(100.0, 2) if cv else 0.0,
+    }
+
+
+def _story_spec_strings_for_search(spec: Any) -> list[str]:
+    """Estrae testi noti da object_story_spec (minuscolo) per filtro copy."""
+    out: list[str] = []
+
+    def _from_cta(cta: Any) -> None:
+        if not isinstance(cta, dict):
+            return
+        cv = cta.get("value")
+        if isinstance(cv, dict):
+            for ck in ("link", "link_caption", "link_title"):
+                s = cv.get(ck)
+                if isinstance(s, str) and s.strip():
+                    out.append(s.strip().lower())
+        elif isinstance(cv, str) and cv.strip():
+            out.append(cv.strip().lower())
+
+    def _from_link_data(ld: Any) -> None:
+        if not isinstance(ld, dict):
+            return
+        for k in ("name", "message", "description", "caption", "link"):
+            v = ld.get(k)
+            if isinstance(v, str) and v.strip():
+                out.append(v.strip().lower())
+        _from_cta(ld.get("call_to_action"))
+
+    def _walk(n: Any) -> None:
+        if not isinstance(n, dict):
+            return
+        ld = n.get("link_data")
+        if isinstance(ld, dict):
+            _from_link_data(ld)
+        vd = n.get("video_data")
+        if isinstance(vd, dict):
+            for k in ("title", "message"):
+                v = vd.get(k)
+                if isinstance(v, str) and v.strip():
+                    out.append(v.strip().lower())
+            _from_cta(vd.get("call_to_action"))
+        pd = n.get("photo_data")
+        if isinstance(pd, dict):
+            v = pd.get("caption")
+            if isinstance(v, str) and v.strip():
+                out.append(v.strip().lower())
+        kids = n.get("child_attachments")
+        if isinstance(kids, list):
+            for ch in kids:
+                _walk(ch)
+
+    _walk(spec if isinstance(spec, dict) else {})
+    return out
+
+
+def _object_story_spec_to_search_blob(spec: Any, ad_name: str = "") -> str:
+    parts = _story_spec_strings_for_search(spec)
+    an = (ad_name or "").strip()
+    if an:
+        parts.append(an.lower())
+    return " ".join(parts)
+
+
+def _summarize_creative_copy_for_display(spec: Any) -> dict[str, Any]:
+    """Riepilogo copy per UI (liste deduplicate; campi vuoti come stringhe vuote)."""
+    headlines: list[str] = []
+    bodies: list[str] = []
+    descriptions: list[str] = []
+    captions: list[str] = []
+    urls: list[str] = []
+    ctas: list[str] = []
+
+    def _add(bucket: list[str], s: Any) -> None:
+        if not isinstance(s, str):
+            return
+        t = s.strip()
+        if not t or t in bucket:
+            return
+        bucket.append(t)
+
+    def _from_cta(cta: Any) -> None:
+        if not isinstance(cta, dict):
+            return
+        cv = cta.get("value")
+        if isinstance(cv, dict):
+            t = cv.get("link_title") or cv.get("link_caption") or ""
+            if isinstance(t, str) and t.strip():
+                _add(ctas, t)
+            act = cv.get("lead_gen_form_id") or cv.get("app_link")
+            if act:
+                _add(ctas, str(act))
+        t = cta.get("type")
+        if isinstance(t, str) and t.strip():
+            _add(ctas, t)
+
+    def _from_link_data(ld: Any) -> None:
+        if not isinstance(ld, dict):
+            return
+        _add(headlines, ld.get("name", ""))
+        _add(bodies, ld.get("message", ""))
+        _add(descriptions, ld.get("description", ""))
+        _add(captions, ld.get("caption", ""))
+        _add(urls, ld.get("link", ""))
+        _from_cta(ld.get("call_to_action"))
+
+    def _walk(n: Any) -> None:
+        if not isinstance(n, dict):
+            return
+        ld = n.get("link_data")
+        if isinstance(ld, dict):
+            _from_link_data(ld)
+        vd = n.get("video_data")
+        if isinstance(vd, dict):
+            _add(headlines, vd.get("title", ""))
+            _add(bodies, vd.get("message", ""))
+            _from_cta(vd.get("call_to_action"))
+        pd = n.get("photo_data")
+        if isinstance(pd, dict):
+            _add(bodies, pd.get("caption", ""))
+        kids = n.get("child_attachments")
+        if isinstance(kids, list):
+            for ch in kids:
+                _walk(ch)
+
+    _walk(spec if isinstance(spec, dict) else {})
+    return {
+        "headlines": headlines,
+        "bodies": bodies,
+        "descriptions": descriptions,
+        "captions": captions,
+        "urls": urls,
+        "ctas": ctas,
+    }
+
+
+def _build_copy_marketing_analysis(
+    db: Session,
+    date_from,
+    date_to,
+    af: dict[str, Any],
+    *,
+    analysis_platform: str = "all",
+    copy_q: str = "",
+    page: int = 1,
+    page_size: int = 10,
+) -> dict[str, Any]:
+    """
+    Annunci (MetaAd) con metriche nel periodo e copy da creative_object_story_spec.
+    Filtro opzionale copy_q: sottostringa nel testo copy o nel nome ad.
+    """
+    ad_agg = (
+        db.query(
+            MetaAd.id.label("ad_internal_id"),
+            func.coalesce(func.sum(MetaMarketingData.spend), 0).label("tot_spend"),
+            func.coalesce(func.sum(MetaMarketingData.conversions), 0).label("tot_conv"),
+        )
+        .select_from(MetaMarketingData)
+        .join(MetaAd, MetaMarketingData.ad_id == MetaAd.id)
+        .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+        .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+        .join(MetaAccount, MetaCampaign.account_id == MetaAccount.id)
+        .filter(
+            MetaAccount.is_active == True,
+            MetaMarketingData.date >= date_from,
+            MetaMarketingData.date <= date_to,
+        )
+    )
+    ad_agg = _apply_analysis_entity_filters(ad_agg, **af)
+    ad_agg = _apply_analysis_platform_meta_marketing_data(ad_agg, analysis_platform)
+    ad_agg = ad_agg.group_by(MetaAd.id)
+    agg_rows = ad_agg.all()
+
+    empty = {
+        "ad_detail_rows": [],
+        "ad_page": 1,
+        "ad_page_size": max(1, min(int(page_size), 50)),
+        "ad_total_count": 0,
+        "ad_total_pages": 0,
+        "unique_ad_count": 0,
+        "unique_total_spend": 0.0,
+        "unique_total_conversions": 0,
+        "unique_cpl": 0.0,
+    }
+
+    if not agg_rows:
+        return empty
+
+    ids_initial = [int(r.ad_internal_id) for r in agg_rows]
+    name_map: dict[int, str] = {}
+    spec_map: dict[int, dict[str, Any]] = {}
+    for aid, aname, spec in (
+        db.query(MetaAd.id, MetaAd.name, MetaAd.creative_object_story_spec).filter(MetaAd.id.in_(ids_initial)).all()
+    ):
+        name_map[int(aid)] = (aname or "").strip()
+        spec_map[int(aid)] = spec if isinstance(spec, dict) else {}
+
+    cq = (copy_q or "").strip().lower()
+
+    def _ad_matches_copy_filter(aid_int: int) -> bool:
+        if not cq:
+            return True
+        blob = _object_story_spec_to_search_blob(spec_map.get(aid_int, {}), name_map.get(aid_int, ""))
+        return cq in blob
+
+    agg_rows = [r for r in agg_rows if _ad_matches_copy_filter(int(r.ad_internal_id))]
+    if not agg_rows:
+        return empty
+
+    agg_by_ad: dict[int, tuple[float, int]] = {}
+    unique_spend = 0.0
+    unique_conv = 0
+    for r in agg_rows:
+        aid = int(r.ad_internal_id)
+        sp = float(_parse_amount(r.tot_spend) if r.tot_spend is not None else 0.0)
+        cv = int(r.tot_conv or 0)
+        agg_by_ad[aid] = (sp, cv)
+        unique_spend += sp
+        unique_conv += cv
+
+    unique_cpl = (unique_spend / unique_conv) if unique_conv > 0 else 0.0
+    ids = [int(r.ad_internal_id) for r in agg_rows]
+
+    ad_triples = (
+        db.query(MetaAd, MetaAdSet.name, MetaCampaign.name)
+        .join(MetaAdSet, MetaAd.adset_id == MetaAdSet.id)
+        .join(MetaCampaign, MetaAdSet.campaign_id == MetaCampaign.id)
+        .filter(MetaAd.id.in_(ids))
+        .all()
+    )
+    ad_triples.sort(
+        key=lambda t: (agg_by_ad.get(t[0].id, (0.0, 0))[0], agg_by_ad.get(t[0].id, (0.0, 0))[1]),
+        reverse=True,
+    )
+
+    meta_ad_ids_ordered: list[str] = []
+    for ad, _, _ in ad_triples:
+        if ad.ad_id:
+            s = str(ad.ad_id).strip()
+            if s:
+                meta_ad_ids_ordered.append(s)
+    meta_ad_ids_unique = list(dict.fromkeys(meta_ad_ids_ordered))
+    mag_to_pay = _get_mag_to_pay(db)
+    plat = (analysis_platform or "all").strip().lower()
+    leads_by_ad = _bulk_leads_by_meta_ad_id(db, meta_ad_ids_unique, date_from, date_to, plat)
+    md_by_ad = _bulk_marketing_by_ad_pk(db, ids, date_from, date_to, plat)
+
+    ad_detail_rows: list[dict[str, Any]] = []
+    for ad, adset_name, campaign_name in ad_triples:
+        meta_aid = str(ad.ad_id).strip() if ad.ad_id else ""
+        leads = leads_by_ad.get(meta_aid, []) if meta_aid else []
+        marketing_data = md_by_ad.get(ad.id, [])
+        m = _marketing_metrics_block(leads, marketing_data, mag_to_pay, db)
+        if m.pop("_skip"):
+            sp_fb, cv_fb = agg_by_ad.get(ad.id, (0.0, 0))
+            m = _interests_adset_metrics_fallback(sp_fb, cv_fb)
+        raw_spec = ad.creative_object_story_spec if isinstance(ad.creative_object_story_spec, dict) else {}
+        row: dict[str, Any] = {
+            "ad_internal_id": ad.id,
+            "ad_meta_id": meta_aid,
+            "ad_name": (ad.name or "").strip(),
+            "adset_name": (adset_name or "").strip(),
+            "campaign_name": (campaign_name or "").strip(),
+            "status": (ad.status or "").strip(),
+            "creative_id": (ad.creative_id or "").strip(),
+            "show_thumbnail": bool((ad.creative_id or "").strip() and ad.id),
+            "creative_copy_detail": _summarize_creative_copy_for_display(raw_spec),
+            "creative_object_story_spec": raw_spec,
+        }
+        row.update(m)
+        row["total_spend"] = m["spend"]
+        row["total_conversions"] = m["total_leads"]
+        row["cpl"] = m["cpl_meta"]
+        ad_detail_rows.append(row)
+
+    ps = max(1, min(int(page_size), 50))
+    pg = max(1, int(page))
+    total_ads = len(ad_detail_rows)
+    total_pages = max(1, (total_ads + ps - 1) // ps) if total_ads else 1
+    if pg > total_pages:
+        pg = total_pages
+    start = (pg - 1) * ps
+    page_rows = ad_detail_rows[start : start + ps]
+
+    return {
+        "ad_detail_rows": page_rows,
+        "ad_page": pg,
+        "ad_page_size": ps,
+        "ad_total_count": total_ads,
+        "ad_total_pages": total_pages,
+        "unique_ad_count": len(agg_rows),
+        "unique_total_spend": round(unique_spend, 2),
+        "unique_total_conversions": unique_conv,
+        "unique_cpl": round(unique_cpl, 2),
     }
 
 
@@ -2032,6 +2327,24 @@ def _interessi_pagination_urls(request: Request, total_pages: int, current_page:
     }
 
 
+def _copy_pagination_urls(request: Request, total_pages: int, current_page: int) -> dict[str, Any]:
+    """Link prev/next per GET /marketing/analysis-copy preservando i query param."""
+    base = "/marketing/analysis-copy"
+    pairs = [(k, v) for k, v in request.query_params.multi_items() if k not in ("page", "tab")]
+
+    def _url(p: int) -> str:
+        q = list(pairs)
+        if p > 1:
+            q.append(("page", str(p)))
+        return f"{base}?{urlencode(q)}" if q else base
+
+    return {
+        "prev_url": _url(current_page - 1) if current_page > 1 else None,
+        "next_url": _url(current_page + 1) if current_page < total_pages else None,
+        "first_url": _url(1),
+    }
+
+
 @router.get("/marketing/analysis-interessi")
 async def marketing_analysis_interessi(request: Request, db: Session = Depends(get_db)):
     """Ad set con metriche Meta nel periodo e targeting completo (stessi filtri Analysis; filtro opzionale su interessi nel targeting)."""
@@ -2130,6 +2443,109 @@ async def marketing_analysis_interessi(request: Request, db: Session = Depends(g
         )
     except Exception as e:
         logger.error(f"Errore nel route /marketing/analysis-interessi: {e}", exc_info=True)
+        raise
+
+
+@router.get("/marketing/analysis-copy")
+async def marketing_analysis_copy(request: Request, db: Session = Depends(get_db)):
+    """Annunci con metriche nel periodo e copy creatività (object_story_spec da sync Meta)."""
+    try:
+        user = request.session.get("user")
+        if not user:
+            return RedirectResponse(url="/")
+        if not db.query(User).filter(User.email == user.get("email")).first():
+            return RedirectResponse(url="/")
+
+        params = request.query_params
+        selected_account_id = params.get("account_id") or ""
+        selected_campaign_id = params.get("campaign_id") or ""
+        selected_adset_id_param = params.get("adset_id") or ""
+        try:
+            selected_adset_id = int(selected_adset_id_param) if selected_adset_id_param else None
+        except ValueError:
+            selected_adset_id = None
+
+        campaign_name_q = (params.get("campaign_name") or "").strip()
+        adset_name_q = (params.get("adset_name") or "").strip()
+        creative_name_q = (params.get("creative_name") or "").strip()
+        copy_q = (params.get("copy_q") or "").strip()
+        analysis_status = "all"
+        analysis_platform = "all"
+
+        try:
+            page = int(params.get("page") or "1")
+        except ValueError:
+            page = 1
+        try:
+            page_size = int(params.get("page_size") or "10")
+        except ValueError:
+            page_size = 10
+
+        af = dict(
+            selected_account_id=selected_account_id,
+            selected_campaign_id=selected_campaign_id,
+            selected_adset_id=selected_adset_id,
+            campaign_name_q=campaign_name_q,
+            adset_name_q=adset_name_q,
+            creative_name_q=creative_name_q,
+            analysis_status=analysis_status,
+        )
+
+        date_from_str = params.get("date_from")
+        date_to_str = params.get("date_to")
+        _def_from_c, _def_to_c = default_marketing_filter_date_range()
+        try:
+            date_from = datetime.strptime(date_from_str, "%Y-%m-%d") if date_from_str else _def_from_c
+        except Exception:
+            date_from = _def_from_c
+        try:
+            if date_to_str:
+                date_to = datetime.strptime(date_to_str, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59, microsecond=999999
+                )
+            else:
+                date_to = _def_to_c
+        except Exception:
+            date_to = _def_to_c
+
+        copy_payload = _build_copy_marketing_analysis(
+            db,
+            date_from,
+            date_to,
+            af,
+            analysis_platform=analysis_platform,
+            copy_q=copy_q,
+            page=page,
+            page_size=page_size,
+        )
+
+        tp = int(copy_payload.get("ad_total_pages") or 1)
+        cp = int(copy_payload.get("ad_page") or 1)
+        copy_pagination = _copy_pagination_urls(request, tp, cp)
+
+        return templates.TemplateResponse(
+            request,
+            "marketing_analysis_copy.html",
+            {
+                "request": request,
+                "title": "Analisi copy",
+                "user": user,
+                "active_page": "marketing_analysis_copy",
+                "date_from": date_from.strftime("%Y-%m-%d"),
+                "date_to": date_to.strftime("%Y-%m-%d"),
+                "selected_account_id": selected_account_id,
+                "selected_campaign_id": selected_campaign_id,
+                "selected_adset_id": selected_adset_id,
+                "selected_campaign_name": campaign_name_q,
+                "selected_adset_name": adset_name_q,
+                "selected_creative_name": creative_name_q,
+                "selected_copy_q": copy_q,
+                "copy_payload": copy_payload,
+                "copy_pagination": copy_pagination,
+            },
+        )
+    except Exception as e:
+        logger.error(f"Errore nel route /marketing/analysis-copy: {e}", exc_info=True)
         raise
 
 

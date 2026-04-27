@@ -686,10 +686,11 @@ async def settings_meta_sync(request: Request, db: Session = Depends(get_db)):
         MetaAccount.is_active == True,
     ).order_by(MetaAccount.name).all()
     
-    # Date di default: dal 1 gennaio a oggi-1
+    # Date di default: dal 1° del mese di (oggi-1) a ieri
     today = date.today()
-    default_end_date = (today - timedelta(days=1)).strftime('%Y-%m-%d')
-    default_start_date = date(today.year, 1, 1).strftime('%Y-%m-%d')
+    yesterday = today - timedelta(days=1)
+    default_end_date = yesterday.strftime('%Y-%m-%d')
+    default_start_date = date(yesterday.year, yesterday.month, 1).strftime('%Y-%m-%d')
     
     return templates.TemplateResponse(request, "settings_meta_sync.html", {
         "request": request,

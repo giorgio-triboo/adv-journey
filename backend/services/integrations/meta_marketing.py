@@ -597,6 +597,23 @@ class MetaMarketingService:
             logger.warning("Error converting targeting to dict: %s, using empty dict", e)
             return {}
 
+    def _object_story_spec_to_dict(self, spec: Any) -> Dict[str, Any]:
+        """Normalizza object_story_spec del creative Graph in dict JSON-serializzabile."""
+        if not spec:
+            return {}
+        if isinstance(spec, dict):
+            return spec
+        try:
+            if hasattr(spec, "export_all_data"):
+                exported = spec.export_all_data()
+                return exported if isinstance(exported, dict) else {}
+            if hasattr(spec, "__dict__"):
+                return dict(spec.__dict__)
+            return dict(spec) if spec else {}
+        except Exception as e:
+            logger.warning("Error converting object_story_spec to dict: %s, using empty dict", e)
+            return {}
+
     def get_adsets(self, campaign_id: str, enrich_custom_audience_names: bool = True) -> List[Dict]:
         """
         Recupera adset per una campagna.
@@ -677,7 +694,7 @@ class MetaMarketingService:
     def get_ads(self, adset_id: str) -> List[Dict]:
         """
         Recupera ads (creatività) per un adset.
-        Include thumbnail_url dell'immagine della creatività.
+        Include thumbnail_url e creative_object_story_spec (dict JSON-serializzabile) per persistenza copy in DB.
         """
         if not self.access_token:
             return []
@@ -691,32 +708,25 @@ class MetaMarketingService:
             
             result = []
             for ad in ads:
-                creative = ad.get('creative', {})
-                
+                creative = ad.get('creative', {}) or {}
+                oss_dict = self._object_story_spec_to_dict(creative.get('object_story_spec'))
+
                 # Prova a ottenere thumbnail_url da diverse fonti
                 thumbnail_url = ''
-                if creative:
-                    # 1. Prova thumbnail_url diretto
-                    thumbnail_url = creative.get('thumbnail_url', '')
-                    
-                    # 2. Se non c'è, prova image_url
-                    if not thumbnail_url:
-                        thumbnail_url = creative.get('image_url', '')
-                    
-                    # 3. Se ancora non c'è, prova a estrarre da object_story_spec
-                    if not thumbnail_url:
-                        object_story_spec = creative.get('object_story_spec', {})
-                        if object_story_spec:
-                            # Per link ads, l'immagine può essere in link_data
-                            link_data = object_story_spec.get('link_data', {})
-                            if link_data:
-                                thumbnail_url = link_data.get('image_url', '') or link_data.get('picture', '')
-                            
-                            # Per photo ads, l'immagine può essere in photo_data
-                            photo_data = object_story_spec.get('photo_data', {})
-                            if not thumbnail_url and photo_data:
-                                thumbnail_url = photo_data.get('image_url', '')
-                
+                # 1. Prova thumbnail_url diretto
+                thumbnail_url = creative.get('thumbnail_url', '') or ''
+                # 2. Se non c'è, prova image_url
+                if not thumbnail_url:
+                    thumbnail_url = creative.get('image_url', '') or ''
+                # 3. Se ancora non c'è, prova a estrarre da object_story_spec
+                if not thumbnail_url and oss_dict:
+                    link_data = oss_dict.get('link_data', {})
+                    if isinstance(link_data, dict):
+                        thumbnail_url = link_data.get('image_url', '') or link_data.get('picture', '') or ''
+                    photo_data = oss_dict.get('photo_data', {})
+                    if not thumbnail_url and isinstance(photo_data, dict):
+                        thumbnail_url = photo_data.get('image_url', '') or ''
+
                 # effective_status riflette lo stato reale (include pause di campagna/adset)
                 effective = ad.get('effective_status') or ad.get('status')
                 result.append({
@@ -724,7 +734,8 @@ class MetaMarketingService:
                     "name": ad.get('name', ''),
                     "status": effective if effective else 'UNKNOWN',
                     "creative_id": creative.get('id', '') if creative else '',
-                    "creative_thumbnail_url": thumbnail_url
+                    "creative_thumbnail_url": thumbnail_url,
+                    "creative_object_story_spec": oss_dict,
                 })
             
             return result
@@ -1270,13 +1281,17 @@ class MetaMarketingService:
                     
                     if not ad_record:
                         logger.debug(f"[SYNC] Creazione nuovo ad: {ad_data['ad_id']} - {ad_data['name']}")
+                        _oss = ad_data.get('creative_object_story_spec')
+                        if not isinstance(_oss, dict):
+                            _oss = {}
                         ad_record = MetaAd(
                             adset_id=adset_record.id,
                             ad_id=ad_data['ad_id'],
                             name=ad_data['name'],
                             status=ad_data['status'],
                             creative_id=ad_data.get('creative_id', ''),
-                            creative_thumbnail_url=ad_data.get('creative_thumbnail_url', '')
+                            creative_thumbnail_url=ad_data.get('creative_thumbnail_url', ''),
+                            creative_object_story_spec=_oss,
                         )
                         db_session.add(ad_record)
                         ads_created += 1
@@ -1284,9 +1299,13 @@ class MetaMarketingService:
                         logger.debug(f"[SYNC] Aggiornamento ad esistente: {ad_data['ad_id']}")
                         ad_record.name = ad_data['name']
                         ad_record.status = ad_data['status']
-                        # Aggiorna anche creative_thumbnail_url se disponibile
+                        if ad_data.get('creative_id'):
+                            ad_record.creative_id = ad_data.get('creative_id', '')
                         if ad_data.get('creative_thumbnail_url'):
                             ad_record.creative_thumbnail_url = ad_data.get('creative_thumbnail_url', '')
+                        _oss_u = ad_data.get('creative_object_story_spec')
+                        if isinstance(_oss_u, dict):
+                            ad_record.creative_object_story_spec = _oss_u
                         ad_record.updated_at = now_rome()
                         ads_updated += 1
                 
