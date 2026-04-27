@@ -90,14 +90,11 @@ def _marketing_metrics_block(leads: list, marketing_data: list, mag_to_pay: dict
     ulixe_rifiutate = len([l for l in leads if l.status_category == StatusCategory.RIFIUTATO])
     ulixe_approvate = len([l for l in leads if l.status_category == StatusCategory.FINALE])
     ulixe_ws_scartate = len([l for l in leads if ulixe_ws_scartata_lead(l)])
-    # Scarto totale %: sulle lead CRM nel periodo (stesso insieme delle approvate), non sulle sole conversioni Meta
-    # (evita 100% artefatti quando Insights ha più conversioni di lead importate).
-    n_leads_tracked = len(leads)
-    if n_leads_tracked > 0:
-        approv_eff = min(ulixe_approvate, n_leads_tracked)
-        scarto_totale_pct = round((n_leads_tracked - approv_eff) / n_leads_tracked * 100, 2)
-    elif total_leads > 0:
-        scarto_totale_pct = None
+    # Scarto totale %: (conversioni Meta − inviate al WS Ulixe) ÷ conversioni Meta × 100 (stesso "Lead" di Dati Meta).
+    inviate_ws = magellano_inviate
+    if total_leads > 0:
+        inv_eff = min(inviate_ws, total_leads)
+        scarto_totale_pct = round((total_leads - inv_eff) / total_leads * 100, 2)
     else:
         scarto_totale_pct = 0.0
 
@@ -135,7 +132,7 @@ def _marketing_metrics_block(leads: list, marketing_data: list, mag_to_pay: dict
         "margine_singola_lead": round(margine_singola, 2) if margine_singola is not None else None,
         "margine_lordo": round(margine_lordo, 2) if margine_lordo is not None else None,
         "margine_pct": round(margine_pct, 2) if margine_pct is not None else None,
-        "scarto_totale_pct": round(scarto_totale_pct, 2) if scarto_totale_pct is not None else None,
+        "scarto_totale_pct": round(scarto_totale_pct, 2),
     }
 
 

@@ -358,8 +358,7 @@ const MARKETING_COLUMN_LEGENDS_HTML = {
         '<li><span class="font-medium text-neutral-800">% Scarto</span>: Rifiutate ÷ (Inviate + Rifiutate) × 100.</li></ul>',
     scarto_totale:
         '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
-        '<li><span class="font-medium text-neutral-800">Scarto totale %</span>: (Lead CRM nel periodo − Approvate Ulixe) ÷ Lead CRM × 100. Stesso insieme di lead usato per le approvate (evita % fuorvianti se le conversioni Meta superano le lead importate).</li>' +
-        '<li>Se ci sono conversioni Meta ma nessuna lead CRM nel periodo per la riga, viene mostrato N/D.</li></ul>',
+        '<li><span class="font-medium text-neutral-800">Scarto totale %</span>: (Lead Meta − Inviate Ulixe) ÷ Lead Meta × 100. Lead Meta = conversioni nella colonna Dati Meta; Inviate Ulixe = lead inviate al WS (stesso conteggio della colonna Inviate Ulixe).</li></ul>',
     cpl_finale:
         '<ul class="list-disc space-y-1.5 pl-3.5 m-0 text-[11px] font-normal normal-case text-neutral-600 leading-snug">' +
         '<li><span class="font-medium text-neutral-800">CPL finale</span>: Speso Meta ÷ Inviate Ulixe (stato Magellano «inviata al WS», come colonna Inviate in Uscita Magellano).</li>' +
@@ -738,7 +737,7 @@ function createCampaignRow(campaign) {
                             <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
                             ${marketingMetricLegendDetails('scarto_totale')}
                         </div>
-                        <div class="${getScartoColorClass(campaign.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${campaign.scarto_totale_pct != null && campaign.scarto_totale_pct !== undefined ? campaign.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                        <div class="${getScartoColorClass(campaign.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${campaign.scarto_totale_pct != null && campaign.scarto_totale_pct !== undefined ? campaign.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                     <div class="text-right">
                         <div class="mb-1 flex items-center justify-end gap-0.5">
@@ -966,7 +965,7 @@ function createAdsetRow(campaignId, adset) {
                             <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
                             ${marketingMetricLegendDetails('scarto_totale')}
                         </div>
-                        <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null && adset.scarto_totale_pct !== undefined ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                        <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null && adset.scarto_totale_pct !== undefined ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                     <div class="text-right">
                         <div class="mb-1 flex items-center justify-end gap-0.5">
@@ -1192,7 +1191,7 @@ function createAdRow(ad) {
                             <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
                             ${marketingMetricLegendDetails('scarto_totale')}
                         </div>
-                        <div class="${getScartoColorClass(ad.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${ad.scarto_totale_pct != null && ad.scarto_totale_pct !== undefined ? ad.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                        <div class="${getScartoColorClass(ad.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${ad.scarto_totale_pct != null && ad.scarto_totale_pct !== undefined ? ad.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                     <div class="text-right">
                         <div class="mb-1 flex items-center justify-end gap-0.5">
@@ -1658,7 +1657,7 @@ function createAdsetRowDirectly(adset) {
                             <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
                             ${marketingMetricLegendDetails('scarto_totale')}
                         </div>
-                        <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null && adset.scarto_totale_pct !== undefined ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : 'N/D'}</div>
+                        <div class="${getScartoColorClass(adset.scarto_totale_pct) || 'font-semibold text-neutral-900'}">${adset.scarto_totale_pct != null && adset.scarto_totale_pct !== undefined ? adset.scarto_totale_pct.toFixed(2).replace('.', ',') + '%' : '0,00%'}</div>
                     </div>
                     <div class="text-right">
                         <div class="mb-1 flex items-center justify-end gap-0.5">

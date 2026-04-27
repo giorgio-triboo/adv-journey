@@ -33,8 +33,8 @@
                 <li><span class="font-medium text-neutral-800">Rifiutate</span>: stati inclusi = Rifiutata (bloccata nel firewall), In attesa nel firewall, Waiting Marketing Automation, Stato non riconosciuto/altro.</li>
                 <li><span class="font-medium text-neutral-800">% Scarto</span>: Rifiutate ÷ (Inviate + Rifiutate) × 100.</li>
                 {% elif key == 'scarto_totale' %}
-                <li><span class="font-medium text-neutral-800">Scarto totale %</span>: (Lead CRM nel periodo − Approvate Ulixe) ÷ Lead CRM × 100.</li>
-                <li>Se ci sono conversioni Meta ma nessuna lead CRM per la riga, viene mostrato <span class="font-medium text-neutral-800">N/D</span>.</li>
+                <li><span class="font-medium text-neutral-800">Scarto totale %</span>: (Lead Meta − Inviate Ulixe) ÷ Lead Meta × 100.</li>
+                <li>Lead Meta = conversioni Dati Meta; Inviate Ulixe = lead inviate al WS (Magellano sent).</li>
                 {% elif key == 'cpl_finale' %}
                 <li><span class="font-medium text-neutral-800">CPL finale</span>: Speso Meta ÷ Inviate Ulixe (Magellano sent).</li>
                 <li>Se non ci sono inviate al WS, viene mostrato <span class="font-medium text-neutral-800">N/D</span>.</li>
@@ -325,7 +325,7 @@
                                         <span class="text-xs font-semibold text-neutral-900 uppercase">Scarto totale</span>
                                         {{ metric_legend('scarto_totale', 'Scarto totale') }}
                                     </div>
-                                    <div class="font-semibold text-neutral-900">{% if ar.scarto_totale_pct is defined and ar.scarto_totale_pct is not none %}{{ fmt_eur2(ar.scarto_totale_pct) }}%{% else %}N/D{% endif %}</div>
+                                    <div class="font-semibold text-neutral-900">{% if ar.scarto_totale_pct is defined and ar.scarto_totale_pct is not none %}{{ fmt_eur2(ar.scarto_totale_pct) }}%{% else %}0,00%{% endif %}</div>
                                 </div>
                                 <div class="text-right">
                                     <div class="mb-1 flex items-center justify-end gap-1">

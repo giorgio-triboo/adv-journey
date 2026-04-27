@@ -500,7 +500,7 @@ def _interests_adset_metrics_fallback(spend: float, conversions: int) -> dict[st
         "margine_singola_lead": None,
         "margine_lordo": None,
         "margine_pct": None,
-        "scarto_totale_pct": None if cv else 0.0,
+        "scarto_totale_pct": round(100.0, 2) if cv else 0.0,  # inviate WS 0 nel fallback → (cv-0)/cv
     }
 
 
