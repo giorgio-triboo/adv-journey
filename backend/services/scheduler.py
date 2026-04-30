@@ -10,6 +10,7 @@ from services.sync.meta_conversion_marker import run as meta_conversion_marker_j
 from services.sync.meta_conversion_sync import run as meta_conversion_sync_job
 from database import SessionLocal
 from models import CronJob, IngestionJob, now_rome
+from celery_app import celery_app
 import os
 import logging
 import threading
@@ -22,6 +23,17 @@ logger = logging.getLogger('services.scheduler')
 _scheduler_reload_lock = threading.Lock()
 
 scheduler = BackgroundScheduler()
+
+
+def _celery_workers_available() -> bool:
+    """Ritorna True se almeno un worker Celery risponde al ping."""
+    try:
+        inspector = celery_app.control.inspect(timeout=2)
+        ping_map = inspector.ping() if inspector else None
+        return bool(ping_map)
+    except Exception as exc:
+        logger.error("Impossibile verificare i worker Celery: %s", exc, exc_info=True)
+        return False
 
 def nightly_sync_job():
     """Esegue l'orchestrator completo di sincronizzazione notturna."""
@@ -323,6 +335,27 @@ def _run_meta_campaigns_incremental():
         db.add(job)
         db.commit()
 
+        if not _celery_workers_available():
+            msg = "Nessun worker Celery disponibile: job non accodato"
+            job.status = "ERROR"
+            job.completed_at = now_rome()
+            job.message = msg
+            db.commit()
+            try:
+                from services.utils.alert_sender import send_sync_alert_if_needed
+
+                send_sync_alert_if_needed(
+                    db,
+                    "meta_campaigns_incremental",
+                    success=False,
+                    stats={"stage": "enqueue", "reason": "no_celery_workers"},
+                    error_message=msg,
+                )
+            except Exception as alert_exc:
+                logger.error("Errore invio alert no-worker meta_campaigns_incremental: %s", alert_exc, exc_info=True)
+            logger.error(msg)
+            return
+
         meta_campaigns_incremental_task.delay(job_id=job.id)
         logger.info("meta_campaigns_incremental schedulato via Celery con job_id=%s (source=scheduler)", job.id)
     except Exception as e:
@@ -392,6 +425,29 @@ def _run_magellano_export_pipeline():
         end_date_str = end_date.strftime("%Y-%m-%d")
 
         from tasks.magellano import magellano_export_request_task
+
+        if not _celery_workers_available():
+            msg = "Nessun worker Celery disponibile: impossibile accodare Magellano export request"
+            logger.error(msg)
+            try:
+                from services.utils.alert_sender import send_sync_alert_if_needed
+
+                send_sync_alert_if_needed(
+                    db,
+                    "magellano_export",
+                    success=False,
+                    stats={
+                        "stage": "enqueue",
+                        "campaigns": magellano_ids,
+                        "start_date": start_date_str,
+                        "end_date": end_date_str,
+                        "reason": "no_celery_workers",
+                    },
+                    error_message=msg,
+                )
+            except Exception as alert_exc:
+                logger.error("Errore invio alert no-worker magellano_export: %s", alert_exc, exc_info=True)
+            return
 
         magellano_export_request_task.delay(
             magellano_ids,
