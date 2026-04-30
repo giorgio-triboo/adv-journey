@@ -5,7 +5,7 @@
 set -e
 APP_DIR="${APP_DIR:-/home/ec2-user/dashboard-cliente}"
 cd "$APP_DIR"
-COMPOSE_OPTS="--project-directory $APP_DIR -f deploy/docker-compose.prod.yml -f deploy/docker-compose.bluegreen.yml --env-file $APP_DIR/.env"
+COMPOSE_OPTS="--project-directory $APP_DIR -f deploy/docker-compose.prod.yml --env-file $APP_DIR/.env"
 
 echo "=== 1. Tutti i container (anche fermati) ==="
 docker ps -a

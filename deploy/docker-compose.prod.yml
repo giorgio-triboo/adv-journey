@@ -1,7 +1,6 @@
-# insight-magellano - produzione
+# insight-magellano - produzione single-stack
 # Uso: docker compose -f deploy/docker-compose.prod.yml up -d
 name: insight-magellano
-# Con blue-green: -f deploy/docker-compose.bluegreen.yml
 # Porta principale: 3000 (nginx reverse proxy)
 
 services:
@@ -17,66 +16,14 @@ services:
       - ./nginx/upstream.conf:/etc/nginx/conf.d/upstream.conf:ro
       - nginx_cache:/var/cache/nginx
     depends_on:
-      - backend-blue
+      - backend
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:80/health"]
       interval: 10s
       timeout: 5s
       retries: 3
 
-  backend-blue:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-    image: insight-magellano-app:latest
-    restart: always
-    expose:
-      - "8000"
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - SECRET_KEY=${SECRET_KEY}
-      - SECURE_COOKIES=${SECURE_COOKIES:-true}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - ULIXE_RCRM_GOOGLE_SA_TYPE=${ULIXE_RCRM_GOOGLE_SA_TYPE:-service_account}
-      - ULIXE_RCRM_GOOGLE_SA_PROJECT_ID=${ULIXE_RCRM_GOOGLE_SA_PROJECT_ID:-}
-      - ULIXE_RCRM_GOOGLE_SA_PRIVATE_KEY_ID=${ULIXE_RCRM_GOOGLE_SA_PRIVATE_KEY_ID:-}
-      - ULIXE_RCRM_GOOGLE_SA_PRIVATE_KEY=${ULIXE_RCRM_GOOGLE_SA_PRIVATE_KEY:-}
-      - ULIXE_RCRM_GOOGLE_SA_CLIENT_EMAIL=${ULIXE_RCRM_GOOGLE_SA_CLIENT_EMAIL:-}
-      - ULIXE_RCRM_GOOGLE_SA_CLIENT_ID=${ULIXE_RCRM_GOOGLE_SA_CLIENT_ID:-}
-      - ULIXE_RCRM_GOOGLE_SA_AUTH_URI=${ULIXE_RCRM_GOOGLE_SA_AUTH_URI:-https://accounts.google.com/o/oauth2/auth}
-      - ULIXE_RCRM_GOOGLE_SA_TOKEN_URI=${ULIXE_RCRM_GOOGLE_SA_TOKEN_URI:-https://oauth2.googleapis.com/token}
-      - ULIXE_RCRM_GOOGLE_SA_AUTH_PROVIDER_X509_CERT_URL=${ULIXE_RCRM_GOOGLE_SA_AUTH_PROVIDER_X509_CERT_URL:-https://www.googleapis.com/oauth2/v1/certs}
-      - ULIXE_RCRM_GOOGLE_SA_CLIENT_X509_CERT_URL=${ULIXE_RCRM_GOOGLE_SA_CLIENT_X509_CERT_URL:-}
-      - ULIXE_RCRM_GOOGLE_SPREADSHEET_ID=${ULIXE_RCRM_GOOGLE_SPREADSHEET_ID:-}
-      - ULIXE_RCRM_GOOGLE_SHEET_NAME_TEMPLATE=${ULIXE_RCRM_GOOGLE_SHEET_NAME_TEMPLATE:-}
-      - ULIXE_RCRM_GOOGLE_SHEET_GID=${ULIXE_RCRM_GOOGLE_SHEET_GID:-}
-      - ULIXE_RCRM_GOOGLE_COLUMN_RANGE=${ULIXE_RCRM_GOOGLE_COLUMN_RANGE:-}
-      - APP_BASE_URL=${APP_BASE_URL}
-      - SMTP_HOST=${SMTP_HOST:-}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER:-}
-      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
-      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
-      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
-      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-      - TZ=Europe/Rome
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-
-  backend-green:
-    profiles:
-      - green
+  backend:
     build:
       context: .
       dockerfile: deploy/Dockerfile

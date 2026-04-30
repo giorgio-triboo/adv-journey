@@ -1,2 +1,0 @@
-# Copia in default.conf per puntare su GREEN:
-# upstream backend_active { server backend-green:8000; }

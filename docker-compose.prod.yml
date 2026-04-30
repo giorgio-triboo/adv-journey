@@ -1,4 +1,4 @@
-# Produzione: blue-green deployment con nginx reverse proxy
+# Produzione: single-stack deployment con nginx reverse proxy
 # insight-magellano - porta 3000 (nginx), Adminer 18080
 # Per pipeline CodeDeploy usa deploy/docker-compose.prod.yml
 name: insight-magellano
@@ -6,14 +6,8 @@ name: insight-magellano
 # Deploy iniziale:
 #   docker compose -f docker-compose.prod.yml up -d
 #
-# Deploy nuova versione (blue -> green):
-#   1. docker compose -f docker-compose.prod.yml --profile green up -d --build backend-green
-#   2. curl http://localhost:8004/health  # verifica green
-#   3. Modifica nginx/conf.d/default.conf: server backend-green:8000
-#   4. docker exec insight-magellano-nginx-1 nginx -s reload
-#   5. docker compose -f docker-compose.prod.yml stop backend-blue
-#
-# Switch green -> blue (per prossimo ciclo): inverti i passi 3–5
+# Deploy nuova versione:
+#   docker compose -f docker-compose.prod.yml up -d --build backend backend-worker scheduler nginx
 
 services:
   nginx:
@@ -26,45 +20,14 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - nginx_cache:/var/cache/nginx
     depends_on:
-      - backend-blue
+      - backend
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:80/health"]
       interval: 10s
       timeout: 5s
       retries: 3
 
-  backend-blue:
-    build:
-      context: .
-      dockerfile: ./backend/Dockerfile
-    restart: always
-    expose:
-      - "8000"
-    env_file:
-      - ./backend/.env
-    environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/cepudb
-      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-      - TZ=Europe/Rome
-      - FORWARDED_ALLOW_IPS=*
-    depends_on:
-      - db
-      - redis
-    volumes:
-      # Esporta i log dal container alla cartella backend/logs sull'host
-      # I logger Python scrivono in /app/backend/logs, quindi montiamo lì.
-      - ./backend/logs:/app/backend/logs
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-
-  backend-green:
-    profiles:
-      - green
+  backend:
     build:
       context: .
       dockerfile: ./backend/Dockerfile

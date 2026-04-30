@@ -9,7 +9,7 @@ APP_DIR="${APP_DIR:-/home/ec2-user/dashboard-cliente}"
 cd "$APP_DIR"
 
 echo "Fermo stack dashboard-cliente..."
-docker compose --project-directory "$APP_DIR" -f deploy/docker-compose.prod.yml -f deploy/docker-compose.bluegreen.yml --env-file "$APP_DIR/.env" down 2>/dev/null || true
+docker compose --project-directory "$APP_DIR" -f deploy/docker-compose.prod.yml --env-file "$APP_DIR/.env" down 2>/dev/null || true
 
 echo "Rimuovo immagini app e nginx..."
 docker rmi dashboard-cliente-app:latest 2>/dev/null || true

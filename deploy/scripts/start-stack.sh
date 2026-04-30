@@ -14,11 +14,6 @@ fi
 
 COMPOSE_OPTS="--project-directory $APP_DIR -f deploy/docker-compose.prod.yml --env-file $APP_DIR/.env"
 
-# Blue-green: aggiungi overlay e profile se necessario
-if [[ -f deploy/docker-compose.bluegreen.yml ]]; then
-  COMPOSE_OPTS="$COMPOSE_OPTS -f deploy/docker-compose.bluegreen.yml"
-fi
-
 mkdir -p deploy/nginx deploy/scripts
 
 echo "Avvio stack insight-magellano..."

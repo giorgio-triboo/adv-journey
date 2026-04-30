@@ -58,7 +58,7 @@ fi
 # Restaura: ferma backend per evitare lock, restaura, riavvia
 ssh "$PROD_HOST" 'cd /home/ec2-user/insight-magellano && \
     echo "   Fermando backend..." && \
-    sudo -u ec2-user docker compose -f deploy/docker-compose.prod.yml --profile green stop backend-blue backend-green backend-worker 2>/dev/null || true && \
+    sudo -u ec2-user docker compose -f deploy/docker-compose.prod.yml stop backend backend-worker 2>/dev/null || true && \
     sleep 2 && \
     U=$(grep -E "^POSTGRES_USER=" .env 2>/dev/null | cut -d= -f2- || echo "user"); \
     P=$(grep -E "^POSTGRES_PASSWORD=" .env 2>/dev/null | cut -d= -f2-); \
@@ -70,7 +70,7 @@ ssh "$PROD_HOST" 'cd /home/ec2-user/insight-magellano && \
     cat /tmp/'"$DUMP_FILE"' | docker exec -i insight-magellano-db-1 psql -h localhost -U "$U" -d "$D" --set ON_ERROR_STOP=on -q && \
     rm -f /tmp/'"$DUMP_FILE"' && \
     echo "   Riavviando backend..." && \
-    sudo -u ec2-user docker compose -f deploy/docker-compose.prod.yml --profile green start backend-blue backend-green backend-worker && \
+    sudo -u ec2-user docker compose -f deploy/docker-compose.prod.yml start backend backend-worker && \
     echo "Restore completato"'
 
 echo ""

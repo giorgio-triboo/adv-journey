@@ -1,9 +1,9 @@
 # Override per debug locale: codice montato, hot-reload.
 # Uso: docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.debug.yml up -d
-# Migrazioni: docker compose ... exec backend-blue alembic upgrade head
+# Migrazioni: docker compose ... exec backend alembic upgrade head
 
 services:
-  backend-blue:
+  backend:
     build:
       context: .
       dockerfile: deploy/Dockerfile

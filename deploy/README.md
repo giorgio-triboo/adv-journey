@@ -1,6 +1,6 @@
 # Deploy insight-magellano su server con Docker
 
-Configurazione per deploy su server (es. EC2 t4g) tramite Docker in modalità **blue-green** (zero downtime). Opzionalmente AWS CodeBuild/CodeDeploy.
+Configurazione per deploy su server (es. EC2 t4g) tramite Docker in modalità **single-stack**. Opzionalmente AWS CodeBuild/CodeDeploy.
 
 ## Requisiti sul server
 
@@ -31,12 +31,12 @@ Se il build fallisce con "Temporary failure resolving 'deb.debian.org'", aggiung
 
 Poi `sudo systemctl restart docker`.
 
-## Blue-green
+## Single-stack
 
-- **backend-blue** e **backend-green**: due container della stessa immagine; uno attivo, uno standby.
-- **nginx** sulla porta 3000: reverse proxy verso l’istanza attiva.
-- **Deploy senza downtime**: ricostruisci la standby, migrazioni, switch traffico, ricostruisci ex-attiva.
-- Stato attivo in `deploy/nginx/upstream.conf`.
+- **backend**: singolo container applicativo.
+- **nginx** sulla porta 3000: reverse proxy verso `backend`.
+- Deploy semplice: build immagine, recreate backend/worker/scheduler.
+- Possibile breve downtime durante update.
 
 ## Migrare DB locale → produzione
 
@@ -52,15 +52,13 @@ Requisiti: Docker locale con `db` in esecuzione, SSH a `PROD_HOST` (default: ec2
 
 ```bash
 cd /home/ec2-user/insight-magellano
-# .env già configurato
-BLUE_GREEN=true ./afterinstall.sh
-# oppure senza blue-green:
+# backend/.env già configurato
 ./afterinstall.sh
 ```
 
 ## Deploy con AWS CodeDeploy
 
-1. **ApplicationStop**: `scripts/stop.sh` ferma solo il worker (i backend restano up per zero-downtime).
+1. **ApplicationStop**: `scripts/stop.sh` ferma solo il worker.
 2. **Copia file**: artefatto in `/home/ec2-user/insight-magellano`. `.env` non va nel repo.
 3. **AfterInstall**: `afterinstall.sh` fa build, `up -d`, migrazioni Alembic.
 
@@ -74,15 +72,7 @@ BLUE_GREEN=true ./afterinstall.sh
 ./deploy/scripts/start-stack.sh
 ```
 
-## Switch traffico (blue ↔ green)
-
-```bash
-./deploy/scripts/switch-upstream.sh blue   # oppure green
-```
-
-Il **primo** `server` in `upstream.conf` riceve il traffico; la riga `backup` viene usata solo se il primario non è raggiungibile. Se il green è primario e va in errore mentre il blue è sano, metti il traffico sul blue con `./deploy/scripts/switch-upstream.sh blue` (dalla directory del progetto sul server).
-
-Oppure modifica `deploy/nginx/upstream.conf` e `docker exec <nginx-container> nginx -s reload`.
+Non serve più lo switch traffico blue/green: l’upstream nginx punta sempre a `backend`.
 
 ## Risorse (t4g.small)
 

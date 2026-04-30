@@ -1,6 +1,5 @@
 #!/bin/bash
-# AfterInstall: deploy insight-magellano (FastAPI + Celery).
-# Build Docker, avvio stack, blue-green opzionale (zero downtime).
+# AfterInstall: deploy insight-magellano (FastAPI + Celery) in single-stack mode.
 # Esecuzione locale: APP_DIR=$(pwd) LOCAL_DEPLOY=1 ./afterinstall.sh
 
 set -e
@@ -10,14 +9,6 @@ echo "Starting afterinstall script..."
 APP_DIR="${APP_DIR:-/home/ec2-user/insight-magellano}"
 LOCAL_DEPLOY="${LOCAL_DEPLOY:-false}"
 cd "$APP_DIR"
-
-# Blue-green: attivo se BLUE_GREEN=true o se esiste deploy/docker-compose.bluegreen.yml
-if [ -n "$BLUE_GREEN" ]; then
-    USE_BLUE_GREEN="$BLUE_GREEN"
-else
-    USE_BLUE_GREEN="false"
-    [ -f "$APP_DIR/deploy/docker-compose.bluegreen.yml" ] && USE_BLUE_GREEN="true"
-fi
 
 # Su server: ec2-user nel gruppo docker (docker senza sudo)
 if [ "$LOCAL_DEPLOY" != "1" ] && [ "$LOCAL_DEPLOY" != "true" ]; then
@@ -44,14 +35,7 @@ fi
 [ -n "$DOCKER_RUN" ] && COMPOSE_CMD="$DOCKER_RUN $DOCKER_COMPOSE_CMD" || COMPOSE_CMD="$DOCKER_COMPOSE_CMD"
 [ -n "$DOCKER_RUN" ] && DOCKER_CMD="$DOCKER_RUN docker" || DOCKER_CMD="docker"
 
-# Compose: base prod + blue-green se attivo (--profile green per includere backend-green)
 COMPOSE_FILES="--project-directory $APP_DIR -f deploy/docker-compose.prod.yml"
-PROFILE_OPT=""
-if [ "$USE_BLUE_GREEN" = "true" ]; then
-    COMPOSE_FILES="$COMPOSE_FILES -f deploy/docker-compose.bluegreen.yml"
-    PROFILE_OPT="--profile green"
-    echo "✓ Blue-green deploy attivo (zero downtime)"
-fi
 
 # Unico env ufficiale (locale + produzione): backend/.env
 ENV_FILE="$APP_DIR/backend/.env"
@@ -65,30 +49,14 @@ COMPOSE_FILES="$COMPOSE_FILES --env-file $ENV_FILE"
 mkdir -p deploy/nginx deploy/scripts
 
 echo "=========================================="
-echo "DEPLOYMENT"
+echo "DEPLOYMENT (single-stack)"
 echo "=========================================="
 
-# Senza blue-green: ferma app, worker e scheduler
-if [ "$USE_BLUE_GREEN" != "true" ]; then
-    if $DOCKER_CMD ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "insight-magellano-backend(-blue|-green)?|.*backend-blue|.*backend-green"; then
-        echo "Stopping existing application container(s)..."
-        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT stop backend-blue backend-worker scheduler 2>/dev/null || true
-        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT rm -f backend-blue backend-worker scheduler 2>/dev/null || true
-    fi
-fi
-
-# Con blue-green: ferma solo worker e scheduler durante deploy
-if [ "$USE_BLUE_GREEN" = "true" ]; then
-    $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT stop backend-worker scheduler 2>/dev/null || true
-fi
-
 # Assicura che db e redis siano in esecuzione
-if ! $DOCKER_CMD ps --format "{{.Names}}" 2>/dev/null | grep -qE "insight-magellano-db|.*-db-"; then
-    echo "Starting PostgreSQL and Redis..."
-    $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT up -d db redis
-    echo "Waiting for PostgreSQL..."
-    sleep 15
-fi
+echo "Starting PostgreSQL and Redis..."
+$COMPOSE_CMD $COMPOSE_FILES up -d db redis
+echo "Waiting for PostgreSQL..."
+sleep 10
 
 # Pulizia risorse Docker
 PRUNE_THRESHOLD="${DOCKER_PRUNE_THRESHOLD:-85}"
@@ -101,89 +69,33 @@ else
     $DOCKER_CMD builder prune -f 2>/dev/null || true
 fi
 $DOCKER_CMD container prune -f 2>/dev/null || true
-if [ "$USE_BLUE_GREEN" != "true" ]; then
-    for img_id in $($DOCKER_CMD images -q insight-magellano-app:latest 2>/dev/null); do
-        $DOCKER_CMD rmi -f "$img_id" 2>/dev/null || true
-    done
-fi
 $DOCKER_CMD image prune -f 2>/dev/null || true
 
 # Build immagine
 echo "Building Docker image..."
 $DOCKER_CMD build -t insight-magellano-app:latest -f deploy/Dockerfile "$APP_DIR"
 
-# Avvio container
-echo "Starting containers..."
-if [ "$USE_BLUE_GREEN" = "true" ]; then
-    UPSTREAM_CONF="$APP_DIR/deploy/nginx/upstream.conf"
-    if [ ! -f "$UPSTREAM_CONF" ]; then
-        echo "server backend-blue:8000;" > "$UPSTREAM_CONF"
-        echo "server backend-green:8000 backup;" >> "$UPSTREAM_CONF"
-    fi
+# Avvio/recreate servizi applicativi
+echo "Starting application services..."
+$COMPOSE_CMD $COMPOSE_FILES up -d --force-recreate backend backend-worker scheduler nginx
+echo "Waiting for backend startup..."
+sleep 10
 
-    if [ -f "$UPSTREAM_CONF" ]; then
-        LINE=$(grep '^server backend-' "$UPSTREAM_CONF" | grep -v backup | head -1)
-        if echo "$LINE" | grep -q "backend-green:8000"; then
-            CURRENT_COLOR="green"
-            INACTIVE_COLOR="blue"
-        else
-            CURRENT_COLOR="blue"
-            INACTIVE_COLOR="green"
-        fi
-    else
-        CURRENT_COLOR="blue"
-        INACTIVE_COLOR="green"
-    fi
-
-    BLUE_RUNNING=$($DOCKER_CMD ps -q -f name=backend-blue 2>/dev/null | wc -l)
-    GREEN_RUNNING=$($DOCKER_CMD ps -q -f name=backend-green 2>/dev/null | wc -l)
-    if [ "$BLUE_RUNNING" -eq 0 ] && [ "$GREEN_RUNNING" -eq 0 ]; then
-        echo "Primo deploy blue-green: avvio tutti i container..."
-        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT up -d
-        sleep 10
-        TARGET_CONTAINER=$($DOCKER_CMD ps -q -f name=backend-blue | head -1)
-        [ -z "$TARGET_CONTAINER" ] && TARGET_CONTAINER=$($DOCKER_CMD ps -q -f name=backend-green | head -1)
-        DEPLOYED_COLOR="$CURRENT_COLOR"
-    else
-        echo "Traffico attuale: $CURRENT_COLOR → deploy su $INACTIVE_COLOR"
-        # In modalità blue-green usiamo sempre il profilo 'green' per avere sia backend-blue
-        # che backend-green definiti nel progetto (nginx dipende da entrambi).
-        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT up -d --force-recreate "backend-$INACTIVE_COLOR"
-        echo "Attesa avvio backend-$INACTIVE_COLOR..."
-        sleep 10
-
-        echo "Switching traffic to $INACTIVE_COLOR..."
-        "$APP_DIR/deploy/scripts/switch-upstream.sh" "$INACTIVE_COLOR" "$APP_DIR"
-        TARGET_CONTAINER=$($DOCKER_CMD ps -q -f name=backend-$INACTIVE_COLOR | head -1)
-
-        # Ora che il traffico è stato spostato, assicurati che worker e scheduler siano in esecuzione (unici, non blue/green)
-        $COMPOSE_CMD $COMPOSE_FILES $PROFILE_OPT up -d --force-recreate backend-worker scheduler 2>/dev/null || true
-        sleep 5
-        DEPLOYED_COLOR="$INACTIVE_COLOR"
-    fi
-else
-    $COMPOSE_CMD $COMPOSE_FILES up -d --force-recreate backend-blue backend-worker scheduler
-    TARGET_CONTAINER=$($DOCKER_CMD ps -q -f name=backend-blue | head -1)
-    echo "Attesa avvio container..."
-    sleep 10
+TARGET_CONTAINER=$($DOCKER_CMD ps -q -f name=backend | head -1)
+if [ -n "$TARGET_CONTAINER" ]; then
+    echo "Running Alembic migrations (on $TARGET_CONTAINER)..."
+    $DOCKER_CMD exec "$TARGET_CONTAINER" alembic upgrade head 2>/dev/null || true
 fi
 
-# Migrazioni Alembic sul container attivo
-echo "Running Alembic migrations (on $TARGET_CONTAINER)..."
-$DOCKER_CMD exec "$TARGET_CONTAINER" alembic upgrade head 2>/dev/null || true
-
-# Pulizia finale (dopo aver montato blue/green e tutti i container)
+# Pulizia finale
 $DOCKER_CMD container prune -f 2>/dev/null || true
 $DOCKER_CMD image prune -f 2>/dev/null || true
-# Volumi orfani solo dopo che i nuovi container sono up
 $DOCKER_CMD volume prune -f 2>/dev/null || true
 
 echo ""
 echo "=========================================="
 echo "✓ DEPLOYMENT COMPLETED"
 echo "=========================================="
-if [ "$USE_BLUE_GREEN" = "true" ]; then
-    echo "  • Blue-green: traffico su ${DEPLOYED_COLOR:-$CURRENT_COLOR}"
-fi
+echo "  • Modalità single-stack attiva"
 echo "  • App su porta 3000 (nginx)"
-echo "  • Adminer su porta 18080"
+echo "  • Adminer disponibile solo se avviato esplicitamente"

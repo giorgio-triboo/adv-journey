@@ -1,5 +1,5 @@
 #!/bin/bash
-# ApplicationStop: ferma solo il worker (insight-magellano). Backend restano up per zero-downtime.
+# ApplicationStop: ferma solo il worker (insight-magellano).
 
 set -e
 
@@ -25,9 +25,8 @@ fi
 COMPOSE_OPTS="--project-directory $APP_DIR -f deploy/docker-compose.prod.yml"
 [ -f "$APP_DIR/.env" ] && COMPOSE_OPTS="$COMPOSE_OPTS --env-file $APP_DIR/.env"
 
-# Ferma SOLO il worker. Non toccare backend-blue/backend-green: nginx continua a servire traffico.
-# AfterInstall farà lo switch blue/green e ricreerà il worker con la nuova immagine.
-echo "Stopping insight-magellano backend-worker only (backends stay up for zero-downtime)..."
+# Ferma SOLO il worker. Il backend verrà ricreato in AfterInstall.
+echo "Stopping insight-magellano backend-worker only..."
 $COMPOSE_CMD $COMPOSE_OPTS stop backend-worker 2>/dev/null || true
 
 echo "Stop completed."
